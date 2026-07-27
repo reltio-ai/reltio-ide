@@ -1,0 +1,13 @@
+# Exclude everything, then whitelist what we need
+**
+
+# Runtime artifacts
+!dist/**
+!schemas/**
+!resources/**
+!skills/**
+!package.json
+!README.md
+!LICENSE
+!node_modules/@vscode/codicons/dist/codicon.css
+!node_modules/@vscode/codicons/dist/codicon.ttf

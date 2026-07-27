@@ -1,0 +1,3611 @@
+{
+  "uri": "configuration",
+  "description": "Product 360 V1.4.7.1",
+  "schemaVersion": "1",
+  "label": "Generic Product 360",
+  "sources": [
+    {
+      "uri": "configuration/sources/ReltioRDM",
+      "abbreviation": "ReltioRDM",
+      "label": "ReltioRDM"
+    },
+    {
+      "uri": "configuration/sources/Reltio",
+      "label": "Reltio",
+      "abbreviation": "Reltio"
+    }
+  ],
+  "abstract": false,
+  "referenceConfigurationURI": "configuration/_vertical/reltio-configuration",
+  "rdmTenantId": "{{rdmTenant}}",
+  "entityTypes": [
+    {
+      "uri": "configuration/entityTypes/Entity",
+      "label": "Entity",
+      "description": "Entity- the root abject for any noun (person, place or thing) at Reltio.",
+      "typeColor": "#FF9900",
+      "typeIcon": "images/base_type/product-icon4-c.png",
+      "typeImage": "images/defaultImage/no-product4.png",
+      "typeGraphIcon": "images/graphIcon/product-icon4.png",
+      "attributes": [
+        {
+          "label": "Name",
+          "name": "Name",
+          "type": "String",
+          "hidden": false,
+          "uri": "configuration/entityTypes/Entity/attributes/Name"
+        },
+        {
+          "label": "Alternate Name",
+          "name": "AlternateName",
+          "type": "Nested",
+          "hidden": false,
+          "uri": "configuration/entityTypes/Entity/attributes/AlternateName",
+          "dataLabelPattern": "{Type}:{Name}({Language})",
+          "attributes": [
+            {
+              "label": "Name",
+              "name": "Name",
+              "description": "Alternate name for the entity",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Entity/attributes/AlternateName/attributes/Name"
+            },
+            {
+              "label": "Type",
+              "name": "Type",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Entity/attributes/AlternateName/attributes/Type"
+            },
+            {
+              "label": "Language",
+              "name": "Language",
+              "description": "Language of the Name. ISO 639-2 Alpha-3 Codes",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Entity/attributes/AlternateName/attributes/Language",
+              "lookupCode": "rdm/lookupTypes/App-LSProduct360Language"
+            }
+          ]
+        },
+        {
+          "label": "Description",
+          "name": "Description",
+          "type": "String",
+          "hidden": false,
+          "uri": "configuration/entityTypes/Entity/attributes/Description",
+          "dataLabelPattern": "{Description}"
+        },
+        {
+          "label": "Alternate Description",
+          "name": "AlternateDescription",
+          "type": "Nested",
+          "hidden": false,
+          "uri": "configuration/entityTypes/Entity/attributes/AlternateDescription",
+          "dataLabelPattern": "{Type}:{Name}({Language})",
+          "attributes": [
+            {
+              "label": "Name",
+              "name": "Name",
+              "description": "Alternate name for the entity",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Entity/attributes/TypedName/attributes/Name"
+            },
+            {
+              "label": "Type",
+              "name": "Type",
+              "description": "Name Type: Brand Name, Established Name, Primary Name or Other Name",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Entity/attributes/TypedName/attributes/Type"
+            },
+            {
+              "label": "Language",
+              "name": "Language",
+              "description": "Language of the Name. ISO 639-2 Alpha-3 Codes",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Entity/attributes/TypedName/attributes/Language",
+              "lookupCode": "rdm/lookupTypes/App-LSProduct360Language"
+            }
+          ]
+        },
+        {
+          "label": "Identifiers",
+          "name": "Identifiers",
+          "type": "Nested",
+          "hidden": false,
+          "attributeOrdering": {
+            "fieldURI": "configuration/entityTypes/Entity/attributes/Identifiers/attributes/Type",
+            "orderType": "ASC",
+            "orderingStrategy": "FieldBased"
+          },
+          "uri": "configuration/entityTypes/Entity/attributes/Identifiers",
+          "dataLabelPattern": "{Type} {ID}",
+          "matchFieldURIs": [
+            "configuration/entityTypes/Entity/attributes/Identifiers/attributes/Type"
+          ],
+          "attributes": [
+            {
+              "label": "Type",
+              "name": "Type",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "faceted": true,
+              "searchable": true,
+              "uri": "configuration/entityTypes/Entity/attributes/Identifiers/attributes/Type"
+            },
+            {
+              "label": "ID",
+              "name": "ID",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "searchable": true,
+              "uri": "configuration/entityTypes/Entity/attributes/Identifiers/attributes/ID"
+            },
+            {
+              "label": "Status",
+              "name": "Status",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "faceted": true,
+              "searchable": true,
+              "uri": "configuration/entityTypes/Entity/attributes/Identifiers/attributes/Status"
+            },
+            {
+              "label": "Deactivation Reason Code",
+              "name": "DeactivationReasonCode",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Entity/attributes/Identifiers/attributes/DeactivationReasonCode"
+            },
+            {
+              "label": "Deactivation Date",
+              "name": "DeactivationDate",
+              "type": "Date",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Entity/attributes/Identifiers/attributes/DeactivationDate"
+            },
+            {
+              "label": "Reactivation Date",
+              "name": "ReactivationDate",
+              "type": "Date",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Entity/attributes/Identifiers/attributes/ReactivationDate"
+            }
+          ]
+        },
+        {
+          "label": "Image Link",
+          "name": "ImageLinks",
+          "type": "Image URL",
+          "hidden": true,
+          "uri": "configuration/entityTypes/Entity/attributes/ImageLinks"
+        },
+        {
+          "label": "Video Link",
+          "name": "VideoLinks",
+          "type": "URL",
+          "hidden": true,
+          "uri": "configuration/entityTypes/Entity/attributes/VideoLinks"
+        },
+        {
+          "label": "Document Link",
+          "name": "DocumentLinks",
+          "type": "URL",
+          "hidden": true,
+          "uri": "configuration/entityTypes/Entity/attributes/DocumentLinks"
+        },
+        {
+          "label": "Commenters",
+          "name": "Commenters",
+          "description": "Commenters",
+          "type": "String",
+          "hidden": false,
+          "uri": "configuration/entityTypes/Entity/attributes/Commenters"
+        }
+      ],
+      "dataLabelPattern": "{Name}",
+      "abstract": true,
+      "imageAttributeURIs": [
+        "configuration/entityTypes/Entity/attributes/ImageLinks"
+      ]
+    },
+    {
+      "uri": "configuration/entityTypes/Party",
+      "attributes": [
+        {
+          "label": "Address",
+          "name": "Addresses",
+          "type": "Nested",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "searchable": true,
+          "attributeOrdering": {
+            "fieldURI": "configuration/entityTypes/Party/attributes/Addresses/attributes/AddressType",
+            "orderType": "ASC",
+            "orderingStrategy": "FieldBased"
+          },
+          "uri": "configuration/entityTypes/Party/attributes/Addresses",
+          "dataLabelPattern": "[{AddressType} :] {AddressLine1}, {City}, {StateProvince}",
+          "matchFieldURIs": [
+            "configuration/entityTypes/Party/attributes/Addresses/attributes/AddressType",
+            "configuration/entityTypes/Party/attributes/Addresses/attributes/AddressLine1",
+            "configuration/entityTypes/Party/attributes/Addresses/attributes/AddressLine2",
+            "configuration/entityTypes/Party/attributes/Addresses/attributes/City",
+            "configuration/entityTypes/Party/attributes/Addresses/attributes/StateProvince",
+            "configuration/entityTypes/Party/attributes/Addresses/attributes/Zip4",
+            "configuration/entityTypes/Party/attributes/Addresses/attributes/Zip5"
+          ],
+          "attributes": [
+            {
+              "label": "Address Type",
+              "name": "AddressType",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/AddressType"
+            },
+            {
+              "label": "Address Input",
+              "name": "AddressInput",
+              "type": "Blob",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/AddressInput"
+            },
+            {
+              "label": "Address Line 1",
+              "name": "AddressLine1",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/AddressLine1"
+            },
+            {
+              "label": "Address Line 2",
+              "name": "AddressLine2",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/AddressLine2"
+            },
+            {
+              "label": "City",
+              "name": "City",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "faceted": true,
+              "searchable": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/City"
+            },
+            {
+              "label": "State",
+              "name": "StateProvince",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "faceted": true,
+              "searchable": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/StateProvince"
+            },
+            {
+              "label": "Country",
+              "name": "Country",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/Country"
+            },
+            {
+              "label": "Postal Code",
+              "name": "PostalCode",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/PostalCode"
+            },
+            {
+              "label": "Zip5",
+              "name": "Zip5",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "searchable": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/Zip5"
+            },
+            {
+              "label": "Zip4",
+              "name": "Zip4",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/Zip4"
+            },
+            {
+              "label": "Verification Status",
+              "name": "VerificationStatus",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/VerificationStatus"
+            },
+            {
+              "label": "Verification Status Details",
+              "name": "VerificationStatusDetails",
+              "type": "Blob",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/VerificationStatusDetails"
+            },
+            {
+              "label": "AVC",
+              "name": "AVC",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/AVC"
+            },
+            {
+              "label": "Country Name",
+              "name": "CountryName",
+              "description": "DO NOT USE this field - use Country instead",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/CountryName"
+            },
+            {
+              "label": "ISO3166-2",
+              "name": "ISO3166-2",
+              "description": "This field holds the ISO 3166 2-character country code.",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/ISO3166-2"
+            },
+            {
+              "label": "ISO3166-3",
+              "name": "ISO3166-3",
+              "description": "This field holds the ISO 3166 3-character country code.",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/ISO3166-3"
+            },
+            {
+              "label": "ISO3166-N",
+              "name": "ISO3166-N",
+              "description": "This field holds the ISO 3166 N-digit numeric country code.",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/ISO3166-N"
+            },
+            {
+              "label": "Super Admin Area",
+              "name": "SuperAdministrativeArea",
+              "description": "This field holds the largest geographic data element within a country.",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/SuperAdministrativeArea"
+            },
+            {
+              "label": "Street",
+              "name": "Street",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/Street"
+            },
+            {
+              "label": "Admin Area",
+              "name": "AdministrativeArea",
+              "description": "This field holds the most common geographic data element within a country. For instance, USA State, and Canadian Province.",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/AdministrativeArea"
+            },
+            {
+              "label": "County",
+              "name": "SubAdministrativeArea",
+              "description": "This field holds the smallest geographic data element within a country. For instance, USA County.",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "faceted": true,
+              "searchable": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/SubAdministrativeArea"
+            },
+            {
+              "label": "Postal Code Extension",
+              "name": "PostalCodeExtension",
+              "description": "DO NOT USE this field - use Zip/zip4 instead",
+              "type": "String",
+              "hidden": true,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/PostalCodeExtension"
+            },
+            {
+              "label": "UnitName",
+              "name": "UnitName",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/UnitName"
+            },
+            {
+              "label": "UnitValue",
+              "name": "UnitValue",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/UnitValue"
+            },
+            {
+              "label": "Floor",
+              "name": "Floor",
+              "description": "N/A",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/Floor"
+            },
+            {
+              "label": "Building",
+              "name": "Building",
+              "description": "N/A",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/Building"
+            },
+            {
+              "label": "SubBuilding",
+              "name": "SubBuilding",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/SubBuilding"
+            },
+            {
+              "label": "PO Box",
+              "name": "POBox",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/POBox"
+            },
+            {
+              "label": "Neighborhood",
+              "name": "Neighborhood",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/Neighborhood"
+            },
+            {
+              "label": "Double Dependent Locality",
+              "name": "DoubleDependentLocality",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/DoubleDependentLocality"
+            },
+            {
+              "label": "Dependent Thoroughfare",
+              "name": "DependentThoroughfare",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/DependentThoroughfare"
+            },
+            {
+              "label": "Locality",
+              "name": "Locality",
+              "description": "This field holds the most common population center data element within a country. For instance, USA City, Canadian Municipality.",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/Locality"
+            },
+            {
+              "label": "Latitude",
+              "name": "Latitude",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/Latitude"
+            },
+            {
+              "label": "Longitude",
+              "name": "Longitude",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/Longitude"
+            },
+            {
+              "label": "GeoAccuracy",
+              "name": "GeoAccuracy",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/GeoAccuracy"
+            },
+            {
+              "label": "Party",
+              "name": "Party",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/Party"
+            },
+            {
+              "label": "Premise",
+              "name": "Premise",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/Premise"
+            },
+            {
+              "label": "PremiseNumber",
+              "name": "PremiseNumber",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/PremiseNumber"
+            },
+            {
+              "label": "Delivery Address",
+              "name": "DeliveryAddress",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/DeliveryAddress"
+            },
+            {
+              "label": "Delivery Address #1",
+              "name": "DeliveryAddress1",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/DeliveryAddress1"
+            },
+            {
+              "label": "Leftover",
+              "name": "Unmatched",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/Unmatched"
+            },
+            {
+              "label": "Commenters",
+              "name": "Commenters",
+              "description": "Commenters",
+              "type": "String",
+              "hidden": true,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/Commenters"
+            },
+            {
+              "label": "Automated Zone Indicator",
+              "name": "AutoZoneIndicator",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/AutoZoneIndicator"
+            },
+            {
+              "label": "Carrier Route",
+              "name": "CarrierRoute",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/CarrierRoute"
+            },
+            {
+              "label": "CMRA Indicator",
+              "name": "CMRAIndicator",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/CMRAIndicator"
+            },
+            {
+              "label": "Congressional District",
+              "name": "CongressionalDistrict",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/CongressionalDistrict"
+            },
+            {
+              "label": "Default Flag",
+              "name": "DefaultFlag",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/DefaultFlag"
+            },
+            {
+              "label": "Delivery Point Bar Code",
+              "name": "DeliveryPointBarCode",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/DeliveryPointBarCode"
+            },
+            {
+              "label": "DPV Confirmed Indicator",
+              "name": "DPVConfirmedIndicator",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/DPVConfirmedIndicator"
+            },
+            {
+              "label": "DPV Footnotes",
+              "name": "DPVFootnotes",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/DPVFootnotes"
+            },
+            {
+              "label": "eLOT Code",
+              "name": "eLOTCode",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/eLOTCode"
+            },
+            {
+              "label": "eLOT Number",
+              "name": "eLOTNumber",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/eLOTNumber"
+            },
+            {
+              "label": "EWS Flag",
+              "name": "EWSFlag",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/EWSFlag"
+            },
+            {
+              "label": "False Positive Indicator",
+              "name": "FalsePositiveIndicator",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/FalsePositiveIndicator"
+            },
+            {
+              "label": "FIPS County Code",
+              "name": "FIPSCountyCode",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/FIPSCountyCode"
+            },
+            {
+              "label": "Footnotes",
+              "name": "Footnotes",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/Footnotes"
+            },
+            {
+              "label": "LACS Link Code",
+              "name": "LACSLinkCode",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/LACSLinkCode"
+            },
+            {
+              "label": "LACS Link Indicator",
+              "name": "LACSLinkIndicator",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/LACSLinkIndicator"
+            },
+            {
+              "label": "LACS Status",
+              "name": "LACSStatus",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/LACSStatus"
+            },
+            {
+              "label": "No Stat Indicator",
+              "name": "NoStatIndicator",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/NoStatIndicator"
+            },
+            {
+              "label": "PMB Number",
+              "name": "PMBNumber",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/PMBNumber"
+            },
+            {
+              "label": "PMB Type",
+              "name": "PMBType",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/PMBType"
+            },
+            {
+              "label": "Primary Address Line",
+              "name": "PrimaryAddressLine",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/PrimaryAddressLine"
+            },
+            {
+              "label": "Record Type",
+              "name": "RecordType",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/RecordType"
+            },
+            {
+              "label": "Return Code",
+              "name": "ReturnCode",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/ReturnCode"
+            },
+            {
+              "label": "Residential Delivery",
+              "name": "ResidentialDelivery",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/ResidentialDelivery"
+            },
+            {
+              "label": "Secondary Address Line",
+              "name": "SecondaryAddressLine",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/SecondaryAddressLine"
+            },
+            {
+              "label": "SUITE Link Footnote",
+              "name": "SUITELinkFootnote",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/SUITELinkFootnote"
+            },
+            {
+              "label": "Vacant Indicator",
+              "name": "VacantIndicator",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Party/attributes/Addresses/attributes/VacantIndicator"
+            }
+          ]
+        },
+        {
+          "uri": "configuration/entityTypes/Party/attributes/Address",
+          "hidden": true
+        }
+      ],
+      "businessCardAttributeURIs": [
+        "configuration/entityTypes/Party/attributes/Addresses"
+      ],
+      "survivorshipGroups": [
+        {
+          "uri": "configuration/entityTypes/Location/survivorshipGroups/default",
+          "default": true,
+          "mapping": [
+            {
+              "attribute": "configuration/entityTypes/Party/attributes/Addresses/attributes/AddressLine1",
+              "survivorshipStrategy": "CleanserWinsStrategy"
+            },
+            {
+              "attribute": "configuration/entityTypes/Party/attributes/Addresses/attributes/AddressLine2",
+              "survivorshipStrategy": "CleanserWinsStrategy"
+            },
+            {
+              "attribute": "configuration/entityTypes/Party/attributes/Addresses/attributes/City",
+              "survivorshipStrategy": "CleanserWinsStrategy"
+            },
+            {
+              "attribute": "configuration/entityTypes/Party/attributes/Addresses/attributes/State",
+              "survivorshipStrategy": "CleanserWinsStrategy"
+            },
+            {
+              "attribute": "configuration/entityTypes/Party/attributes/Addresses/attributes/Country",
+              "survivorshipStrategy": "CleanserWinsStrategy"
+            },
+            {
+              "attribute": "configuration/entityTypes/Party/attributes/Addresses/attributes/Zip",
+              "survivorshipStrategy": "CleanserWinsStrategy"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "uri": "configuration/entityTypes/Organization",
+      "abstract": false,
+      "cleanseConfig": {
+        "mappings": [
+          {
+            "uri": "configuration/entityTypes/Organization/cleanse/mappings/Addresses",
+            "outputMapping": [
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/VerificationStatus",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "VerificationStatus"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/VerificationStatusDetails",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "VerificationStatusDetails"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/StateProvince",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "AdministrativeArea"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/City",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "Locality"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/SuperAdministrativeArea",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "SuperAdministrativeArea"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/DoubleDependentLocality",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "DoubleDependentLocality"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Neighborhood",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "DependentLocality"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/DependentThoroughfare",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "DependentThoroughfare"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Country",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "ISO3166-2"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Zip5",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "PostalCodePrimary"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Zip4",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "PostalCodeSecondary"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Latitude",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "Latitude"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Longitude",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "Longitude"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/GeoAccuracy",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "GeoAccuracy"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/POBox",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "PostBox"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Telephone",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "Telephone"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/SubAdministrativeArea",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "SubAdministrativeArea"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Building",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "Building"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/SubBuilding",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "SubBuilding"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Organization",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "Organization"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/DeliveryAddress1",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "DeliveryAddress1"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/AddressLine1",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "DeliveryAddress1"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/AddressLine2",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "DeliveryAddress2"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/ISO3166-2",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "ISO3166-2"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/ISO3166-3",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "ISO3166-3"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/DeliveryAddress",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "DeliveryAddress"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/PremiseNumber",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "PremiseNumber"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Premise",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "Premise"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Street",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "Thoroughfare"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/ISO3166-N",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "ISO3166-N"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Unmatched",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "Unmatched"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/AVC",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "AVC"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/AutoZoneIndicator",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "AutoZoneIndicator"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/CarrierRoute",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "CarrierRoute"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/CMRAIndicator",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "CMRAIndicator"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/CongressionalDistrict",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "CongressionalDistrict"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/DefaultFlag",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "DefaultFlag"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/DeliveryPointBarCode",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "DeliveryPointBarCode"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/DPVConfirmedIndicator",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "DPVConfirmedIndicator"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/DPVFootnotes",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "DPVFootnotes"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/eLOTCode",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "eLOTCode"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/eLOTNumber",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "eLOTNumber"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/EWSFlag",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "EWSFlag"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/FalsePositiveIndicator",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "FalsePositiveIndicator"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/FIPSCountyCode",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "FIPSCountyCode"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Footnotes",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "Footnotes"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/LACSLinkCode",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "LACSLinkCode"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/LACSLinkIndicator",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "LACSLinkIndicator"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/LACSStatus",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "LACSStatus"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/NoStatIndicator",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "NoStatIndicator"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/PMBNumber",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "PMBNumber"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/PMBType",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "PMBType"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/PrimaryAddressLine",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "PrimaryAddressLine"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/RecordType",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "RecordType"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/ReturnCode",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "ReturnCode"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/ResidentialDelivery",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "ResidentialDelivery"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/SecondaryAddressLine",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "SecondaryAddressLine"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/SUITELinkFootnote",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "SUITELinkFootnote"
+              },
+              {
+                "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/VacantIndicator",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "VacantIndicator"
+              }
+            ]
+          }
+        ],
+        "infos": [
+          {
+            "uri": "configuration/entityTypes/Organization/cleanse/infos/default",
+            "useInCleansing": true,
+            "sequence": [
+              {
+                "chain": [
+                  {
+                    "useHash": true,
+                    "cleanseFunction": "Loqate",
+                    "params": {
+                      "verificationStatusMapping": {
+                        "Verified": [
+                          "V(4|5).*"
+                        ],
+                        "Partially Verified": [
+                          "V(1|2|3).*",
+                          "P.*"
+                        ],
+                        "Unverified": [
+                          "U.*"
+                        ],
+                        "Ambiguous": [
+                          "A.*"
+                        ],
+                        "Conflict": [
+                          "C.*"
+                        ],
+                        "Reverted": [
+                          "R.*"
+                        ]
+                      }
+                    },
+                    "resultingValuesSourceTypeUri": "configuration/sources/ReltioCleanser",
+                    "proceedOnSuccess": true,
+                    "proceedOnFailure": false,
+                    "mapping": {
+                      "inputMapping": [
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/AddressInput",
+                          "mandatory": true,
+                          "allValues": false,
+                          "cleanseAttribute": "Address"
+                        }
+                      ],
+                      "outputMappingRef": "configuration/entityTypes/Organization/cleanse/mappings/Addresses/outputMapping"
+                    }
+                  }
+                ]
+              }
+            ],
+            "nestedAttributeToCleanse": "configuration/entityTypes/Organization/attributes/Addresses"
+          },
+          {
+            "uri": "configuration/entityTypes/Organization/cleanse/infos/other",
+            "useInCleansing": true,
+            "sequence": [
+              {
+                "chain": [
+                  {
+                    "cleanseFunction": "Loqate",
+                    "resultingValuesSourceTypeUri": "configuration/sources/ReltioCleanser",
+                    "proceedOnSuccess": true,
+                    "proceedOnFailure": false,
+                    "mapping": {
+                      "inputMapping": [
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/AddressLine1",
+                          "mandatory": true,
+                          "allValues": false,
+                          "cleanseAttribute": "Address1"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/AddressLine2",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Address2"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Country",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Country"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/SuperAdministrativeArea",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "SuperAdministrativeArea"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/StateProvince",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "AdministrativeArea"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/SubAdministrativeArea",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "SubAdministrativeArea"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/City",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Locality"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Neighborhood",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "DependentLocality"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/DoubleDependentLocality",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "DoubleDependentLocality"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Street",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Thoroughfare"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Premise",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Premise"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/DependentThoroughfare",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "DependentThoroughfare"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Building",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Building"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/SubBuilding",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "SubBuilding"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Zip5",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "PostalCode"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/PostalCode",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "PostalCode"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/POBox",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "PostBox"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Addresses/attributes/Organization",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Organization"
+                        }
+                      ],
+                      "outputMappingRef": "configuration/entityTypes/Organization/cleanse/mappings/Addresses/outputMapping"
+                    }
+                  }
+                ]
+              }
+            ],
+            "nestedAttributeToCleanse": "configuration/entityTypes/Organization/attributes/Addresses"
+          },
+          {
+            "uri": "configuration/entityTypes/Organization/cleanse/infos/PhoneCleanser",
+            "useInCleansing": true,
+            "sequence": [
+              {
+                "chain": [
+                  {
+                    "cleanseFunction": "PhoneCleanser1",
+                    "resultingValuesSourceTypeUri": "configuration/sources/ReltioCleanser",
+                    "proceedOnSuccess": true,
+                    "proceedOnFailure": true,
+                    "mapping": {
+                      "inputMapping": [
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Phone/attributes/Number",
+                          "mandatory": true,
+                          "allValues": true,
+                          "cleanseAttribute": "Phone.Number"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Phone/attributes/CountryCode",
+                          "mandatory": false,
+                          "allValues": true,
+                          "cleanseAttribute": "Phone.CountryCode"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Phone/attributes/Type",
+                          "mandatory": false,
+                          "allValues": true,
+                          "cleanseAttribute": "Phone.Type"
+                        }
+                      ],
+                      "outputMapping": [
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Phone/attributes/Type",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.Type"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Phone/attributes/Number",
+                          "mandatory": true,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.Number"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Phone/attributes/CountryCode",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.CountryCode"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Phone/attributes/Extension",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.Extension"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Phone/attributes/LineType",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.LineType"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Phone/attributes/FormatMask",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.FormatMask"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Phone/attributes/ValidationStatus",
+                          "mandatory": true,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.ValidationStatus"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Phone/attributes/AreaCode",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.AreaCode"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Phone/attributes/GeoCountry",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.GeoCountry"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Phone/attributes/GeoArea",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.GeoArea"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Phone/attributes/DigitCount",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.DigitCount"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Phone/attributes/LocalNumber",
+                          "mandatory": true,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.LocalNumber"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Phone/attributes/FormattedNumber",
+                          "mandatory": true,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.FormattedNumber"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "uri": "configuration/entityTypes/Organization/cleanse/infos/EmailCleanser",
+            "useInCleansing": true,
+            "sequence": [
+              {
+                "chain": [
+                  {
+                    "cleanseFunction": "EmailCleanser1",
+                    "resultingValuesSourceTypeUri": "configuration/sources/ReltioCleanser",
+                    "proceedOnSuccess": true,
+                    "proceedOnFailure": true,
+                    "mapping": {
+                      "inputMapping": [
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Email/attributes/Email",
+                          "mandatory": true,
+                          "allValues": true,
+                          "cleanseAttribute": "Email.Email"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Email/attributes/Type",
+                          "mandatory": false,
+                          "allValues": true,
+                          "cleanseAttribute": "Email.Type"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Email/attributes/Rank",
+                          "mandatory": false,
+                          "allValues": true,
+                          "cleanseAttribute": "Email.Rank"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Email/attributes/Active",
+                          "mandatory": false,
+                          "allValues": true,
+                          "cleanseAttribute": "Email.Active"
+                        }
+                      ],
+                      "outputMapping": [
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Email/attributes/Email",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Email.Email"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Email/attributes/Type",
+                          "mandatory": true,
+                          "allValues": false,
+                          "cleanseAttribute": "Email.Type"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Email/attributes/Rank",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Email.Rank"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Email/attributes/Active",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Email.Active"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Email/attributes/Domain",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Email.Domain"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Email/attributes/DomainType",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Email.DomainType"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Email/attributes/ValidationStatus",
+                          "mandatory": true,
+                          "allValues": false,
+                          "cleanseAttribute": "Email.ValidationStatus"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Organization/attributes/Email/attributes/Username",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Email.Username"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "attributes": [
+        {
+          "uri": "configuration/entityTypes/Organization/attributes/LegalDomicile",
+          "lookupCode": "rdm/lookupTypes/State"
+        },
+        {
+          "label": "Phone",
+          "name": "Phone",
+          "type": "Nested",
+          "hidden": false,
+          "attributeOrdering": {
+            "fieldURI": "configuration/entityTypes/Organization/attributes/Phone/attributes/Rank",
+            "orderType": "ASC",
+            "orderingStrategy": "FieldBased"
+          },
+          "uri": "configuration/entityTypes/Organization/attributes/Phone",
+          "dataLabelPattern": "{Type}: {Number}",
+          "matchFieldURIs": [
+            "configuration/entityTypes/Party/attributes/Phone/attributes/Number"
+          ],
+          "attributes": [
+            {
+              "label": "Type",
+              "name": "Type",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": true,
+              "values": [
+                "Mobile",
+                "Home",
+                "Work",
+                "Fax",
+                "Main",
+                "Work Fax",
+                "Home Fax",
+                "Pager",
+                "Other"
+              ],
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Phone/attributes/Type"
+            },
+            {
+              "label": "Number*",
+              "name": "Number",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Phone/attributes/Number"
+            },
+            {
+              "label": "Unreachable",
+              "name": "Unreachable",
+              "type": "Boolean",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Phone/attributes/Unreachable"
+            },
+            {
+              "label": "Country Code*",
+              "name": "CountryCode",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "values": [
+                "US",
+                "IN",
+                "GB",
+                "AU"
+              ],
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Phone/attributes/CountryCode"
+            },
+            {
+              "label": "Extension",
+              "name": "Extension",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Phone/attributes/Extension"
+            },
+            {
+              "label": "Formatted Number",
+              "name": "FormattedNumber",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Phone/attributes/FormattedNumber"
+            },
+            {
+              "label": "Rank",
+              "name": "Rank",
+              "type": "Int",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Phone/attributes/Rank"
+            },
+            {
+              "label": "Area Code",
+              "name": "AreaCode",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Phone/attributes/AreaCode"
+            },
+            {
+              "label": "Local Number",
+              "name": "LocalNumber",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Phone/attributes/LocalNumber"
+            },
+            {
+              "label": "Validation Status",
+              "name": "ValidationStatus",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Phone/attributes/ValidationStatus"
+            },
+            {
+              "label": "Line Type",
+              "name": "LineType",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Phone/attributes/LineType"
+            },
+            {
+              "label": "Format Mask",
+              "name": "FormatMask",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Phone/attributes/FormatMask"
+            },
+            {
+              "label": "Digit Count",
+              "name": "DigitCount",
+              "type": "Int",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Phone/attributes/DigitCount"
+            },
+            {
+              "label": "Geo Area",
+              "name": "GeoArea",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Phone/attributes/GeoArea"
+            },
+            {
+              "label": "Geo Country",
+              "name": "GeoCountry",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Phone/attributes/GeoCountry"
+            },
+            {
+              "label": "Active",
+              "name": "Active",
+              "description": "DO NOT USE THIS ATTRIBUTE - will be deprecated",
+              "type": "Boolean",
+              "hidden": true,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Phone/attributes/Active"
+            },
+            {
+              "label": "PrimaryPhoneFlag",
+              "name": "PrimaryPhoneFlag",
+              "type": "Boolean",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Phone/attributes/PrimaryPhoneFlag"
+            }
+          ]
+        },
+        {
+          "label": "Email",
+          "name": "Email",
+          "type": "Nested",
+          "hidden": false,
+          "attributeOrdering": {
+            "fieldURI": "configuration/entityTypes/Organization/attributes/Email/attributes/Rank",
+            "orderType": "ASC",
+            "orderingStrategy": "FieldBased"
+          },
+          "uri": "configuration/entityTypes/Organization/attributes/Email",
+          "dataLabelPattern": "{Type}: {Email}",
+          "matchFieldURIs": [
+            "configuration/entityTypes/Party/attributes/Email/attributes/Email"
+          ],
+          "attributes": [
+            {
+              "label": "Type",
+              "name": "Type",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "values": [
+                "Home",
+                "Work",
+                "Other"
+              ],
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Email/attributes/Type"
+            },
+            {
+              "label": "Email",
+              "name": "Email",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Email/attributes/Email"
+            },
+            {
+              "label": "Rank",
+              "name": "Rank",
+              "type": "Int",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Email/attributes/Rank"
+            },
+            {
+              "label": "Active",
+              "name": "Active",
+              "type": "Boolean",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Email/attributes/Active"
+            },
+            {
+              "label": "Domain",
+              "name": "Domain",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Email/attributes/Domain"
+            },
+            {
+              "label": "Domain Type",
+              "name": "DomainType",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Email/attributes/DomainType"
+            },
+            {
+              "label": "Username",
+              "name": "Username",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Email/attributes/Username"
+            },
+            {
+              "label": "Validation Status",
+              "name": "ValidationStatus",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Email/attributes/ValidationStatus"
+            },
+            {
+              "label": "Source CD",
+              "name": "SourceCD",
+              "description": "DO NOT USE THIS ATTRIBUTE - will be deprecated",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Organization/attributes/Email/attributes/SourceCD"
+            }
+          ]
+        },
+        {
+          "uri": "configuration/entityTypes/Organization/attributes/CompanyType"
+        },
+        {
+          "uri": "configuration/entityTypes/Organization/attributes/Addresses",
+          "attributes": [
+            {
+              "uri": "configuration/entityTypes/Organization/attributes/Addresses/AddressType",
+              "lookupCode": "rdm/lookupTypes/App-LSProduct360AddressType"
+            },
+            {
+              "uri": "configuration/entityTypes/Organization/attributes/Addresses/StateProvince",
+              "lookupCode": "rdm/lookupTypes/State"
+            },
+            {
+              "uri": "configuration/entityTypes/Organization/attributes/Addresses/Country",
+              "dependentLookupAttributes": [
+                "configuration/entityTypes/Organization/attributes/Addresses/attributes/StateProvince"
+              ],
+              "lookupCode": "rdm/lookupTypes/Country"
+            }
+          ]
+        }
+      ],
+      "geoLocationAttributes": [
+        {
+          "latitude": "configuration/entityTypes/Organization/attributes/Addresses/attributes/GeoLocation/attributes/Latitude",
+          "longitude": "configuration/entityTypes/Organization/attributes/Addresses/attributes/GeoLocation/attributes/Longitude"
+        }
+      ],
+      "survivorshipGroups": [
+        {
+          "uri": "configuration/entityTypes/Organization/survivorshipGroups/default",
+          "default": true,
+          "mapping": [
+            {
+              "attribute": "configuration/entityTypes/Organization/attributes/Addresses",
+              "survivorshipStrategy": "Aggregation"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "uri": "configuration/entityTypes/Substance",
+      "label": "Substance",
+      "description": "Any substance with a .",
+      "typeColor": "#FF9900",
+      "typeIcon": "images/base_type/chemical-substance.png",
+      "typeImage": "images/defaultImage/chemical-substance.png",
+      "typeGraphIcon": "images/graphIcon/chemical-substance-icon.png",
+      "extendsTypeURI": "configuration/entityTypes/Entity",
+      "attributes": [
+        {
+          "uri": "configuration/entityTypes/Substance/attributes/Name",
+          "required": true
+        },
+        {
+          "uri": "configuration/entityTypes/Substance/attributes/Description"
+        },
+        {
+          "uri": "configuration/entityTypes/Substance/attributes/Identifiers"
+        },
+        {
+          "uri": "configuration/entityTypes/Substance/attributes/AlternateName"
+        },
+        {
+          "uri": "configuration/entityTypes/Substance/attributes/AlternateDescription"
+        },
+        {
+          "uri": "configuration/entityTypes/Substance/attributes/VideoLinks",
+          "hidden": true
+        },
+        {
+          "uri": "configuration/entityTypes/Substance/attributes/DocumentLinks",
+          "hidden": true
+        }
+      ],
+      "dataLabelPattern": "{Name}",
+      "abstract": false,
+      "matchGroups": [
+        {
+          "uri": "configuration/entityTypes/Substance/matchGroups/SubstanceRule1",
+          "label": "Rule 1: Suspect Substance match by exact(Name)",
+          "type": "suspect",
+          "rule": {
+            "and": {
+              "exact": [
+                "configuration/entityTypes/Substance/attributes/Name"
+              ]
+            }
+          },
+          "scoreStandalone": 0,
+          "scoreIncremental": 0
+        }
+      ]
+    },
+    {
+      "uri": "configuration/entityTypes/Product",
+      "label": "Product",
+      "description": "Product",
+      "typeColor": "#FF9900",
+      "typeIcon": "images/base_type/product-icon4-c.png",
+      "typeImage": "images/defaultImage/no-product4.png",
+      "typeGraphIcon": "images/graphIcon/product-icon4.png",
+      "extendsTypeURI": "configuration/entityTypes/Entity",
+      "attributes": [
+        {
+          "uri": "configuration/entityTypes/Product/attributes/Name",
+          "required": true
+        },
+        {
+          "uri": "configuration/entityTypes/Product/attributes/AlternateName",
+          "attributes": [
+            {
+              "uri": "configuration/entityTypes/Entity/attributes/AlternateName/attributes/Type",
+              "lookupCode": "rdm/lookupTypes/App-LSProduct360ProductNameType"
+            }
+          ]
+        },
+        {
+          "uri": "configuration/entityTypes/Product/attributes/Identifiers",
+          "attributes": [
+            {
+              "uri": "configuration/entityTypes/Entity/attributes/Identifiers/attributes/Type",
+              "lookupCode": "rdm/lookupTypes/App-LSProduct360ProductIDType"
+            },
+            {
+              "uri": "configuration/entityTypes/Entity/attributes/Identifiers/attributes/Status",
+              "lookupCode": "rdm/lookupTypes/App-LSProduct360ProductIDStatus"
+            },
+            {
+              "uri": "configuration/entityTypes/Entity/attributes/Identifiers/attributes/DeactivationReasonCode",
+              "lookupCode": "rdm/lookupTypes/App-LSProduct360DeactivationReason"
+            }
+          ]
+        },
+        {
+          "label": "Type",
+          "name": "Type",
+          "description": "Used to identify various product types like Branded, Generic, Detail, BRC. Also, can be used to store other types like Sample, Promotional, Competitor etc.",
+          "type": "String",
+          "hidden": false,
+          "uri": "configuration/entityTypes/Product/attributes/Type",
+          "lookupCode": "rdm/lookupTypes/App-LSProduct360ProductType"
+        },
+        {
+          "uri": "configuration/entityTypes/Product/attributes/Description"
+        },
+        {
+          "label": "Market",
+          "name": "Market",
+          "type": "String",
+          "faceted": true,
+          "searchable": true,
+          "uri": "configuration/entityTypes/Product/attributes/Market",
+          "lookupCode": "rdm/lookupTypes/App-LSProduct360Market"
+        },
+        {
+          "label": "Country",
+          "name": "Country",
+          "description": "Use this to specify the country of origin and apply security roles against it to control access.  You may use MARKET instead.",
+          "type": "String",
+          "hidden": true,
+          "uri": "configuration/entityTypes/Product/attributes/Country",
+          "lookupCode": "rdm/lookupTypes/Country"
+        },
+        {
+          "label": "Ingredients",
+          "name": "Ingredients",
+          "type": "Reference",
+          "hidden": false,
+          "relationshipLabelPattern": "{NumeratorValue}{NumeratorUnit}/{DenominatorValue}{DenominatorUnit}",
+          "uri": "configuration/entityTypes/Product/attributes/Ingredients",
+          "referencedAttributeURIs": [
+            "configuration/entityTypes/Substance/attributes/Name",
+            "configuration/relationTypes/isIngredientOf/attributes/NumeratorValue",
+            "configuration/relationTypes/isIngredientOf/attributes/NumeratorUnit",
+            "configuration/relationTypes/isIngredientOf/attributes/DenominatorValue",
+            "configuration/relationTypes/isIngredientOf/attributes/DenominatorUnit"
+          ],
+          "referencedEntityTypeURI": "configuration/entityTypes/Substance",
+          "relationshipTypeURI": "configuration/relationTypes/isIngredientOf"
+        },
+        {
+          "label": "GTIN",
+          "name": "GTIN",
+          "description": "Global Trade Identifier Number",
+          "type": "String",
+          "hidden": false,
+          "uri": "configuration/entityTypes/Product/attributes/GTIN"
+        },
+        {
+          "label": "Brand Name",
+          "name": "BrandName",
+          "type": "String",
+          "hidden": false,
+          "uri": "configuration/entityTypes/Product/attributes/BrandName"
+        },
+        {
+          "label": "Type of Package",
+          "name": "PackageType",
+          "type": "String",
+          "hidden": false,
+          "uri": "configuration/entityTypes/Product/attributes/PackageType"
+        },
+        {
+          "label": "Package Count",
+          "name": "PackageCount",
+          "type": "Int",
+          "hidden": false,
+          "uri": "configuration/entityTypes/Product/attributes/PackageCount"
+        },
+        {
+          "label": "Package Length",
+          "name": "PackageLength",
+          "type": "Nested",
+          "hidden": false,
+          "uri": "configuration/entityTypes/Product/attributes/PackageLength",
+          "dataLabelPattern": "{Value} {UnitOfMeasure}",
+          "attributes": [
+            {
+              "label": "Unit of Measure",
+              "name": "UnitOfMeasure",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Product/attributes/PackageLength/attributes/UnitOfMeasure",
+              "lookupCode": "UNITS"
+            },
+            {
+              "label": "Value",
+              "name": "Value",
+              "type": "Number",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Product/attributes/PackageLength/attributes/Value"
+            }
+          ]
+        },
+        {
+          "label": "Package Width",
+          "name": "PackageWidth",
+          "type": "Nested",
+          "hidden": false,
+          "uri": "configuration/entityTypes/Product/attributes/PackageWidth",
+          "dataLabelPattern": "{Value} {UnitOfMeasure}",
+          "attributes": [
+            {
+              "label": "Unit of Measure",
+              "name": "UnitOfMeasure",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Product/attributes/PackageWidth/attributes/UnitOfMeasure",
+              "lookupCode": "UNITS"
+            },
+            {
+              "label": "Value",
+              "name": "Value",
+              "type": "Number",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Product/attributes/PackageWidth/attributes/Value"
+            }
+          ]
+        },
+        {
+          "label": "Package Height",
+          "name": "PackageHeight",
+          "type": "Nested",
+          "hidden": false,
+          "uri": "configuration/entityTypes/Product/attributes/PackageHeight",
+          "dataLabelPattern": "{Value} {UnitOfMeasure}",
+          "attributes": [
+            {
+              "label": "Unit of Measure",
+              "name": "UnitOfMeasure",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Product/attributes/PackageHeight/attributes/UnitOfMeasure",
+              "lookupCode": "UNITS"
+            },
+            {
+              "label": "Value",
+              "name": "Value",
+              "type": "Number",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Product/attributes/PackageHeight/attributes/Value"
+            }
+          ]
+        },
+        {
+          "label": "Package Gross Weight",
+          "name": "PackageWeight",
+          "type": "Nested",
+          "hidden": false,
+          "uri": "configuration/entityTypes/Product/attributes/PackageWeight",
+          "dataLabelPattern": "{Value} {UnitOfMeasure}",
+          "attributes": [
+            {
+              "label": "Unit of Measure",
+              "name": "UnitOfMeasure",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Product/attributes/PackageWeight/attributes/UnitOfMeasure",
+              "lookupCode": "UNITS"
+            },
+            {
+              "label": "Value",
+              "name": "Value",
+              "type": "Number",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Product/attributes/PackageWeight/attributes/Value"
+            }
+          ]
+        },
+        {
+          "label": "Manufacturer",
+          "name": "Manufacturer",
+          "type": "Reference",
+          "hidden": false,
+          "faceted": true,
+          "searchable": true,
+          "uri": "configuration/entityTypes/Product/attributes/Manufacturer",
+          "referencedAttributeURIs": [
+            "configuration/entityTypes/Organization/attributes/Name"
+          ],
+          "referencedEntityTypeURI": "configuration/entityTypes/Organization",
+          "relationshipTypeURI": "configuration/relationTypes/HasManufacturer"
+        },
+        {
+          "label": "Status",
+          "name": "ProductStatus",
+          "type": "String",
+          "hidden": false,
+          "uri": "configuration/entityTypes/Product/attributes/ProductStatus",
+          "lookupCode": "rdm/lookupTypes/App-LSProduct360ProductStatus"
+        },
+        {
+          "label": "Pricing",
+          "name": "Pricing",
+          "type": "Nested",
+          "hidden": false,
+          "attributeOrdering": {
+            "fieldURI": "configuration/entityTypes/Product/attributes/Pricing/attributes/Type",
+            "orderType": "ASC",
+            "orderingStrategy": "FieldBased"
+          },
+          "uri": "configuration/entityTypes/Product/attributes/Pricing",
+          "dataLabelPattern": "{Type} {Price} {Currency}",
+          "matchFieldURIs": [
+            "configuration/entityTypes/Product/attributes/Pricing/attributes/Type",
+            "configuration/entityTypes/Product/attributes/Pricing/attributes/Price",
+            "configuration/entityTypes/Product/attributes/Pricing/attributes/Currency"
+          ],
+          "attributes": [
+            {
+              "label": "Type",
+              "name": "Type",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "faceted": true,
+              "searchable": true,
+              "required": true,
+              "uri": "configuration/entityTypes/Product/attributes/Pricing/attributes/Type"
+            },
+            {
+              "label": "Price",
+              "name": "Price",
+              "type": "Number",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "searchable": true,
+              "required": true,
+              "uri": "configuration/entityTypes/Product/attributes/Pricing/attributes/Price"
+            },
+            {
+              "label": "Currency",
+              "name": "Currency",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "faceted": true,
+              "searchable": true,
+              "required": false,
+              "uri": "configuration/entityTypes/Product/attributes/Pricing/attributes/Currency",
+              "lookupCode":"rdm/lookupTypes/Currency"
+            }
+          ]
+        }
+      ],
+      "dataLabelPattern": "{Name}",
+      "survivorshipGroups": [
+        {
+          "uri": "configuration/entityTypes/Product/survivorshipGroups/default",
+          "default": true,
+          "mapping": [
+            {
+              "attribute": "configuration/entityTypes/Product/attributes/Pricing",
+              "survivorshipStrategy": "Aggregation"
+            }
+          ]
+        }
+      ],
+      "abstract": true,
+      "imageAttributeURIs": [
+        "configuration/entityTypes/Product/attributes/ImageLinks"
+      ]
+    },
+    {
+      "uri": "configuration/entityTypes/ProductGroup",
+      "label": "Product Group",
+      "description": "Product Group",
+      "typeColor": "#0011FF",
+      "typeIcon": "images/base_type/product-group.png",
+      "typeImage": "images/defaultImage/product-group.png",
+      "typeGraphIcon": "images/graphIcon/product-group-icon.png",
+      "extendsTypeURI": "configuration/entityTypes/Entity",
+      "attributes": [
+        {
+          "uri": "configuration/entityTypes/ProductGroup/attributes/Name",
+          "hidden": "false"
+        },
+        {
+          "label": "Type",
+          "name": "Type",
+          "type": "String",
+          "hidden": false,
+          "uri": "configuration/entityTypes/ProductGroup/attributes/Type"
+        },
+        {
+          "label": "Status",
+          "name": "Status",
+          "type": "String",
+          "hidden": false,
+          "uri": "configuration/entityTypes/ProductGroup/attributes/Status"
+        },
+        {
+          "label": "Start Date",
+          "name": "StartDate",
+          "description": "Start Date",
+          "type": "Date",
+          "hidden": false,
+          "uri": "configuration/entityTypes/ProductGroup/attributes/StartDate"
+        },
+        {
+          "label": "End Date",
+          "name": "EndDate",
+          "description": "End Date",
+          "type": "Date",
+          "hidden": false,
+          "uri": "configuration/entityTypes/ProductGroup/attributes/EndDate"
+        },
+        {
+          "uri": "configuration/entityTypes/ProductGroup/attributes/Identifiers"
+        }
+      ],
+      "dataLabelPattern": "{Name} ({Type})",
+      "secondaryLabelPattern": "{Addresses.City}  {Addresses.StateProvince}",
+      "abstract": false,
+      "imageAttributeURIs": [
+        "configuration/entityTypes/ProductGroup/attributes/ImageLinks"
+      ],
+      "matchGroups": [
+        {
+          "uri": "configuration/entityTypes/ProductGroup/matchGroups/ProductGroupRule1",
+          "label": "Rule 1: Suspect ProductGroup match by exact(Name, Group Type)",
+          "type": "suspect",
+          "rule": {
+            "and": {
+              "exact": [
+                "configuration/entityTypes/ProductGroup/attributes/Name",
+                "configuration/entityTypes/ProductGroup/attributes/Type"
+              ]
+            }
+          },
+          "scoreStandalone": 0,
+          "scoreIncremental": 0
+        },
+        {
+          "uri": "configuration/entityTypes/ProductGroup/matchGroups/ProductGroupRule2",
+          "label": "Rule 2: Suspect ProductGroup match by fuzzy(Name) & exact(Group Type)",
+          "type": "suspect",
+          "rule": {
+            "and": {
+              "exact": [
+                "configuration/entityTypes/ProductGroup/attributes/Type"
+              ],
+              "fuzzy": [
+                "configuration/entityTypes/ProductGroup/attributes/Name"
+              ]
+            },
+            "comparatorClasses": {
+              "mapping": [
+                {
+                  "attribute": "configuration/entityTypes/ProductGroup/attributes/Name",
+                  "class": "com.reltio.match.comparator.MetaphoneComparator"
+                }
+              ]
+            },
+            "matchTokenClasses": {
+              "mapping": [
+                {
+                  "attribute": "configuration/entityTypes/ProductGroup/attributes/Name",
+                  "class": "com.reltio.match.token.FuzzyTextMatchToken"
+                }
+              ]
+            }
+          },
+          "scoreStandalone": 0,
+          "scoreIncremental": 0
+        }
+      ]
+    },
+    {
+      "uri": "configuration/entityTypes/GenericProduct",
+      "label": "Product",
+      "typeColor": "#22fe00",
+      "typeIcon": "images/base_type/product-icon4-c.png",
+      "typeImage": "images/defaultImage/no-product4.png",
+      "typeGraphIcon": "images/graphIcon/product-icon4.png",
+      "extendsTypeURI": "configuration/entityTypes/Product",
+      "attributes": [
+        {
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Identifiers",
+          "hidden": "false"
+        },
+        {
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Name",
+          "hidden": "false"
+        },
+        {
+          "uri": "configuration/entityTypes/GenericProduct/attributes/BrandName"
+        },
+        {
+          "uri": "configuration/entityTypes/GenericProduct/attributes/GTIN"
+        },
+        {
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Description",
+          "hidden": "false"
+        },
+        {
+          "uri": "configuration/entityTypes/GenericProduct/attributes/DocumentLinks",
+          "hidden": "false"
+        },
+        {
+          "uri": "configuration/entityTypes/GenericProduct/attributes/ImageLinks",
+          "hidden": "false"
+        },
+        {
+          "uri": "configuration/entityTypes/GenericProduct/attributes/ImageLinks",
+          "hidden": "false"
+        },
+        {
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Type"
+        },
+        {
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Identifiers"
+        },
+        {
+          "label": "MobileDocumentLinks",
+          "name": "MobileDocumentLinks",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/MobileDocumentLinks"
+        },
+        {
+          "label": "Availability",
+          "name": "Availability",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Availability"
+        },
+        {
+          "label": "AvailabilityDate",
+          "name": "AvailabilityDate",
+          "type": "Date",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/AvailabilityDate"
+        },
+        {
+          "label": "ExpirationDate",
+          "name": "ExpirationDate",
+          "type": "Date",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/ExpirationDate"
+        },
+        {
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Pricing/attributes/Price",
+          "hidden": "false"
+        },
+        {
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Pricing/attributes/Type",
+          "hidden": "false"
+        },
+        {
+          "label": "Pricing/attributes/EffectiveDate",
+          "name": "Pricing/attributes/EffectiveDate",
+          "type": "Date",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Pricing/attributes/EffectiveDate"
+        },
+        {
+          "label": "COGS",
+          "name": "COGS",
+          "type": "Nested",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/COGS"
+        },
+        {
+          "label": "COGS/attributes/Value",
+          "name": "COGS/attributes/Value",
+          "type": "Number",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/COGS/attributes/Value"
+        },
+        {
+          "label": "COGS/attributes/Currency",
+          "name": "COGS/attributes/Currency",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/COGS/attributes/Currency"
+        },
+        {
+          "label": "UnitPricingMeasure",
+          "name": "UnitPricingMeasure",
+          "type": "Nested",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/UnitPricingMeasure"
+        },
+        {
+          "label": "UnitPricingMeasure/attributes/Value",
+          "name": "UnitPricingMeasure/attributes/Value",
+          "type": "Number",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/UnitPricingMeasure/attributes/Value"
+        },
+        {
+          "label": "UnitPricingMeasure/attributes/Units",
+          "name": "UnitPricingMeasure/attributes/Units",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/UnitPricingMeasure/attributes/Units"
+        },
+        {
+          "label": "UnitPricingBaseMeasure",
+          "name": "UnitPricingBaseMeasure",
+          "type": "Nested",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/UnitPricingBaseMeasure"
+        },
+        {
+          "label": "UnitPricingBaseMeasure.attributes.Value",
+          "name": "UnitPricingBaseMeasure.attributes.Value",
+          "type": "Integer",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/UnitPricingBaseMeasure.attributes.Value"
+        },
+        {
+          "label": "UnitPricingBaseMeasure.attributes.Units",
+          "name": "UnitPricingBaseMeasure.attributes.Units",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/UnitPricingBaseMeasure.attributes.Units"
+        },
+        {
+          "label": "Installment",
+          "name": "Installment",
+          "type": "Nested",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Installment"
+        },
+        {
+          "label": "Installment.attributes.Months",
+          "name": "Installment.attributes.Months",
+          "type": "Number",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Installment.attributes.Months"
+        },
+        {
+          "label": "Installment.attributes.Amount",
+          "name": "Installment.attributes.Amount",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Installment.attributes.Amount"
+        },
+        {
+          "label": "Installment.attributes.Currency",
+          "name": "Installment.attributes.Currency",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Installment.attributes.Currency"
+        },
+        {
+          "label": "LoyaltyPoints",
+          "name": "LoyaltyPoints",
+          "type": "Nested",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/LoyaltyPoints"
+        },
+        {
+          "label": "LoyaltyPoints.Number",
+          "name": "LoyaltyPoints.Number",
+          "type": "Number",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/LoyaltyPoints.Number"
+        },
+        {
+          "label": "LoyaltyPoints.Name",
+          "name": "LoyaltyPoints.Name",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/LoyaltyPoints.Name"
+        },
+        {
+          "label": "LoyaltyPoints.Ratio",
+          "name": "LoyaltyPoints.Ratio",
+          "type": "Number",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/LoyaltyPoints.Ratio"
+        },
+        {
+          "label": "IdentifierExists",
+          "name": "IdentifierExists",
+          "type": "Boolean",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/IdentifierExists"
+        },
+        {
+          "label": "Condition",
+          "name": "Condition",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Condition"
+        },
+        {
+          "label": "Adult",
+          "name": "Adult",
+          "type": "Boolean",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Adult"
+        },
+        {
+          "label": "Miltipack",
+          "name": "Miltipack",
+          "type": "Number",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Miltipack"
+        },
+        {
+          "label": "IsBundle",
+          "name": "IsBundle",
+          "type": "Boolean",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/IsBundle"
+        },
+        {
+          "label": "EnergyEfficiencyClass",
+          "name": "EnergyEfficiencyClass",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/EnergyEfficiencyClass"
+        },
+        {
+          "label": "MinEnergyEfficiencyClass",
+          "name": "MinEnergyEfficiencyClass",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/MinEnergyEfficiencyClass"
+        },
+        {
+          "label": "MaxEnergyEfficiencyClass",
+          "name": "MaxEnergyEfficiencyClass",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/MaxEnergyEfficiencyClass"
+        },
+        {
+          "label": "AgeGroup",
+          "name": "AgeGroup",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/AgeGroup"
+        },
+        {
+          "label": "Color",
+          "name": "Color",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Color"
+        },
+        {
+          "label": "Gender",
+          "name": "Gender",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Gender"
+        },
+        {
+          "label": "Material",
+          "name": "Material",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Material"
+        },
+        {
+          "label": "Pattern",
+          "name": "Pattern",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Pattern"
+        },
+        {
+          "label": "Size",
+          "name": "Size",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Size"
+        },
+        {
+          "label": "SizeType",
+          "name": "SizeType",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/SizeType"
+        },
+        {
+          "label": "SizeSystem",
+          "name": "SizeSystem",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/SizeSystem"
+        },
+        {
+          "label": "ItemGroupID",
+          "name": "ItemGroupID",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/ItemGroupID"
+        },
+        {
+          "label": "AdwordsRedirect",
+          "name": "AdwordsRedirect",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/AdwordsRedirect"
+        },
+        {
+          "label": "CustomLabel",
+          "name": "CustomLabel",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/CustomLabel"
+        },
+        {
+          "label": "PromotionId",
+          "name": "PromotionId",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/PromotionId"
+        },
+        {
+          "label": "ExcludedDestination",
+          "name": "ExcludedDestination",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/ExcludedDestination"
+        },
+        {
+          "label": "IncludedDestination",
+          "name": "IncludedDestination",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/IncludedDestination"
+        },
+        {
+          "label": "Shipping",
+          "name": "Shipping",
+          "type": "Nested",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Shipping"
+        },
+        {
+          "label": "Shipping.attributes.Cost",
+          "name": "Shipping.attributes.Cost",
+          "type": "Number",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Shipping.attributes.Cost"
+        },
+        {
+          "label": "Shipping.attributes.Currency",
+          "name": "Shipping.attributes.Currency",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Shipping.attributes.Currency"
+        },
+        {
+          "label": "Shipping.attributes.Country",
+          "name": "Shipping.attributes.Country",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Shipping.attributes.Country"
+        },
+        {
+          "label": "Shipping.attributes.PostalOfLocation",
+          "name": "Shipping.attributes.PostalOfLocation",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Shipping.attributes.PostalOfLocation"
+        },
+        {
+          "label": "Shipping.Service",
+          "name": "Shipping.Service",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Shipping.Service"
+        },
+        {
+          "label": "ShippingLabel",
+          "name": "ShippingLabel",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/ShippingLabel"
+        },
+        {
+          "uri": "configuration/entityTypes/GenericProduct/attributes/PackageWeight",
+          "hidden": "false"
+        },
+        {
+          "uri": "configuration/entityTypes/GenericProduct/attributes/PackageLength",
+          "hidden": "false"
+        },
+        {
+          "uri": "configuration/entityTypes/GenericProduct/attributes/PackageWidth",
+          "hidden": "false"
+        },
+        {
+          "uri": "configuration/entityTypes/GenericProduct/attributes/PackageHeight",
+          "hidden": "false"
+        },
+        {
+          "label": "HandlingTime",
+          "name": "HandlingTime",
+          "type": "Nested",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/HandlingTime"
+        },
+        {
+          "label": "HandlingTime.MinDays",
+          "name": "HandlingTime.MinDays",
+          "type": "Number",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/HandlingTime.MinDays"
+        },
+        {
+          "label": "HandlingTime.MaxDays",
+          "name": "HandlingTime.MaxDays",
+          "type": "Number",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/HandlingTime.MaxDays"
+        },
+        {
+          "label": "Tax",
+          "name": "Tax",
+          "type": "Nested",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Tax"
+        },
+        {
+          "label": "Tax.Rate",
+          "name": "Tax.Rate",
+          "type": "Number",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Tax.Rate"
+        },
+        {
+          "label": "Tax.Currency",
+          "name": "Tax.Currency",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Tax.Currency"
+        },
+        {
+          "label": "Tax.Country",
+          "name": "Tax.Country",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Tax.Country"
+        },
+        {
+          "label": "Tax.PostalOrLocation",
+          "name": "Tax.PostalOrLocation",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Tax.PostalOrLocation"
+        },
+        {
+          "label": "Tax.TaxOnShipping",
+          "name": "Tax.TaxOnShipping",
+          "type": "Boolean",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/Tax.TaxOnShipping"
+        },
+        {
+          "label": "TaxCategory",
+          "name": "TaxCategory",
+          "type": "String",
+          "uri": "configuration/entityTypes/GenericProduct/attributes/TaxCategory"
+        }
+      ],
+      "dataLabelPattern": "[[{Market}]] - {Name} {ProductStrength}",
+      "abstract": false,
+      "imageAttributeURIs": [
+        "configuration/entityTypes/GenericProduct/attributes/ImageLinks"
+      ],
+      "matchGroups": [
+        {
+          "uri": "configuration/entityTypes/GenericProduct/matchGroups/GenericProductNegRule1",
+          "label": "Neg Rule1: Products should not match or they are in different markets.",
+          "type": "suspect",
+          "negativeRule": {
+            "notExactSame": [
+              "configuration/entityTypes/GenericProduct/attributes/Market"
+            ]
+          }
+        },
+        {
+          "uri": "configuration/entityTypes/GenericProduct/matchGroups/GenericProductRule1",
+          "label": "Rule 1: Suspect GenericProduct match by exact(ID)",
+          "type": "suspect",
+          "rule": {
+            "and": {
+              "exact": [
+                "configuration/entityTypes/GenericProduct/attributes/Identifiers/attributes/Type",
+                "configuration/entityTypes/GenericProduct/attributes/Identifiers/attributes/ID",
+                "configuration/entityTypes/GenericProduct/attributes/Market"
+              ]
+            }
+          },
+          "scoreStandalone": 0,
+          "scoreIncremental": 0
+        },
+        {
+          "uri": "configuration/entityTypes/GenericProduct/matchGroups/GenericProductRule2",
+          "label": "Rule 2: Suspect GenericProduct match by exact(Product Name)",
+          "type": "suspect",
+          "rule": {
+            "and": {
+              "exact": [
+                "configuration/entityTypes/GenericProduct/attributes/Name",
+                "configuration/entityTypes/GenericProduct/attributes/Market"
+              ]
+            }
+          },
+          "scoreStandalone": 0,
+          "scoreIncremental": 0
+        },
+        {
+          "uri": "configuration/entityTypes/GenericProduct/matchGroups/GenericProductRule3",
+          "label": "Rule 3: Suspect GenericProduct match by fuzzy(Product Name) & exact(Strength Description)",
+          "type": "suspect",
+          "rule": {
+            "and": {
+              "exactOrNull": [
+                "configuration/entityTypes/GenericProduct/attributes/ProductStrength/attributes/NumeratorValue",
+                "configuration/entityTypes/GenericProduct/attributes/ProductStrength/attributes/NumeratorUnit",
+                "configuration/entityTypes/GenericProduct/attributes/ProductStrength/attributes/DenominatorValue",
+                "configuration/entityTypes/GenericProduct/attributes/ProductStrength/attributes/DenominatorUnit",
+                "configuration/entityTypes/GenericProduct/attributes/Market"
+              ],
+              "fuzzy": [
+                "configuration/entityTypes/GenericProduct/attributes/Name"
+              ]
+            },
+            "comparatorClasses": {
+              "mapping": [
+                {
+                  "attribute": "configuration/entityTypes/GenericProduct/attributes/Name",
+                  "class": "com.reltio.match.comparator.MetaphoneComparator"
+                }
+              ]
+            },
+            "matchTokenClasses": {
+              "mapping": [
+                {
+                  "attribute": "configuration/entityTypes/GenericProduct/attributes/Name",
+                  "class": "com.reltio.match.token.FuzzyTextMatchToken"
+                }
+              ]
+            }
+          },
+          "scoreStandalone": 0,
+          "scoreIncremental": 0
+        }
+      ]
+    }
+  ],
+  "relationTypes": [
+    {
+      "uri": "configuration/relationTypes/HasPeer",
+      "label": "Peer Product",
+      "typeColor": "#28945B",
+      "startObject": {
+        "directionalContext": [
+          {
+            "labelPattern": "is peer of "
+          }
+        ],
+        "objectTypeURI": "configuration/entityTypes/Entity"
+      },
+      "endObject": {
+        "directionalContext": [
+          {
+            "labelPattern": "is peer of"
+          }
+        ],
+        "objectTypeURI": "configuration/entityTypes/Entity"
+      },
+      "implicit": false,
+      "direction": "bidirectional"
+    },
+    {
+      "uri": "configuration/relationTypes/HasCompetitor",
+      "label": "Has Competitor",
+      "typeColor": "#FF00E7",
+      "startObject": {
+        "directionalContext": [
+          {
+            "labelPattern": "is Competitor of "
+          }
+        ],
+        "objectTypeURI": "configuration/entityTypes/Entity"
+      },
+      "endObject": {
+        "directionalContext": [
+          {
+            "labelPattern": "is Competitor of"
+          }
+        ],
+        "objectTypeURI": "configuration/entityTypes/Entity"
+      },
+      "implicit": false,
+      "direction": "bidirectional"
+    },
+    {
+      "uri": "configuration/relationTypes/SameProduct",
+      "label": "Has Market Product",
+      "typeColor": "#FFC100",
+      "startObject": {
+        "directionalContext": [
+          {
+            "labelPattern": "is a market product with"
+          }
+        ],
+        "objectTypeURI": "configuration/entityTypes/Product"
+      },
+      "endObject": {
+        "directionalContext": [
+          {
+            "labelPattern": "is a market product with"
+          }
+        ],
+        "objectTypeURI": "configuration/entityTypes/Product"
+      },
+      "implicit": false,
+      "direction": "bidirectional"
+    },
+    {
+      "uri": "configuration/relationTypes/isIngredientOf",
+      "label": "Ingredient",
+      "typeColor": "#C321BC",
+      "startObject": {
+        "directionalContext": [
+          {
+            "labelPattern": "is made with"
+          }
+        ],
+        "objectTypeURI": "configuration/entityTypes/Entity"
+      },
+      "endObject": {
+        "directionalContext": [
+          {
+            "labelPattern": "is an ingredient of "
+          }
+        ],
+        "objectTypeURI": "configuration/entityTypes/Entity"
+      },
+      "implicit": false,
+      "attributes": [
+        {
+          "label": "Numerator Value",
+          "name": "NumeratorValue",
+          "type": "Number",
+          "hidden": false,
+          "uri": "configuration/relationTypes/isIngredientOf/attributes/NumeratorValue"
+        },
+        {
+          "label": "Numerator Unit",
+          "name": "NumeratorUnit",
+          "type": "String",
+          "hidden": false,
+          "uri": "configuration/relationTypes/isIngredientOf/attributes/NumeratorUnit"
+        },
+        {
+          "label": "Denominator Value",
+          "name": "DenominatorValue",
+          "type": "Number",
+          "hidden": false,
+          "uri": "configuration/relationTypes/isIngredientOf/attributes/DenominatorValue"
+        },
+        {
+          "label": "Denominator Unit",
+          "name": "DenominatorUnit",
+          "type": "String",
+          "hidden": false,
+          "uri": "configuration/relationTypes/isIngredientOf/attributes/DenominatorUnit"
+        }
+      ],
+      "direction": "directed"
+    },
+    {
+      "uri": "configuration/relationTypes/HasProductGroup",
+      "label": "Has Product Group",
+      "typeColor": "#E78A15",
+      "startObject": {
+        "directionalContext": [
+          {
+            "labelPattern": "is a member of Group"
+          }
+        ],
+        "objectTypeURI": "configuration/entityTypes/Entity"
+      },
+      "endObject": {
+        "directionalContext": [
+          {
+            "labelPattern": "has as a member"
+          }
+        ],
+        "objectTypeURI": "configuration/entityTypes/ProductGroup"
+      },
+      "implicit": false,
+      "direction": "directed"
+    },
+    {
+      "uri": "configuration/relationTypes/isMarketingHolder",
+      "label": "is Marketed by",
+      "typeColor": "#9115E7",
+      "startObject": {
+        "directionalContext": [
+          {
+            "labelPattern": "is marketing product"
+          }
+        ],
+        "objectTypeURI": "configuration/entityTypes/Organization"
+      },
+      "endObject": {
+        "directionalContext": [
+          {
+            "labelPattern": "is Marketed by"
+          }
+        ],
+        "objectTypeURI": "configuration/entityTypes/Entity"
+      },
+      "implicit": false,
+      "direction": "directed"
+    },
+    {
+      "uri": "configuration/relationTypes/HasManufacturer",
+      "label": "Manufacturer",
+      "typeColor": "#AA3D44",
+      "startObject": {
+        "directionalContext": [
+          {
+            "labelPattern": "is manufacturer of"
+          }
+        ],
+        "objectTypeURI": "configuration/entityTypes/Organization"
+      },
+      "endObject": {
+        "directionalContext": [
+          {
+            "labelPattern": "is manufactured by"
+          }
+        ],
+        "objectTypeURI": "configuration/entityTypes/Entity"
+      },
+      "implicit": false,
+      "direction": "directed"
+    },
+    {
+      "uri": "configuration/relationTypes/GroupToGroup",
+      "label": "Child Product Group",
+      "typeColor": "#C9225D",
+      "startObject": {
+        "directionalContext": [
+          {
+            "labelPattern": "has sub-group"
+          }
+        ],
+        "objectTypeURI": "configuration/entityTypes/ProductGroup"
+      },
+      "endObject": {
+        "directionalContext": [
+          {
+            "labelPattern": "belongs to group"
+          }
+        ],
+        "objectTypeURI": "configuration/entityTypes/ProductGroup"
+      },
+      "implicit": false,
+      "direction": "directed"
+    }
+  ],
+  "graphTypes": [
+    {
+      "uri": "configuration/graphTypes/ProductGroupHierarchy",
+      "label": "Product Group Hierarchy",
+      "limitMemberToOneGraphInstance": false,
+      "type": "logical",
+      "layout": "hierarchy",
+      "allowCycles": false,
+      "relationshipTypeURIs": [
+        "configuration/relationTypes/GroupToGroup"
+      ],
+      "graphStructure": "hierarchy"
+    },
+    {
+      "uri": "configuration/graphTypes/ProductMarketHierarchy",
+      "label": "Alternate Product Hierarchy",
+      "limitMemberToOneGraphInstance": false,
+      "type": "logical",
+      "layout": "hierarchy",
+      "allowCycles": false,
+      "relationshipTypeURIs": [
+        "configuration/relationTypes/HasProductGroup"
+      ],
+      "graphStructure": "hierarchy"
+    }
+  ],
+  "changeRequestTypes": [
+    {
+      "uri": "configuration/changeRequestTypes/default"
+    }
+  ],
+  "survivorshipStrategies": [
+    {
+      "uri": "configuration/survivorshipStrategies/CleanserWinsStrategy",
+      "label": "Reltio Cleanser or Nothing",
+      "winnerSourceType": "configuration/sources/ReltioCleanser",
+      "winnerSourceAttributes": [
+        "configuration/entityTypes/Location/attributes/AddressLine1"
+      ]
+    }
+  ]
+}
+

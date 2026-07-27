@@ -1,0 +1,1714 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://reltio.com/schemas/reltio-metadata.schema.json",
+  "title": "Reltio Business Model Configuration",
+  "description": "Schema for Reltio tenant metadata configuration files (*.reltio.json). Covers all 17 top-level sections and ~80 complex types as defined by the official RBMschema-for-json.xsd.",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string", "description": "JSON Schema reference for inline validation" },
+    "schemaVersion": { "type": "string", "description": "Schema version identifier" },
+    "createdTime": { "type": "integer", "description": "Creation timestamp (epoch millis)" },
+    "updatedTime": { "type": "integer", "description": "Last update timestamp (epoch millis)" },
+    "createdBy": { "type": "string", "description": "Creator identifier" },
+    "updatedBy": { "type": "string", "description": "Last updater identifier" },
+    "referenceConfigurationURI": { "type": "string", "description": "URI of the reference configuration this extends" },
+    "abstract": { "type": "boolean", "description": "Whether this configuration is abstract (template only)" },
+    "flatOvCalculation": { "type": "boolean", "description": "Enable flat OV calculation mode" },
+    "label": { "type": "string", "description": "Human-readable label for this configuration" },
+    "uri": { "type": "string", "description": "Unique URI for this configuration" },
+    "rdmTenantId": { "type": "string", "description": "RDM tenant identifier" },
+    "pinIgnoredPriority": { "type": "array", "items": { "type": "string" }, "description": "List of pin-ignored priority values" },
+    "description": { "type": "string", "description": "Free-text description of this configuration" },
+    "attributeTypes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/AttributeTypeDefinition" },
+      "description": "Global attribute type definitions"
+    },
+    "entityTypes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/EntityType" },
+      "description": "Entity type definitions"
+    },
+    "changeRequestTypes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ChangeRequestType" },
+      "description": "Change request type definitions"
+    },
+    "roles": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Role" },
+      "description": "Role definitions"
+    },
+    "groupTypes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/GroupType" },
+      "description": "Group type definitions"
+    },
+    "matchActions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/MatchAction" },
+      "description": "Match action definitions"
+    },
+    "relationTypes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/RelationType" },
+      "description": "Relation type definitions"
+    },
+    "interactionTypes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/InteractionType" },
+      "description": "Interaction type definitions"
+    },
+    "graphTypes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/GraphType" },
+      "description": "Graph type definitions"
+    },
+    "categoryTypes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/CategoryType" },
+      "description": "Category type definitions"
+    },
+    "survivorshipStrategies": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/SurvivorshipStrategy" },
+      "description": "Survivorship strategy definitions"
+    },
+    "sources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Source" },
+      "description": "Source system definitions"
+    },
+    "ratings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Rating" },
+      "description": "Rating configurations"
+    },
+    "activity": {
+      "$ref": "#/$defs/Activity",
+      "description": "Activity configuration"
+    },
+    "groupingTypes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/GroupingType" },
+      "description": "Grouping type definitions"
+    },
+    "hierarchyTypes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/HierarchyType" },
+      "description": "Hierarchy type definitions"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "AttributeTypeDefinition": {
+      "type": "object",
+      "description": "Global attribute type definition",
+      "properties": {
+        "uri": { "type": "string", "description": "Unique URI for this attribute type" },
+        "valueType": { "type": "string", "description": "The value type of this attribute type" },
+        "extendsTypeURI": { "type": "string", "description": "URI of the attribute type this extends" },
+        "matchTokenClass": { "$ref": "#/$defs/GenericMatchTokenClassMapping" },
+        "comparatorClass": { "$ref": "#/$defs/GenericComparatorClassMapping" }
+      },
+      "additionalProperties": false
+    },
+    "EntityType": {
+      "type": "object",
+      "description": "Entity type definition",
+      "required": ["uri", "label"],
+      "properties": {
+        "uri": { "type": "string", "description": "Unique URI for this entity type (required)" },
+        "label": { "type": "string", "description": "Human-readable label" },
+        "typeIcon": { "type": "string", "description": "Icon identifier for UI display" },
+        "typeImage": { "type": "string", "description": "Image URL for UI display" },
+        "typeGraphIcon": { "type": "string", "description": "Graph view icon identifier" },
+        "typeColor": { "type": "string", "description": "Color for UI display" },
+        "entitySmartLogic": { "type": "string", "description": "Smart logic configuration identifier" },
+        "abstract": { "type": "boolean", "description": "Whether this entity type is abstract" },
+        "singleDefaultCrosswalk": { "type": "boolean", "description": "Limit to a single default crosswalk" },
+        "skipValidationForAbstractType": { "type": "boolean", "description": "Skip validation for abstract types" },
+        "matchBeforeCreate": { "type": "boolean", "description": "Run matching before creating new entities", "default": true },
+        "configurationLessMatching": { "type": "boolean", "description": "Enable configuration-less matching" },
+        "cleanseInputObjectBeforeOverwrite": { "type": "boolean", "description": "Cleanse input before overwriting", "default": true },
+        "searchable": { "type": "boolean", "description": "Whether this entity type is searchable" },
+        "validateRequiredAttributes": { "type": "boolean", "description": "Validate that required attributes are present" },
+        "overrideIgnorePin": { "type": "boolean", "description": "Override pin ignore behavior" },
+        "uniqueGeneratedValuePerEntityPerRequest": { "type": "boolean", "description": "Ensure unique generated values per entity per request" },
+        "ignoreWarnings": { "type": "boolean", "description": "Suppress configuration warnings" },
+        "ignoreNonOVChangesWhenUpdateThroughReferencedEntity": { "type": "boolean", "description": "Ignore non-OV changes when updating through referenced entities" },
+        "useOnlyOvValuesInReferencedEntities": { "type": "boolean", "description": "Use only OV values in referenced entities" },
+        "forceOvForUiUpdates": { "type": "boolean", "description": "Force OV for UI updates" },
+        "defaultSurvivorshipStrategy": { "type": "string", "description": "Default survivorship strategy URI" },
+        "description": { "type": "string", "description": "Free-text description" },
+        "precedingCleanseProcedureUris": { "type": "array", "items": { "type": "string" }, "description": "URIs of cleanse procedures to run before" },
+        "succeedingCleanseProcedureUris": { "type": "array", "items": { "type": "string" }, "description": "URIs of cleanse procedures to run after" },
+        "cleanse": { "type": "array", "items": { "$ref": "#/$defs/CleanseInfo" }, "description": "Cleanse definitions" },
+        "dataPipelineConfig": { "$ref": "#/$defs/DataPipelineConfig", "description": "Data pipeline configuration" },
+        "cleanseConfig": { "$ref": "#/$defs/CleanseConfig", "description": "Cleanse configuration" },
+        "attributes": { "type": "array", "items": { "$ref": "#/$defs/Attribute" }, "description": "Attribute definitions" },
+        "activenessAttributes": { "$ref": "#/$defs/ActivenessAttributes", "description": "Activeness attribute configuration" },
+        "geoLocationAttributes": { "oneOf": [{ "$ref": "#/$defs/GeoAttributes" }, { "type": "array", "items": { "$ref": "#/$defs/GeoAttributes" } }], "description": "Geo-location attribute configuration" },
+        "dataLabelPattern": { "type": "string", "description": "Pattern for generating data labels" },
+        "secondaryLabelPattern": { "type": "string", "description": "Pattern for generating secondary labels" },
+        "dataTooltipPattern": { "type": "string", "description": "Pattern for generating tooltips" },
+        "entityTypeRoleURIs": { "type": "array", "items": { "type": "string" }, "description": "Role URIs associated with this entity type" },
+        "businessCardAttributeURIs": { "type": "array", "items": { "type": "string" }, "description": "Attribute URIs shown on business cards" },
+        "imageAttributeURIs": { "type": "array", "items": { "type": "string" }, "description": "Attribute URIs for images" },
+        "matchGroups": { "type": "array", "items": { "$ref": "#/$defs/MatchGroup" }, "description": "Match group definitions" },
+        "matchAssets": { "$ref": "#/$defs/MatchAssets", "description": "Match asset definitions" },
+        "associationGroups": { "type": "array", "items": { "$ref": "#/$defs/AssociationGroup" }, "description": "Association group definitions" },
+        "survivorshipGroups": { "type": "array", "items": { "$ref": "#/$defs/SurvivorshipGroup" }, "description": "Survivorship group definitions" },
+        "surrogateCrosswalks": { "type": "array", "items": { "$ref": "#/$defs/SurrogateCrosswalk" }, "description": "Surrogate crosswalk definitions" },
+        "defaultFacetedAttributes": { "type": "array", "items": { "type": "string" }, "description": "Default faceted attribute URIs" },
+        "defaultSearchAttributes": { "type": "array", "items": { "type": "string" }, "description": "Default search attribute URIs" },
+        "dependentAttributes": { "type": "array", "items": { "$ref": "#/$defs/DependentAttributes" }, "description": "Dependent attribute definitions" },
+        "lifecycleActions": { "description": "Lifecycle action configuration" },
+        "analyticsAttributes": { "oneOf": [{ "$ref": "#/$defs/AnalyticsAttributes" }, { "type": "array", "items": { "$ref": "#/$defs/AnalyticsAttributes" } }], "description": "Analytics attribute configuration" },
+        "extendsTypeURI": { "type": "string", "description": "URI of the entity type this extends" },
+        "hidden": {
+          "oneOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/HiddenEntityTypeConfiguration" } },
+            { "type": "object", "additionalProperties": true }
+          ],
+          "description": "Hidden entity type configurations or empty / map object (live L3 / samples)"
+        },
+        "unmerge": { "$ref": "#/$defs/EntityUnmerge", "description": "Unmerge configuration" },
+        "ruleBasedAttributes": { "type": "array", "items": { "$ref": "#/$defs/RuleBasedAttribute" }, "description": "Rule-based attribute definitions" },
+        "indexingConfig": { "$ref": "#/$defs/IndexingConfig", "description": "Indexing configuration" },
+        "groupLabels": { "type": "array", "items": { "type": "string" }, "description": "Group label values" },
+        "access": {
+          "description": "Access / security metadata from API (optional)",
+          "oneOf": [
+            { "type": "array", "items": { "type": "string" } },
+            { "type": "object", "additionalProperties": true },
+            { "type": "string" }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RelationType": {
+      "type": "object",
+      "description": "Relation type definition",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string", "description": "Unique URI for this relation type (required)" },
+        "label": { "type": "string", "description": "Human-readable label" },
+        "direction": { "type": "string", "description": "Relationship direction" },
+        "implicit": { "type": ["string", "boolean"], "description": "Whether this relation is implicit", "default": "false" },
+        "typeColor": { "type": "string", "description": "Color for UI display" },
+        "reverseOfTypeURIs": { "type": "string", "description": "URI of the reverse relation type" },
+        "singleDefaultCrosswalk": { "type": "boolean", "description": "Limit to a single default crosswalk" },
+        "sameAsTypeURIs": { "type": "string", "description": "URI of equivalent relation types" },
+        "validateRequiredAttributes": { "type": "boolean", "description": "Validate required attributes" },
+        "entityEndDateStrategy": { "$ref": "#/$defs/EntityEndDateStrategy", "description": "Strategy for entity end dates" },
+        "ignoreWarnings": { "type": "boolean", "description": "Suppress configuration warnings" },
+        "contributorCrosswalkSingleSourceUpdateMode": { "type": "boolean", "description": "Single source update mode for contributor crosswalks", "default": false },
+        "defaultSurvivorshipStrategy": { "type": "string", "description": "Default survivorship strategy URI" },
+        "description": { "type": "string", "description": "Free-text description" },
+        "precedingCleanseProcedureUris": { "type": "array", "items": { "type": "string" }, "description": "URIs of cleanse procedures to run before" },
+        "succeedingCleanseProcedureUris": { "type": "array", "items": { "type": "string" }, "description": "URIs of cleanse procedures to run after" },
+        "cleanse": { "type": "array", "items": { "$ref": "#/$defs/CleanseInfo" }, "description": "Cleanse definitions" },
+        "cleanseConfig": { "$ref": "#/$defs/CleanseConfig", "description": "Cleanse configuration" },
+        "attributes": { "type": "array", "items": { "$ref": "#/$defs/Attribute" }, "description": "Attribute definitions" },
+        "startObject": { "$ref": "#/$defs/RelationEndpoint", "description": "Start object endpoint" },
+        "endObject": { "$ref": "#/$defs/RelationEndpoint", "description": "End object endpoint" },
+        "activenessAttributes": { "$ref": "#/$defs/ActivenessAttributes", "description": "Activeness attribute configuration" },
+        "survivorshipGroups": { "type": "array", "items": { "$ref": "#/$defs/SurvivorshipGroup" }, "description": "Survivorship group definitions" },
+        "lifecycleActions": { "description": "Lifecycle action configuration" },
+        "extendsTypeURI": { "type": "string", "description": "URI of the relation type this extends" },
+        "dataPipelineConfig": { "$ref": "#/$defs/DataPipelineConfig", "description": "Data pipeline configuration" },
+        "analyticsAttributes": { "oneOf": [{ "$ref": "#/$defs/AnalyticsAttributes" }, { "type": "array", "items": { "$ref": "#/$defs/AnalyticsAttributes" } }], "description": "Analytics attribute configuration" },
+        "indexingConfig": { "$ref": "#/$defs/IndexingConfig", "description": "Indexing configuration" },
+        "access": {
+          "description": "Access / security metadata from API (optional)",
+          "oneOf": [
+            { "type": "array", "items": { "type": "string" } },
+            { "type": "object", "additionalProperties": true },
+            { "type": "string" }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RelationEndpoint": {
+      "type": "object",
+      "description": "Relation endpoint (startObject / endObject)",
+      "properties": {
+        "objectTypeURI": { "type": "string", "description": "URI of the object type at this endpoint" },
+        "uri": { "type": "string", "description": "URI of this endpoint" },
+        "directionalContext": { "type": "array", "items": { "$ref": "#/$defs/DirectionalContext" }, "description": "Directional context definitions" }
+      },
+      "additionalProperties": false
+    },
+    "DirectionalContext": {
+      "type": "object",
+      "description": "Directional context on a relation endpoint",
+      "properties": {
+        "labelPattern": { "type": "string", "description": "Label pattern for this direction" },
+        "uri": { "type": "string", "description": "URI for this directional context" },
+        "rule": {
+          "oneOf": [
+            { "$ref": "#/$defs/EndpointRule" },
+            { "type": "array", "items": { "$ref": "#/$defs/EndpointRule" } }
+          ],
+          "description": "Single rule or list of rules (live L3 may use an array)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "EndpointRule": {
+      "type": "object",
+      "description": "Rule within a directional context",
+      "properties": {
+        "value": { "type": "string" },
+        "condition": { "type": "string" },
+        "type": { "type": "string" },
+        "attribute": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "ChangeRequestType": {
+      "type": "object",
+      "description": "Change request type definition",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string", "description": "Unique URI (required)" },
+        "lifecycleActions": { "description": "Lifecycle action configuration" }
+      },
+      "additionalProperties": false
+    },
+    "Role": {
+      "type": "object",
+      "description": "Role definition",
+      "required": ["uri", "label"],
+      "properties": {
+        "uri": { "type": "string", "description": "Unique URI (required)" },
+        "label": { "type": "string", "description": "Human-readable label (required)" },
+        "description": { "type": "string", "description": "Free-text description" },
+        "extendsTypeURI": { "type": "string", "description": "URI of the role this extends" }
+      },
+      "additionalProperties": false
+    },
+    "GroupType": {
+      "type": "object",
+      "description": "Group type definition",
+      "required": ["uri", "type", "label"],
+      "properties": {
+        "uri": { "type": "string", "description": "Unique URI (required)" },
+        "type": { "type": "string", "description": "Group type identifier (required)" },
+        "label": { "type": "string", "description": "Human-readable label (required)" },
+        "limitMemberToOneGroupInstance": { "type": ["string", "boolean"], "default": "false" },
+        "multiplePrimaryMembers": { "type": ["string", "boolean"] },
+        "hasPrimaryMember": { "type": ["string", "boolean"] },
+        "ignoreWarnings": { "type": "boolean" },
+        "description": { "type": "string" },
+        "precedingCleanseProcedureUris": { "type": "array", "items": { "type": "string" } },
+        "succeedingCleanseProcedureUris": { "type": "array", "items": { "type": "string" } },
+        "cleanse": { "type": "array", "items": { "$ref": "#/$defs/CleanseInfo" } },
+        "cleanseConfig": { "$ref": "#/$defs/CleanseConfig" },
+        "attributes": { "type": "array", "items": { "$ref": "#/$defs/Attribute" } },
+        "dataLabelPattern": { "type": "string" },
+        "dataTooltipPattern": { "type": "string" },
+        "groupElements": {
+          "oneOf": [
+            { "$ref": "#/$defs/GroupElement" },
+            { "type": "array", "items": { "$ref": "#/$defs/GroupElement" } },
+            { "type": "object", "additionalProperties": true }
+          ],
+          "description": "Single element, array, or free-form object (live L3)"
+        },
+        "memberTypes": { "type": "array", "items": { "$ref": "#/$defs/MemberType" } },
+        "survivorshipGroups": { "type": "array", "items": { "$ref": "#/$defs/SurvivorshipGroup" } },
+        "lifecycleActions": { "description": "Lifecycle action configuration" }
+      },
+      "additionalProperties": false
+    },
+    "MatchAction": {
+      "type": "object",
+      "description": "Match action definition",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "description": "Match action name (required)" },
+        "mapping": { "type": "array", "items": { "$ref": "#/$defs/MatchActionMapping" }, "description": "Action mappings" }
+      },
+      "additionalProperties": false
+    },
+    "MatchActionMapping": {
+      "type": "object",
+      "required": ["class"],
+      "properties": {
+        "class": { "type": "string", "description": "Mapping class (required)" },
+        "parameters": { "type": "array", "items": { "$ref": "#/$defs/MatchAttributeParameter" } }
+      },
+      "additionalProperties": false
+    },
+    "InteractionType": {
+      "type": "object",
+      "description": "Interaction type definition",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string", "description": "Unique URI (required)" },
+        "label": { "type": "string" },
+        "ignoreWarnings": { "type": "boolean" },
+        "attributes": { "type": "array", "items": { "$ref": "#/$defs/InteractionAttribute" } },
+        "memberTypes": { "type": "array", "items": { "$ref": "#/$defs/MemberType" } },
+        "groupKeyAttributeUris": { "type": "array", "items": { "type": "string" } },
+        "extendsTypeURI": { "type": "string" },
+        "ignoreUniqueness": { "type": "boolean" },
+        "hasMembers": { "type": "boolean" },
+        "lifecycleActions": { "description": "Lifecycle action configuration" },
+        "dataPipelineConfig": { "$ref": "#/$defs/DataPipelineConfig" }
+      },
+      "additionalProperties": false
+    },
+    "GraphType": {
+      "type": "object",
+      "description": "Graph type definition",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string", "description": "Unique URI (required)" },
+        "label": { "type": "string" },
+        "allowCycles": { "type": ["string", "boolean"] },
+        "layout": { "type": "string" },
+        "type": { "type": "string" },
+        "limitMemberToOneGraphInstance": { "type": ["string", "boolean"] },
+        "graphStructure": { "type": "string" },
+        "ignoreWarnings": { "type": "boolean" },
+        "description": { "type": "string" },
+        "relationshipTypeURIs": { "type": "array", "items": { "type": "string" } },
+        "lifecycleActions": { "description": "Lifecycle action configuration" }
+      },
+      "additionalProperties": false
+    },
+    "CategoryType": {
+      "type": "object",
+      "description": "Category type definition",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string", "description": "Unique URI (required)" },
+        "label": { "type": "string" },
+        "typeGraphIcon": { "type": "string" },
+        "typeImage": { "type": "string" },
+        "typeIcon": { "type": "string" },
+        "typeColor": { "type": "string" },
+        "singleDefaultCrosswalk": { "type": "boolean" },
+        "abstract": { "type": "boolean" },
+        "ignoreWarnings": { "type": "boolean" },
+        "description": { "type": "string" },
+        "precedingCleanseProcedureUris": { "type": "array", "items": { "type": "string" } },
+        "succeedingCleanseProcedureUris": { "type": "array", "items": { "type": "string" } },
+        "cleanse": { "type": "array", "items": { "$ref": "#/$defs/CleanseInfo" } },
+        "cleanseConfig": { "$ref": "#/$defs/CleanseConfig" },
+        "attributes": { "type": "array", "items": { "$ref": "#/$defs/Attribute" } },
+        "dataLabelPattern": { "type": "string" },
+        "secondaryLabelPattern": { "type": "string" },
+        "dataTooltipPattern": { "type": "string" },
+        "surrogateCrosswalks": { "type": "array", "items": { "$ref": "#/$defs/SurrogateCrosswalk" } },
+        "acceptableEntityTypes": { "type": "array", "items": { "type": "string" } },
+        "extendsTypeURI": { "type": "string" },
+        "lifecycleActions": { "description": "Lifecycle action configuration" }
+      },
+      "additionalProperties": false
+    },
+    "HierarchyType": {
+      "type": "object",
+      "description": "Hierarchy type definition",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string", "description": "Unique URI (required)" },
+        "label": { "type": "string" },
+        "allowedEntityTypes": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "SurvivorshipStrategy": {
+      "type": "object",
+      "description": "Survivorship strategy definition",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string", "description": "Unique URI (required)" },
+        "label": { "type": "string" },
+        "parentStrategyURI": { "type": "string" },
+        "mainSourceType": { "type": "string" },
+        "winnerSourceType": { "type": "string" },
+        "winnerSourceAttributes": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
+        "primaryAttributeUri": { "type": "string" },
+        "default": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "Source": {
+      "type": "object",
+      "description": "Source system definition",
+      "required": ["uri", "label", "abbreviation"],
+      "properties": {
+        "uri": { "type": "string", "description": "Unique URI (required)" },
+        "label": { "type": "string" },
+        "icon": { "type": "string" },
+        "abbreviation": { "type": "string" },
+        "priority": { "type": ["string", "number"] },
+        "autoGenerated": { "type": ["string", "boolean"], "description": "Auto-generation flag (live L3)" },
+        "generator": { "type": "string" },
+        "autoGenerationPattern": { "type": "string" },
+        "description": { "type": "string" },
+        "indexingConfig": { "$ref": "#/$defs/IndexingConfig" }
+      },
+      "additionalProperties": false
+    },
+    "Rating": {
+      "type": "object",
+      "description": "Rating configuration",
+      "properties": {
+        "sources": { "type": "array", "items": { "$ref": "#/$defs/MapEntry" } },
+        "userRoles": { "type": "array", "items": { "$ref": "#/$defs/MapEntry" } },
+        "timestamp": { "type": "integer" }
+      },
+      "additionalProperties": false
+    },
+    "Activity": {
+      "type": "object",
+      "description": "Activity configuration",
+      "properties": {
+        "uri": { "type": "string" },
+        "attributes": { "type": "array", "items": { "$ref": "#/$defs/ActivityAttribute" } }
+      },
+      "additionalProperties": false
+    },
+    "GroupingType": {
+      "type": "object",
+      "description": "Grouping type definition",
+      "required": ["uri", "entityType", "members"],
+      "properties": {
+        "uri": { "type": "string", "description": "Unique URI (required)" },
+        "label": { "type": "string" },
+        "source": { "type": "string" },
+        "entityType": { "type": "string", "description": "Entity type URI (required)" },
+        "groupForSingleEntity": { "type": "boolean" },
+        "description": { "type": "string" },
+        "members": { "type": "array", "items": { "$ref": "#/$defs/GroupingMember" }, "description": "Grouping members (required)" },
+        "attributeMappings": { "type": "array", "items": { "$ref": "#/$defs/GroupingAttributeMapping" } }
+      },
+      "additionalProperties": false
+    },
+    "Attribute": {
+      "type": "object",
+      "description": "Attribute definition (recursive — nested attributes contain further Attribute objects)",
+      "required": ["uri", "name", "type", "label"],
+      "properties": {
+        "uri": { "type": "string", "description": "Unique URI (required)" },
+        "type": { "type": "string", "description": "Attribute data type (e.g. String, Nested, Reference)" },
+        "name": { "type": "string", "description": "Attribute name" },
+        "label": { "type": "string", "description": "Human-readable label" },
+        "hidden": { "type": ["string", "boolean"], "description": "Whether this attribute is hidden" },
+        "important": { "type": ["string", "boolean"], "description": "Whether this attribute is important" },
+        "faceted": { "type": ["string", "boolean"], "description": "Whether this attribute is faceted for search" },
+        "searchable": { "type": ["string", "boolean"], "description": "Whether this attribute is searchable" },
+        "system": { "type": ["string", "boolean"], "description": "Whether this is a system attribute" },
+        "required": { "type": ["string", "boolean"], "description": "Whether this attribute is required" },
+        "prioritizeOv": { "type": ["string", "boolean"], "description": "Prioritize OV values" },
+        "matchOvOnly": { "type": ["string", "boolean"], "description": "Match OV values only" },
+        "matchFieldURIsIgnoreCase": { "type": ["string", "boolean"], "description": "Ignore case for match field URIs" },
+        "keyAttributeURIsIgnoreCase": { "type": ["string", "boolean"], "description": "Ignore case for key attribute URIs" },
+        "lookupCode2": { "type": "string", "description": "Secondary lookup code" },
+        "resolveLookupCode": { "type": ["string", "boolean"], "description": "Resolve lookup code setting" },
+        "survivorshipStrategy": { "type": "string", "description": "Survivorship strategy", "default": "LUD" },
+        "dataLabelPattern": { "type": "string", "description": "Pattern for data labels" },
+        "relationshipLabelPattern": { "type": "string", "description": "Pattern for relationship labels (reference attributes)" },
+        "relationshipTypeURI": { "type": "string", "description": "URI of the relationship type (reference attributes)" },
+        "referencedEntityTypeURI": { "type": "string", "description": "URI of the referenced entity type (reference attributes)" },
+        "referenceAttributeDirection": { "type": "string", "description": "Direction of the reference attribute" },
+        "autoGenerated": { "type": ["string", "boolean"], "description": "Auto-generation setting" },
+        "generator": { "type": "string", "description": "Generator identifier" },
+        "autoGenerationPattern": { "type": "string", "description": "Pattern for auto-generated values" },
+        "generateIfEmpty": { "type": ["string", "boolean"], "description": "Generate value if empty" },
+        "generateIfNotEmpty": { "type": ["string", "boolean"], "description": "Generate value if not empty" },
+        "generatedValueUniqueForCrosswalk": { "type": ["string", "boolean"], "description": "Ensure uniqueness per crosswalk" },
+        "defaultValue": { "description": "Default value for this attribute" },
+        "skipInDataAccess": { "type": "boolean", "description": "Skip this attribute in data access queries" },
+        "customReltioId": { "type": "boolean", "description": "Use as custom Reltio ID" },
+        "vectorized": { "type": "boolean", "description": "Enable vectorized storage" },
+        "values": { "type": "array", "description": "Predefined values" },
+        "dependentLookupAttributes": { "type": "array", "items": { "type": "string" }, "description": "Dependent lookup attribute URIs" },
+        "attributes": { "type": "array", "items": { "$ref": "#/$defs/Attribute" }, "description": "Nested sub-attributes (recursive)" },
+        "referencedAttributeURIs": { "type": "array", "items": { "type": "string" }, "description": "Referenced attribute URIs" },
+        "immutableForSources": { "type": "array", "items": { "type": "string" }, "description": "Sources for which this attribute is immutable" },
+        "immutableExceptForSources": { "type": "array", "items": { "type": "string" }, "description": "Sources for which this attribute is NOT immutable" },
+        "immutable": { "type": ["string", "boolean"], "description": "Immutability setting" },
+        "doNotOverrideForSourceURIs": { "type": "array", "items": { "type": "string" }, "description": "Source URIs that should not override this attribute" },
+        "matchFieldURIs": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }], "description": "Match field URIs" },
+        "matchFieldURIsExactOrNull": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }], "description": "Match field URIs with exact-or-null semantics" },
+        "matchFieldURIsExactOrAllNull": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }], "description": "Match field URIs with exact-or-all-null semantics" },
+        "keyAttributeURIs": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }], "description": "Key attribute URIs" },
+        "keyAttributeURIsExactOrNull": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }], "description": "Key attribute URIs with exact-or-null semantics" },
+        "keyAttributeURIsExactOrAllNull": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }], "description": "Key attribute URIs with exact-or-all-null semantics" },
+        "singleValue": { "type": ["string", "boolean"], "description": "Single value constraint" },
+        "singleValueByCrosswalk": { "type": ["string", "boolean"], "description": "Single value per crosswalk constraint" },
+        "singleValueByCrosswalkSources": { "$ref": "#/$defs/SingleValueByCrosswalkSources" },
+        "description": { "type": "string", "description": "Free-text description" },
+        "attributeOrdering": { "$ref": "#/$defs/AttributeOrdering" },
+        "masking": { "$ref": "#/$defs/AttributeMasking" },
+        "autoGenerationNestedPattern": {
+          "oneOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/MapEntry" } },
+            { "type": "object", "additionalProperties": true }
+          ],
+          "description": "MapEntry list or free-form object (live L3)"
+        },
+        "cardinality": { "$ref": "#/$defs/Cardinality" },
+        "indexingConfig": { "$ref": "#/$defs/IndexingConfig" },
+        "enableNestedPartialOverride": { "type": ["string", "boolean"] },
+        "lookupCode": { "type": "string", "description": "Lookup code" },
+        "access": {
+          "description": "Access / security metadata from API (optional)",
+          "oneOf": [
+            { "type": "array", "items": { "type": "string" } },
+            { "type": "object", "additionalProperties": true },
+            { "type": "string" }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "InteractionAttribute": {
+      "type": "object",
+      "description": "Interaction attribute definition (recursive for nested interaction attributes)",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string" },
+        "type": { "type": "string" },
+        "name": { "type": "string" },
+        "label": { "type": "string" },
+        "hidden": { "type": ["string", "boolean"] },
+        "important": { "type": ["string", "boolean"] },
+        "faceted": { "type": ["string", "boolean"] },
+        "searchable": { "type": ["string", "boolean"] },
+        "system": { "type": ["string", "boolean"] },
+        "required": { "type": ["string", "boolean"] },
+        "dataLabelPattern": { "type": "string" },
+        "maxOccurs": { "type": "integer" },
+        "skipInDataAccess": { "type": "boolean" },
+        "values": { "type": "array" },
+        "attributes": { "type": "array", "items": { "$ref": "#/$defs/InteractionAttribute" } },
+        "description": { "type": "string" },
+        "attributeOrdering": { "$ref": "#/$defs/AttributeOrdering" },
+        "lookupCode": { "type": "string" },
+        "access": {
+          "description": "Access / security metadata from API (optional)",
+          "oneOf": [
+            { "type": "array", "items": { "type": "string" } },
+            { "type": "object", "additionalProperties": true },
+            { "type": "string" }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "AnalyticsAttributes": {
+      "type": "object",
+      "description": "Analytics attribute definition (recursive)",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string" },
+        "type": { "type": "string" },
+        "name": { "type": "string" },
+        "label": { "type": "string" },
+        "maxOccurs": { "type": "integer" },
+        "couldUpdateWithLCA": { "type": "boolean" },
+        "dataLabelPattern": { "type": "string" },
+        "faceted": { "type": ["string", "boolean"] },
+        "searchable": { "type": ["string", "boolean"] },
+        "description": { "type": "string" },
+        "analyticsAttributes": { "oneOf": [{ "$ref": "#/$defs/AnalyticsAttributes" }, { "type": "array", "items": { "$ref": "#/$defs/AnalyticsAttributes" } }] }
+      },
+      "additionalProperties": false
+    },
+    "ActivityAttribute": {
+      "type": "object",
+      "description": "Activity attribute definition",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string" },
+        "type": { "type": "string" },
+        "name": { "type": "string" },
+        "label": { "type": "string" },
+        "searchable": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "Cardinality": {
+      "type": "object",
+      "properties": {
+        "maxValue": { "type": "integer" },
+        "minValue": { "type": "integer" }
+      },
+      "additionalProperties": false
+    },
+    "AttributeMasking": {
+      "type": "object",
+      "required": ["regexPattern"],
+      "properties": {
+        "regexPattern": { "type": "string", "description": "Regex pattern for masking (required)" },
+        "maskMatched": { "type": "boolean", "description": "Whether to mask the matched portion (true) or the unmatched portion (false)" }
+      },
+      "additionalProperties": false
+    },
+    "AttributeOrdering": {
+      "type": "object",
+      "properties": {
+        "orderType": { "type": "string" },
+        "fieldURI": { "type": "string" },
+        "orderingStrategy": { "type": "string", "default": "LUD" }
+      },
+      "additionalProperties": false
+    },
+    "SingleValueByCrosswalkSources": {
+      "type": "object",
+      "properties": {
+        "include": { "type": "array", "items": { "type": "string" } },
+        "exclude": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "ActivenessAttributes": {
+      "type": "object",
+      "required": ["type", "uri"],
+      "properties": {
+        "type": { "type": "string" },
+        "uri": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "GeoAttributes": {
+      "type": "object",
+      "required": ["latitude", "longitude"],
+      "properties": {
+        "latitude": { "type": "string" },
+        "longitude": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "DataPipelineConfig": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "attributes": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "IndexingConfig": {
+      "type": "object",
+      "description": "Indexing configuration",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "predicateEnabled": { "type": "boolean" },
+        "segmentationEnabled": { "type": "boolean" },
+        "consistency": { "type": "string" },
+        "caseSensitive": { "type": "boolean" },
+        "subAttributeValuesLimit": { "type": "integer" },
+        "attributes": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "MatchGroup": {
+      "type": "object",
+      "description": "Match group definition",
+      "required": ["uri", "type", "label"],
+      "properties": {
+        "uri": { "type": "string", "description": "Unique URI (required)" },
+        "type": { "type": "string", "description": "Match group type (required)" },
+        "label": { "type": "string", "description": "Human-readable label (required)" },
+        "scope": { "$ref": "#/$defs/MatchGroupScope" },
+        "matchServiceClass": { "type": "string" },
+        "useOvOnly": { "type": "string" },
+        "scoreStandalone": { "type": ["string", "number"] },
+        "scoreIncremental": { "type": ["string", "number"] },
+        "matchMethod": { "$ref": "#/$defs/MatchMethod" },
+        "crossTypeMatch": { "type": "boolean" },
+        "matchMethodMetadata": { "$ref": "#/$defs/MatchMethodMetadata" },
+        "rule": { "$ref": "#/$defs/MatchRule" },
+        "negativeRule": { "$ref": "#/$defs/NegativeMatchRule" },
+        "documentComparator": { "$ref": "#/$defs/DocumentComparatorMapping" },
+        "documentTokenizer": { "$ref": "#/$defs/DocumentTokenizerMapping" },
+        "aliasing": { "$ref": "#/$defs/MatchGroupAliasing" },
+        "overrides": { "$ref": "#/$defs/MatchGroupOverrides" },
+        "methods": { "$ref": "#/$defs/CompositeMatchMethods" },
+        "postEvaluation": { "$ref": "#/$defs/MatchPostEvaluation" },
+        "candidatesLookup": { "$ref": "#/$defs/CandidatesLookup" },
+        "matchPrerequisites": { "$ref": "#/$defs/MatchPrerequisites" }
+      },
+      "additionalProperties": false
+    },
+    "MatchRule": {
+      "type": "object",
+      "description": "Match rule (recursive — or/and/not contain further MatchRule objects)",
+      "properties": {
+        "matchTokenClass": { "type": "string" },
+        "comparatorClass": { "type": "string" },
+        "exact": { "type": "array", "items": { "type": "string" } },
+        "fuzzy": { "type": "array", "items": { "type": "string" } },
+        "exactOrNull": { "type": "array", "items": { "type": "string" } },
+        "exactOrAllNull": { "type": "array", "items": { "type": "string" } },
+        "ignoreInToken": { "type": "array", "items": { "type": "string" } },
+        "cleanse": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string" },
+            { "$ref": "#/$defs/MatchRuleCleanse" },
+            { "type": "array", "items": { "$ref": "#/$defs/MatchRuleCleanse" } }
+          ],
+          "description": "Null, URI string, single inline cleanse, or list of cleanse steps (live L3)"
+        },
+        "notExact": { "type": "array", "items": { "$ref": "#/$defs/NotExactOperand" } },
+        "equals": { "type": "array", "items": { "$ref": "#/$defs/EqualsOperand" } },
+        "notEquals": { "type": "array", "items": { "$ref": "#/$defs/EqualsOperand" } },
+        "in": { "type": "array", "items": { "$ref": "#/$defs/EqualsOperand" } },
+        "multi": { "type": "array", "items": { "$ref": "#/$defs/MultiOperand" } },
+        "or": { "oneOf": [{ "$ref": "#/$defs/MatchRule" }, { "type": "array", "items": { "$ref": "#/$defs/MatchRule" } }] },
+        "and": { "oneOf": [{ "$ref": "#/$defs/MatchRule" }, { "type": "array", "items": { "$ref": "#/$defs/MatchRule" } }] },
+        "not": { "oneOf": [{ "$ref": "#/$defs/MatchRule" }, { "type": "array", "items": { "$ref": "#/$defs/MatchRule" } }] },
+        "matchTokenClasses": { "$ref": "#/$defs/MatchTokenClassMappings" },
+        "comparatorClasses": { "$ref": "#/$defs/ComparatorClassMappings" },
+        "nullValues": { "type": "array", "items": { "$ref": "#/$defs/NullValues" } },
+        "weights": {
+          "oneOf": [
+            { "$ref": "#/$defs/AttributeWeight" },
+            { "type": "array", "items": { "$ref": "#/$defs/AttributeWeight" } }
+          ],
+          "description": "Single weight object or list (live L3)"
+        },
+        "actionThresholds": {
+          "oneOf": [
+            { "$ref": "#/$defs/ActionThreshold" },
+            { "type": "array", "items": { "$ref": "#/$defs/ActionThreshold" } }
+          ],
+          "description": "Single threshold object or list (live L3)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "NegativeMatchRule": {
+      "type": "object",
+      "description": "Negative match rule (recursive — or/and contain further NegativeMatchRule objects)",
+      "properties": {
+        "matchTokenClass": { "type": "string" },
+        "comparatorClass": { "type": "string" },
+        "notExactSame": { "type": "array", "items": { "type": "string" } },
+        "notFuzzySame": { "type": "array", "items": { "type": "string" } },
+        "equals": { "type": "array", "items": { "$ref": "#/$defs/EqualsOperand" } },
+        "notEquals": { "type": "array", "items": { "$ref": "#/$defs/EqualsOperand" } },
+        "in": { "type": "array", "items": { "$ref": "#/$defs/EqualsOperand" } },
+        "nullValues": { "type": "array", "items": { "$ref": "#/$defs/NullValues" } },
+        "or": {
+          "oneOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/NegativeMatchRule" } },
+            { "$ref": "#/$defs/NegativeMatchRule" }
+          ]
+        },
+        "and": {
+          "oneOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/NegativeMatchRule" } },
+            { "$ref": "#/$defs/NegativeMatchRule" }
+          ]
+        },
+        "comparatorClasses": { "$ref": "#/$defs/ComparatorClassMappings" }
+      },
+      "additionalProperties": false
+    },
+    "EqualsOperand": {
+      "type": "object",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string" },
+        "value": { "type": "string" },
+        "values": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
+        "strict": { "type": "boolean" },
+        "weight": { "type": "number" },
+        "checkNulls": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "NotExactOperand": {
+      "type": "object",
+      "properties": {
+        "uri": { "type": "string" },
+        "multiValueAnyMismatchIsPositive": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "MultiOperand": {
+      "type": "object",
+      "properties": {
+        "uri": { "type": "string" },
+        "attributes": { "type": "array", "items": { "type": "string" } },
+        "combinationsConfig": { "$ref": "#/$defs/CombinationsConfig" }
+      },
+      "additionalProperties": false
+    },
+    "CombinationsConfig": {
+      "type": "object",
+      "properties": {
+        "threshold": { "type": "integer" },
+        "strategy": { "$ref": "#/$defs/MultiAttributeCombinationsStrategy" }
+      },
+      "additionalProperties": false
+    },
+    "NullValues": {
+      "type": "object",
+      "required": ["value", "attribute"],
+      "properties": {
+        "value": { "type": "string" },
+        "attribute": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "AttributeWeight": {
+      "type": "object",
+      "properties": {
+        "attribute": { "type": "string" },
+        "weight": { "type": ["string", "number"], "description": "Weight as string or number (live L3)" }
+      },
+      "additionalProperties": false
+    },
+    "ActionThreshold": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "threshold": { "type": ["string", "number"], "description": "Threshold as string or number (live L3)" },
+        "label": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "MatchRuleCleanse": {
+      "type": "object",
+      "required": ["cleanseAdapter"],
+      "properties": {
+        "cleanseAdapter": { "type": "string" },
+        "cleanseAdapterParams": {
+          "oneOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/MapEntry" } },
+            { "type": "object", "additionalProperties": true }
+          ],
+          "description": "MapEntry list or free-form object (live L3 match-rule cleanse)"
+        },
+        "mappings": { "type": "array", "items": { "$ref": "#/$defs/CleanseMappingDefinition" } },
+        "attributes": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "MatchTokenClassMappings": {
+      "type": "object",
+      "properties": {
+        "mapping": { "type": "array", "items": { "$ref": "#/$defs/MatchTokenClassMapping" } }
+      },
+      "additionalProperties": false
+    },
+    "ComparatorClassMappings": {
+      "type": "object",
+      "properties": {
+        "mapping": { "type": "array", "items": { "$ref": "#/$defs/ComparatorClassMapping" } }
+      },
+      "additionalProperties": false
+    },
+    "MatchTokenClassMapping": {
+      "type": "object",
+      "required": ["attribute", "class"],
+      "properties": {
+        "attribute": { "type": "string" },
+        "class": { "type": "string" },
+        "parameters": { "type": "array", "items": { "$ref": "#/$defs/MatchAttributeParameter" } }
+      },
+      "additionalProperties": false
+    },
+    "ComparatorClassMapping": {
+      "type": "object",
+      "required": ["attribute", "class"],
+      "properties": {
+        "attribute": { "type": "string" },
+        "class": { "type": "string" },
+        "parameters": { "type": "array", "items": { "$ref": "#/$defs/MatchAttributeParameter" } }
+      },
+      "additionalProperties": false
+    },
+    "GenericMatchTokenClassMapping": {
+      "type": "object",
+      "required": ["class"],
+      "properties": {
+        "class": { "type": "string" },
+        "parameters": { "type": "array", "items": { "$ref": "#/$defs/MatchAttributeParameter" } }
+      },
+      "additionalProperties": false
+    },
+    "GenericComparatorClassMapping": {
+      "type": "object",
+      "required": ["class"],
+      "properties": {
+        "class": { "type": "string" },
+        "parameters": { "type": "array", "items": { "$ref": "#/$defs/MatchAttributeParameter" } }
+      },
+      "additionalProperties": false
+    },
+    "DocumentComparatorMapping": {
+      "type": "object",
+      "required": ["class"],
+      "properties": {
+        "class": { "type": "string" },
+        "parameters": { "type": "array", "items": { "$ref": "#/$defs/MatchAttributeParameter" } },
+        "fernConfig": { "$ref": "#/$defs/FernConfig" }
+      },
+      "additionalProperties": false
+    },
+    "DocumentTokenizerMapping": {
+      "type": "object",
+      "required": ["class"],
+      "properties": {
+        "class": { "type": "string" },
+        "parameters": { "type": "array", "items": { "$ref": "#/$defs/MatchAttributeParameter" } }
+      },
+      "additionalProperties": false
+    },
+    "MatchAttributeParameter": {
+      "type": "object",
+      "required": ["parameter"],
+      "properties": {
+        "parameter": { "type": "string" },
+        "value": { "type": "string" },
+        "values": {
+          "type": "array",
+          "items": {
+            "oneOf": [{ "$ref": "#/$defs/MapEntry" }, { "$ref": "#/$defs/MatchComparatorTokenParameterValue" }]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "MatchComparatorTokenParameterValue": {
+      "type": "object",
+      "description": "Comparator / match-token parameter value (extends beyond MapEntry; live L3). Unknown keys allowed per schema-alignment-with-live-l3 design D4.",
+      "properties": {
+        "key": { "type": "string" },
+        "value": {},
+        "className": { "type": "string" },
+        "pattern": {},
+        "noiseDictionary": {},
+        "classParams": {
+          "oneOf": [
+            { "type": "object", "additionalProperties": true },
+            { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+          ],
+          "description": "Comparator params object or array of parameter blocks (live L3)"
+        },
+        "useNoiseIfEmpty": { "type": ["string", "boolean"] },
+        "sortWords": { "type": ["string", "boolean"] },
+        "useSoundex": { "type": ["string", "boolean"] },
+        "useStemmer": { "type": ["string", "boolean"] },
+        "wordReplacements": {},
+        "transliterate": { "type": ["string", "boolean"] },
+        "wordDelimiter": { "type": "string" },
+        "splitByWordsBoundaries": { "type": ["string", "boolean"] },
+        "parameter": {},
+        "groupTokenLimit": { "type": ["integer", "string"] },
+        "ClassName": { "type": "string" },
+        "range": {},
+        "maxDistance": { "type": ["integer", "string"] },
+        "thresholdChars": { "type": ["integer", "string"] },
+        "weightStrategy": { "type": "string" },
+        "enabled": { "type": ["string", "boolean"] },
+        "filter": {},
+        "replacement": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "MatchMethodMetadata": {
+      "type": "object",
+      "properties": {
+        "packageVersion": { "type": "string" },
+        "packageId": { "type": "string" },
+        "packageProfile": { "type": "string" },
+        "origin": { "type": "string" },
+        "matchMethodApplicability": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "MatchGroupAliasing": {
+      "type": "object",
+      "properties": {
+        "mapping": { "type": "array", "items": { "$ref": "#/$defs/AliasMapping" } }
+      },
+      "additionalProperties": false
+    },
+    "AliasMapping": {
+      "type": "object",
+      "required": ["from", "to"],
+      "properties": {
+        "from": { "type": "string" },
+        "to": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "MatchGroupOverrides": {
+      "type": "object",
+      "properties": {
+        "attributesMapping": { "type": "array", "items": { "$ref": "#/$defs/MatchGroupAttributeMapping" } }
+      },
+      "additionalProperties": false
+    },
+    "MatchGroupAttributeMapping": {
+      "type": "object",
+      "required": ["matchMethodAttribute"],
+      "properties": {
+        "dataModelAttribute": { "type": "string" },
+        "matchMethodAttribute": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "CompositeMatchMethods": {
+      "type": "object",
+      "properties": {
+        "links": { "type": "array", "items": { "$ref": "#/$defs/MatchMethodLink" } },
+        "weightingAlgorithm": { "$ref": "#/$defs/WeightingAlgorithm" }
+      },
+      "additionalProperties": false
+    },
+    "MatchMethodLink": {
+      "type": "object",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string" },
+        "retain": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "WeightingAlgorithm": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string" },
+        "fallback": { "type": "string" },
+        "parameters": { "type": "array", "items": { "$ref": "#/$defs/MatchAttributeParameter" } },
+        "list": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "MatchPostEvaluation": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "assetsList": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "CandidatesLookup": {
+      "type": "object",
+      "properties": {
+        "lookupMethods": { "type": "array", "items": { "$ref": "#/$defs/LookupMethod" } }
+      },
+      "additionalProperties": false
+    },
+    "LookupMethod": {
+      "type": "object",
+      "required": ["enabled", "type"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "type": { "type": "string" },
+        "parameters": { "type": "array", "items": { "$ref": "#/$defs/MatchAttributeParameter" } }
+      },
+      "additionalProperties": false
+    },
+    "MatchPrerequisites": {
+      "type": "object",
+      "properties": {
+        "rules": { "type": "array", "items": { "$ref": "#/$defs/PrerequisiteRule" } }
+      },
+      "additionalProperties": false
+    },
+    "PrerequisiteRule": {
+      "type": "object",
+      "properties": {
+        "onMatch": { "type": "string" },
+        "scoreThreshold": { "type": "string" },
+        "evaluationContinuation": { "type": "boolean" },
+        "filters": { "type": "array", "items": { "$ref": "#/$defs/PrerequisiteFilter" } }
+      },
+      "additionalProperties": false
+    },
+    "PrerequisiteFilter": {
+      "type": "object",
+      "properties": {
+        "uri": { "type": "string" },
+        "uriPattern": { "type": "string" },
+        "type": { "type": "string" },
+        "defined": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "MatchAssets": {
+      "type": "object",
+      "properties": {
+        "algorithm": { "type": "string" },
+        "rematchOnThreshold": { "type": "boolean" },
+        "assetDefinitions": { "type": "array", "items": { "$ref": "#/$defs/AssetDefinition" } }
+      },
+      "additionalProperties": false
+    },
+    "AssetDefinition": {
+      "type": "object",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string" },
+        "label": { "type": "string" },
+        "pattern": { "type": "string" },
+        "threshold": { "type": "integer" },
+        "description": { "type": "string" },
+        "attributes": { "type": "array", "items": { "$ref": "#/$defs/MatchAssetAttribute" } },
+        "sourceSystem": { "type": "array", "items": { "$ref": "#/$defs/MatchAssetSourceSystem" } }
+      },
+      "additionalProperties": false
+    },
+    "MatchAssetAttribute": {
+      "type": "object",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string" },
+        "optional": { "type": "boolean" },
+        "defaultValue": { "type": "string" },
+        "noiseCharacters": { "type": "string" },
+        "transformers": { "type": "array", "items": { "$ref": "#/$defs/MatchAssetTransformer" } }
+      },
+      "additionalProperties": false
+    },
+    "MatchAssetTransformer": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "parameters": { "type": "array", "items": { "$ref": "#/$defs/MapEntry" } }
+      },
+      "additionalProperties": false
+    },
+    "MatchAssetSourceSystem": {
+      "type": "object",
+      "properties": {
+        "included": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "AssociationGroup": {
+      "type": "object",
+      "required": ["uri", "groupEntityTypes", "targetType", "targetUri"],
+      "properties": {
+        "uri": { "type": "string" },
+        "label": { "type": "string" },
+        "groupEntityTypes": { "type": "string" },
+        "targetType": { "type": "string" },
+        "targetUri": { "type": "string" },
+        "scoreStandalone": { "type": ["string", "number"] },
+        "scoreIncremental": { "type": ["string", "number"] },
+        "rule": { "$ref": "#/$defs/MatchRule" }
+      },
+      "additionalProperties": false
+    },
+    "FernConfig": {
+      "type": "object",
+      "properties": {
+        "featureDefaults": { "$ref": "#/$defs/FeatureDefaults" },
+        "featureOverrides": { "$ref": "#/$defs/FeatureOverrides" }
+      },
+      "additionalProperties": false
+    },
+    "FeatureDefaults": {
+      "type": "object",
+      "properties": {
+        "promptTemplate": { "$ref": "#/$defs/PromptTemplate" },
+        "prefilter": { "$ref": "#/$defs/Prefilter" }
+      },
+      "additionalProperties": false
+    },
+    "Prefilter": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "algorithm": { "type": "string" },
+        "threshold": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "FeatureOverrides": {
+      "type": "object",
+      "properties": {
+        "entry": { "type": "array", "items": { "$ref": "#/$defs/FeatureOverrideEntry" } }
+      },
+      "additionalProperties": false
+    },
+    "FeatureOverrideEntry": {
+      "type": "object",
+      "required": ["key", "value"],
+      "properties": {
+        "key": { "type": "string" },
+        "value": { "$ref": "#/$defs/FeatureOverride" }
+      },
+      "additionalProperties": false
+    },
+    "FeatureOverride": {
+      "type": "object",
+      "properties": {
+        "promptTemplate": { "$ref": "#/$defs/PromptTemplate" },
+        "prefilter": { "$ref": "#/$defs/Prefilter" }
+      },
+      "additionalProperties": false
+    },
+    "SurvivorshipGroup": {
+      "type": "object",
+      "description": "Survivorship group definition",
+      "required": ["uri", "default"],
+      "properties": {
+        "uri": { "type": "string", "description": "Unique URI (required)" },
+        "label": { "type": "string" },
+        "default": { "type": ["string", "boolean"], "description": "Default survivorship strategy (required)" },
+        "roles": { "type": "array", "items": { "type": "string" } },
+        "sourcesUriOrder": { "type": "array", "items": { "type": "string" } },
+        "sourcesForOv": { "type": "array", "items": { "type": "string" } },
+        "mapping": { "oneOf": [{ "$ref": "#/$defs/SurvivorshipMapping" }, { "type": "array", "items": { "$ref": "#/$defs/SurvivorshipMapping" } }] },
+        "description": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "SurvivorshipMapping": {
+      "type": "object",
+      "description": "Survivorship mapping (recursive — fallbackStrategies contain further SurvivorshipMapping objects)",
+      "required": ["survivorshipStrategy"],
+      "properties": {
+        "survivorshipStrategy": { "type": "string", "description": "Strategy identifier (required)" },
+        "attribute": { "type": "string" },
+        "sortAs": { "type": "string" },
+        "comparisonAttributeUri": { "type": "string" },
+        "comparisonAttributeOvOnly": { "type": ["string", "boolean"] },
+        "primaryAttributeUri": { "type": "string" },
+        "fallbackUsingCriteria": { "$ref": "#/$defs/FallbackUsingCriteria" },
+        "ignoreCase": { "type": "boolean" },
+        "sourcesUriOrder": { "type": "array", "items": { "type": "string" } },
+        "valuesPriorityOrder": { "type": "array", "items": { "type": "string" } },
+        "lookupComparisonField": {
+          "oneOf": [
+            { "type": "array", "items": { "type": "string" } },
+            { "type": "string" },
+            { "type": "object", "additionalProperties": true }
+          ],
+          "description": "Array of URIs, single string, or object map (live L3)"
+        },
+        "sourcesForOv": { "type": "array", "items": { "type": "string" } },
+        "filter": { "$ref": "#/$defs/SurvivorshipFilter" },
+        "fallbackStrategiesChain": { "type": "array", "items": { "type": "string" } },
+        "fallbackStrategies": { "type": "array", "items": { "$ref": "#/$defs/SurvivorshipMapping" } }
+      },
+      "additionalProperties": false
+    },
+    "SurvivorshipFilter": {
+      "type": "object",
+      "description": "Survivorship filter with comparison operators and logical composition",
+      "properties": {
+        "equals": { "type": "array", "items": { "$ref": "#/$defs/FilterCriteria" } },
+        "ne": { "type": "array", "items": { "$ref": "#/$defs/FilterCriteria" } },
+        "lt": { "type": "array", "items": { "$ref": "#/$defs/FilterCriteria" } },
+        "lte": { "type": "array", "items": { "$ref": "#/$defs/FilterCriteria" } },
+        "gt": { "type": "array", "items": { "$ref": "#/$defs/FilterCriteria" } },
+        "gte": { "type": "array", "items": { "$ref": "#/$defs/FilterCriteria" } },
+        "missing": { "type": "array", "items": { "$ref": "#/$defs/FilterPresenceCriteria" } },
+        "exists": { "type": "array", "items": { "$ref": "#/$defs/FilterPresenceCriteria" } },
+        "in": { "type": "array", "items": { "$ref": "#/$defs/FilterCriteria" } },
+        "notIn": { "type": "array", "items": { "$ref": "#/$defs/FilterCriteria" } },
+        "or": {
+          "oneOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/LogicalCondition" } },
+            { "$ref": "#/$defs/LogicalCondition" }
+          ]
+        },
+        "and": {
+          "oneOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/LogicalCondition" } },
+            { "$ref": "#/$defs/LogicalCondition" }
+          ]
+        },
+        "discardIgnoredDeletedValues": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "FilterCriteria": {
+      "type": "object",
+      "required": ["uri", "value"],
+      "properties": {
+        "uri": { "type": "string" },
+        "value": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "FilterPresenceCriteria": {
+      "type": "object",
+      "properties": {
+        "uri": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "LogicalCondition": {
+      "type": "object",
+      "properties": {
+        "uri": { "type": "string" },
+        "operator": { "type": "string" },
+        "value": { "type": "string" },
+        "or": {
+          "oneOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/LogicalCondition" } },
+            { "$ref": "#/$defs/LogicalCondition" }
+          ]
+        },
+        "and": {
+          "oneOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/LogicalCondition" } },
+            { "$ref": "#/$defs/LogicalCondition" }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "CleanseInfo": {
+      "type": "object",
+      "description": "Cleanse info definition",
+      "required": ["cleanseProvider", "uri", "resultingValuesSourceTypeUri"],
+      "properties": {
+        "cleanseProvider": { "type": "string" },
+        "uri": { "type": "string" },
+        "resultingValuesSourceTypeUri": { "type": "string" },
+        "inputMapping": { "type": "array", "items": { "$ref": "#/$defs/CleanseMappingDefinition" } },
+        "outputMapping": { "type": "array", "items": { "$ref": "#/$defs/CleanseMappingDefinition" } }
+      },
+      "additionalProperties": false
+    },
+    "CleanseConfig": {
+      "type": "object",
+      "description": "Cleanse configuration",
+      "properties": {
+        "uri": { "type": "string" },
+        "mappings": { "type": "array", "items": { "$ref": "#/$defs/CleanseMappings" } },
+        "infos": { "type": "array", "items": { "$ref": "#/$defs/CleanseInfos" } },
+        "addressAutoCompleteConfig": { "$ref": "#/$defs/AddressAutoCompleteConfig" },
+        "attributeVerificationConfig": { "type": "array", "items": { "$ref": "#/$defs/AttributeVerificationConfig" } }
+      },
+      "additionalProperties": false
+    },
+    "CleanseMappings": {
+      "type": "object",
+      "properties": {
+        "uri": { "type": "string" },
+        "inputMapping": { "type": "array", "items": { "$ref": "#/$defs/CleanseMappingDefinition" } },
+        "inputMappingRef": { "type": "string" },
+        "outputMapping": { "type": "array", "items": { "$ref": "#/$defs/CleanseMappingDefinition" } },
+        "outputMappingRef": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "CleanseInfos": {
+      "type": "object",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string" },
+        "useInCleansing": { "type": ["string", "null", "boolean"] },
+        "nestedAttributeToCleanse": { "type": "string" },
+        "sequence": { "type": "array", "items": { "$ref": "#/$defs/CleanseSequence" } }
+      },
+      "additionalProperties": false
+    },
+    "CleanseSequence": {
+      "type": "object",
+      "properties": {
+        "uri": { "type": "string" },
+        "chain": { "type": "array", "items": { "$ref": "#/$defs/CleanseChain" } }
+      },
+      "additionalProperties": false
+    },
+    "CleanseChain": {
+      "type": "object",
+      "required": ["cleanseFunction"],
+      "properties": {
+        "uri": { "type": "string" },
+        "cleanseFunction": { "type": "string" },
+        "resultingValuesSourceTypeUri": { "type": "string" },
+        "proceedOnSuccess": { "type": ["string", "boolean"] },
+        "proceedOnFailure": { "type": ["string", "boolean"] },
+        "removeOldCleanseResultsOnFailure": { "type": ["string", "boolean"] },
+        "mapping": { "$ref": "#/$defs/CleanseMappings" },
+        "params": {
+          "oneOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/MapEntry" } },
+            { "type": "object", "additionalProperties": true }
+          ],
+          "description": "MapEntry list or free-form object map (live L3)"
+        },
+        "filter": {
+          "description": "Optional cleanse chain filter expression (live L3)",
+          "oneOf": [{ "type": "string" }, { "type": "object", "additionalProperties": true }]
+        }
+      },
+      "additionalProperties": false
+    },
+    "CleanseMappingDefinition": {
+      "type": "object",
+      "required": ["attribute", "cleanseAttribute"],
+      "properties": {
+        "attribute": { "type": "string" },
+        "cleanseAttribute": { "type": "string" },
+        "uri": { "type": "string" },
+        "mandatory": { "type": "boolean" },
+        "allValues": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "AddressAutoCompleteConfig": {
+      "type": "object",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string" },
+        "minSearchTextLen": { "type": "integer" },
+        "providerOpts": {
+          "oneOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/MapEntry" } },
+            { "type": "object", "additionalProperties": true }
+          ],
+          "description": "MapEntry list or free-form object (live L3)"
+        },
+        "inputMapping": { "type": "array", "items": { "$ref": "#/$defs/CleanseMappingDefinition" } },
+        "inputMappingRef": { "type": "string" },
+        "outputMapping": { "type": "array", "items": { "$ref": "#/$defs/CleanseMappingDefinition" } },
+        "outputMappingRef": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "AttributeVerificationConfig": {
+      "type": "object",
+      "required": ["verificationFunction"],
+      "properties": {
+        "uri": { "type": "string" },
+        "resultingValuesSourceTypeUri": { "type": "string" },
+        "verificationFunction": { "type": "string" },
+        "params": { "type": "array", "items": { "$ref": "#/$defs/MapEntry" } },
+        "inputMapping": { "type": "array", "items": { "$ref": "#/$defs/VerificationMappingDefinition" } },
+        "outputMapping": { "type": "array", "items": { "$ref": "#/$defs/VerificationMappingDefinition" } }
+      },
+      "additionalProperties": false
+    },
+    "VerificationMappingDefinition": {
+      "type": "object",
+      "required": ["attribute", "verificationAttribute"],
+      "properties": {
+        "attribute": { "type": "string" },
+        "verificationAttribute": { "type": "string" },
+        "mandatory": { "type": "boolean" },
+        "uri": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "SurrogateCrosswalk": {
+      "type": "object",
+      "properties": {
+        "source": { "type": "string" },
+        "generationLogic": { "$ref": "#/$defs/GenerationLogic" },
+        "enforce": { "type": "boolean" },
+        "attributes": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "DependentAttributes": {
+      "type": "object",
+      "required": ["attributeUri"],
+      "properties": {
+        "attributeUri": { "type": "string" },
+        "default": { "type": "array", "items": { "type": "string" } },
+        "values": { "type": "array", "items": { "$ref": "#/$defs/DependentAttributeValues" } }
+      },
+      "additionalProperties": false
+    },
+    "DependentAttributeValues": {
+      "type": "object",
+      "properties": {
+        "valuesList": { "type": "array", "items": { "type": "string" } },
+        "visibleAttributes": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "RuleBasedAttribute": {
+      "type": "object",
+      "required": ["uri", "name", "type", "controlFunction"],
+      "properties": {
+        "uri": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "$ref": "#/$defs/RuleBasedAttributeType" },
+        "label": { "type": "string" },
+        "description": { "type": "string" },
+        "controlFunction": { "$ref": "#/$defs/ControlFunction" }
+      },
+      "additionalProperties": false
+    },
+    "ControlFunction": {
+      "type": "object",
+      "required": ["expression"],
+      "properties": {
+        "expression": { "type": "string" },
+        "showAttributeURI": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "EntityUnmerge": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "retainManualMerges": { "type": "boolean" },
+        "retainMergeConditions": { "$ref": "#/$defs/RetainMergeCondition" },
+        "actions": { "type": "array", "items": { "$ref": "#/$defs/UnmergeAction" } }
+      },
+      "additionalProperties": false
+    },
+    "RetainMergeCondition": {
+      "type": "object",
+      "properties": {
+        "sources": { "type": "array", "items": { "type": "string" } },
+        "matchGroups": { "type": "array", "items": { "$ref": "#/$defs/UnmergeMatchGroup" } }
+      },
+      "additionalProperties": false
+    },
+    "UnmergeMatchGroup": {
+      "type": "object",
+      "properties": {
+        "uri": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "UnmergeAction": {
+      "type": "object",
+      "required": ["enabled", "type"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "proceed": { "type": "boolean" },
+        "type": { "type": "string" },
+        "parameters": { "type": "array", "items": { "$ref": "#/$defs/MatchAttributeParameter" } }
+      },
+      "additionalProperties": false
+    },
+    "HiddenEntityTypeConfiguration": {
+      "type": "object",
+      "properties": {
+        "matchGroups": { "type": "array", "items": { "$ref": "#/$defs/MatchGroup" } },
+        "skippedMatchRules": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "GroupElement": {
+      "type": "object",
+      "required": ["uri", "entityTypeURIs"],
+      "properties": {
+        "uri": { "type": "string" },
+        "entityTypeURIs": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ],
+          "description": "Single entity type URI or list (live L3)"
+        },
+        "reachByRelationTypeURIs": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "MemberType": {
+      "type": "object",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string" },
+        "label": { "type": "string" },
+        "name": { "type": "string" },
+        "primaryMember": { "type": ["string", "boolean"] },
+        "minOccurs": { "type": ["string", "boolean", "integer"] },
+        "objectTypeURI": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "GroupingMember": {
+      "type": "object",
+      "required": ["entityType", "relationType", "groupingRule"],
+      "properties": {
+        "entityType": { "type": "string" },
+        "relationType": { "type": "string" },
+        "groupingRule": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "GroupingAttributeMapping": {
+      "type": "object",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string" },
+        "function": { "$ref": "#/$defs/GroupingFunction" }
+      },
+      "additionalProperties": false
+    },
+    "GroupingFunction": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "$ref": "#/$defs/GroupingFunctionType" },
+        "config": { "description": "Function-specific configuration" },
+        "survivorshipGroupMapping": { "$ref": "#/$defs/SurvivorshipMapping" }
+      },
+      "additionalProperties": false
+    },
+    "MapEntry": {
+      "type": "object",
+      "description": "Key-value entry",
+      "properties": {
+        "key": { "type": "string" },
+        "value": {}
+      },
+      "additionalProperties": false
+    },
+    "MatchGroupScope": {
+      "type": "string",
+      "enum": ["none", "internal", "external", "all", "ml_match", "NONE", "INTERNAL", "EXTERNAL", "ALL", "ML_MATCH"]
+    },
+    "MatchMethod": {
+      "type": "string",
+      "enum": ["match_iq", "rule_based"]
+    },
+    "EntityEndDateStrategy": {
+      "type": "string",
+      "enum": ["END_DATE_RELATION", "END_DATE_RELATION_CROSSWALKS"]
+    },
+    "FallbackUsingCriteria": {
+      "type": "string",
+      "enum": ["ZERO_OR_MORE_THAN_ONE", "MORE_THAN_ONE", "ZERO"]
+    },
+    "GenerationLogic": {
+      "type": "string",
+      "enum": ["ovOnly", "useFirstNonOvWhenOvMissing", "generateUidWhenOvMissing", "generateUidWhenOvAndNonOvMissing", "generateUidWhenAllOvMissing"]
+    },
+    "GroupingFunctionType": {
+      "type": "string",
+      "enum": ["fixedValue", "copy", "survivedValue", "aggregate", "count", "countDistinct", "groupingRule", "srcCopy", "topK", "mostRecent", "firstNonNull"]
+    },
+    "RuleBasedAttributeType": {
+      "type": "string",
+      "enum": ["Conditional"]
+    },
+    "PromptTemplate": {
+      "type": "string",
+      "enum": ["SINGLEVALUE", "MULTIVALUE"]
+    },
+    "MultiAttributeCombinationsStrategy": {
+      "type": "string",
+      "enum": ["DROP_ALL", "FIRST_N", "NOOP"]
+    }
+  }
+}

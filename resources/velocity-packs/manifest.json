@@ -1,0 +1,103 @@
+{
+  "velocityPacksManifestVersion": "1",
+  "packs": [
+    {
+      "id": "Account360",
+      "displayName": "Account360",
+      "description": "Account360",
+      "businessConfigPath": "Account360/BusinessConfig.json",
+      "readmePath": "Account360/README.md",
+      "schemaVersion": "1.1",
+      "referenceConfigurationURI": "configuration/_vertical/reltio-core-2020-1",
+      "vertical": "cross-industry",
+      "bytes": 578280,
+      "sizeTier": "large",
+      "packKind": "full"
+    },
+    {
+      "id": "Consumer360",
+      "displayName": "Consumer360",
+      "description": "Consumer360",
+      "businessConfigPath": "Consumer360/BusinessConfig.json",
+      "readmePath": "Consumer360/README.md",
+      "schemaVersion": "2.2.5",
+      "referenceConfigurationURI": "configuration/_vertical/reltio-core-2020-1",
+      "vertical": "consumer",
+      "bytes": 140999,
+      "sizeTier": "medium",
+      "packKind": "full"
+    },
+    {
+      "id": "freetier-identity360-datavalidation",
+      "displayName": "Identity360 (freetier / data validation)",
+      "description": "Identity360",
+      "businessConfigPath": "freetier-identity360-datavalidation/BusinessConfig.json",
+      "schemaVersion": "1.05 Removing dq/iq :ash",
+      "vertical": "identity",
+      "bytes": 340047,
+      "sizeTier": "large",
+      "packKind": "full"
+    },
+    {
+      "id": "Identity360",
+      "displayName": "Identity360",
+      "description": "Identity360 (extended variant; see BusinessConfig.json for full description)",
+      "businessConfigPath": "Identity360/BusinessConfig.json",
+      "schemaVersion": "1.05 Removing dq/iq :ash",
+      "vertical": "identity",
+      "bytes": 287153,
+      "sizeTier": "medium",
+      "packKind": "full"
+    },
+    {
+      "id": "Insurance",
+      "displayName": "Insurance Velocity Pack",
+      "description": "Insurance Velocity Pack",
+      "businessConfigPath": "Insurance/BusinessConfig.json",
+      "schemaVersion": "dp_ins.1.5.0",
+      "vertical": "insurance",
+      "bytes": 1152430,
+      "sizeTier": "xlarge",
+      "packKind": "full"
+    },
+    {
+      "id": "LSCustomer360",
+      "displayName": "LS Customer360",
+      "description": "LS Customer360",
+      "businessConfigPath": "LSCustomer360/BusinessConfig.json",
+      "readmePath": "LSCustomer360/README.md",
+      "schemaVersion": "1",
+      "referenceConfigurationURI": "configuration/_vertical/reltio-life-sciences-2020-1",
+      "vertical": "life-sciences",
+      "bytes": 426151,
+      "sizeTier": "large",
+      "packKind": "full"
+    },
+    {
+      "id": "LSProduct360",
+      "displayName": "LS Product 360",
+      "description": "Product 360 V1.4.7.1",
+      "businessConfigPath": "LSProduct360/BusinessConfig.json",
+      "readmePath": "LSProduct360/README.md",
+      "schemaVersion": "1",
+      "referenceConfigurationURI": "configuration/_vertical/reltio-core-2020-1",
+      "vertical": "life-sciences",
+      "bytes": 207547,
+      "sizeTier": "medium",
+      "packKind": "full"
+    },
+    {
+      "id": "Product360",
+      "displayName": "Product360",
+      "description": "Product 360 V1.4.7.1",
+      "businessConfigPath": "Product360/BusinessConfig.json",
+      "readmePath": "Product360/README.md",
+      "schemaVersion": "1",
+      "referenceConfigurationURI": "configuration/_vertical/reltio-configuration",
+      "vertical": "product",
+      "bytes": 137250,
+      "sizeTier": "medium",
+      "packKind": "full"
+    }
+  ]
+}

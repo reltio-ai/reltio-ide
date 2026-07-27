@@ -1,0 +1,692 @@
+{
+  "name": "reltio-ide",
+  "displayName": "Reltio IDE",
+  "description": "Use the Reltio IDE to review and update the business configuration of your Reltio tenant.",
+  "version": "1.0.11",
+  "publisher": "Reltio",
+  "icon": "resources/icons/reltio-icon.png",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "https://bitbucket.org/reltio-ondemand/reltio-ide.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "restrictedConfigurations": [
+        "reltio.defaultEnvironments",
+        "reltio.applyDefaultsOnActivate",
+        "reltio.fetchL3AfterApplyDefaults"
+      ],
+      "description": "Applying default environments reads local token files and may call configured Reltio hosts. These settings are disabled until the workspace is trusted."
+    }
+  },
+  "activationEvents": [
+    "onLanguage:json",
+    "workspaceContains:**/*.reltio.environment",
+    "workspaceContains:**/*.reltio.json"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "jsonValidation": [
+      {
+        "fileMatch": "*.reltio.json",
+        "url": "./schemas/reltio-metadata.schema.json"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "reltioExplorer",
+          "title": "Reltio",
+          "icon": "resources/icons/reltio.svg"
+        }
+      ]
+    },
+    "views": {
+      "reltioExplorer": [
+        {
+          "id": "reltioConfigTree",
+          "name": "Reltio IDE"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "reltioConfigTree",
+        "contents": "Open a folder to start working with Reltio metadata. Each folder can hold multiple Reltio environments.\n\n[Open Folder](command:workbench.action.files.openFolder)\n[Open Setup Guide](command:reltio.openSetupGuide)\n\nOpen any *.reltio.json file for schema validation and navigation.",
+        "when": "workspaceFolderCount == 0"
+      },
+      {
+        "view": "reltioConfigTree",
+        "contents": "[Connect your Reltio Tenant](command:reltio.launchSetupWizard)\n\nNeed help? [Open the Setup Guide](command:reltio.openSetupGuide)",
+        "when": "workspaceFolderCount > 0 && reltio.uxState == G_EMPTY"
+      }
+    ],
+    "commands": [
+      {
+        "command": "reltio.revealInEditor",
+        "title": "Show in Editor",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "reltio.showOntologyFromTree",
+        "title": "Show in Ontology",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "reltio.addEntityType",
+        "title": "Add a new Entity Type"
+      },
+      {
+        "command": "reltio.addRelationType",
+        "title": "Add a new Relationship Type"
+      },
+      {
+        "command": "reltio.insertSimpleAttribute",
+        "title": "Add a new Simple Attribute"
+      },
+      {
+        "command": "reltio.insertNestedAttribute",
+        "title": "Add a new Nested Attribute"
+      },
+      {
+        "command": "reltio.insertReferenceAttribute",
+        "title": "Add a new Reference Attribute"
+      },
+      {
+        "command": "reltio.insertMatchGroup",
+        "title": "Add a new Match Group"
+      },
+      {
+        "command": "reltio.insertSurvivorshipGroup",
+        "title": "Add a new Survivorship Group"
+      },
+      {
+        "command": "reltio.insertCleanseConfig",
+        "title": "Add a new Cleanse Config"
+      },
+      {
+        "command": "reltio.insertGroupingType",
+        "title": "Add a new Grouping Type"
+      },
+      {
+        "command": "reltio.insertGraphType",
+        "title": "Add a new Graph Type"
+      },
+      {
+        "command": "reltio.insertHierarchyType",
+        "title": "Add a new Hierarchy Type"
+      },
+      {
+        "command": "reltio.insertInteractionType",
+        "title": "Add a new Interaction Type"
+      },
+      {
+        "command": "reltio.insertSource",
+        "title": "Add a new Source"
+      },
+      {
+        "command": "reltio.deleteNode",
+        "title": "Delete",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "reltio.renameNode",
+        "title": "Rename",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "reltio.showOntologyPreview",
+        "title": "Reltio: Show Ontology Preview",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "reltio.resetOntologyLayout",
+        "title": "Reltio: Reset Ontology Layout"
+      },
+      {
+        "command": "reltio.addEnvironment",
+        "title": "Add Environment",
+        "icon": "$(add)"
+      },
+      {
+        "command": "reltio.removeEnvironment",
+        "title": "Remove Environment",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "reltio.configureOAuthClient",
+        "title": "Configure OAuth Client…",
+        "icon": "$(key)"
+      },
+      {
+        "command": "reltio.resetOAuthClient",
+        "title": "Reset OAuth Client…",
+        "icon": "$(key)"
+      },
+      {
+        "command": "reltio.loginWithBrowser",
+        "title": "Login with Browser",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "reltio.reLoginWithBrowser",
+        "title": "Re-Login with Browser",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "reltio.provideToken",
+        "title": "Provide Token",
+        "icon": "$(key)"
+      },
+      {
+        "command": "reltio.applyDefaultEnvironments",
+        "title": "Reltio: Apply default environments",
+        "icon": "$(folder-library)"
+      },
+      {
+        "command": "reltio.addTenant",
+        "title": "Add Tenant",
+        "icon": "$(add)"
+      },
+      {
+        "command": "reltio.removeTenant",
+        "title": "Remove Tenant",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "reltio.copyTenantId",
+        "title": "Copy Tenant ID",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "reltio.browseEntities",
+        "title": "Browse Entities",
+        "icon": "$(search)"
+      },
+      {
+        "command": "reltio.fetchL3",
+        "title": "Get Configuration",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "reltio.applyL3Configuration",
+        "title": "Apply Configuration to Tenant",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "reltio.fetchConfigurationHistory",
+        "title": "View Configuration History",
+        "icon": "$(history)"
+      },
+      {
+        "command": "reltio.fetchMoreConfigurationHistory",
+        "title": "Fetch More Configuration History",
+        "icon": "$(history)"
+      },
+      {
+        "command": "reltio.historyCompareWithCurrent",
+        "title": "Compare with Current L3",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "reltio.historyCompareWithPrevious",
+        "title": "Compare with Previous Snapshot",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "reltio.historySelectForCompare",
+        "title": "Select for Compare",
+        "icon": "$(circle-outline)"
+      },
+      {
+        "command": "reltio.historyCompareSelected",
+        "title": "Compare Selected",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "reltio.refreshEnvironment",
+        "title": "Refresh Environment",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "reltio.resyncAgentAssets",
+        "title": "Reltio: Resync agent assets (skills & Velocity Packs)",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "reltio.signInEnvironment",
+        "title": "Sign In to Environment",
+        "icon": "$(key)"
+      },
+      {
+        "command": "reltio.openL3",
+        "title": "Open L3",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "reltio.signInToFirstEnvironment",
+        "title": "Sign in to Reltio",
+        "icon": "$(sign-in)"
+      },
+      {
+        "command": "reltio.quickSwitchEnvironment",
+        "title": "Reltio: Switch active environment"
+      },
+      {
+        "command": "reltio.launchSetupWizard",
+        "title": "Reltio: Launch Setup Wizard",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "reltio.openFirstAvailableL3",
+        "title": "Reltio: Open first available L3"
+      },
+      {
+        "command": "reltio.resetWalkthrough",
+        "title": "Reltio: Reset Walkthrough (Developer)"
+      },
+      {
+        "command": "reltio.resetTermsAcceptance",
+        "title": "Reltio: Reset Terms of Use Acceptance (Developer)"
+      },
+      {
+        "command": "reltio.openSetupGuide",
+        "title": "Reltio: Open Setup Guide"
+      }
+    ],
+    "configuration": {
+      "title": "Reltio",
+      "properties": {
+        "reltio.unresolvedUriSeverity": {
+          "type": "string",
+          "enum": [
+            "warning",
+            "error",
+            "information",
+            "hint",
+            "off"
+          ],
+          "default": "warning",
+          "description": "Severity for unresolved URI references in Reltio configuration files"
+        },
+        "reltio.autoSaveOnEditorSwitch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Save dirty *.reltio.json when the active editor changes (another tab, tree, or panel) so disk stays in sync with Cursor Agent and the extension."
+        },
+        "reltio.autoSaveOnWindowBlur": {
+          "type": "boolean",
+          "default": false,
+          "description": "When the VS Code window loses focus, save all dirty *.reltio.json documents (optional; use if you switch to another app or external tools often)."
+        },
+        "reltio.tenantSingleClickOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "When clicking a tenant row, open the next action immediately (fetch L3 if missing, open L3 if present). Disable to require the inline icon click instead."
+        },
+        "reltio.uxMode": {
+          "type": "string",
+          "enum": [
+            "default",
+            "classic"
+          ],
+          "default": "default",
+          "description": "UX mode. 'default' enables the redesigned setup experience (wizard, walkthrough, status bar, next-step hints). 'classic' restores the pre-redesign behavior."
+        },
+        "reltio.defaultEnvironments": {
+          "type": "array",
+          "default": [],
+          "description": "Seed Reltio environments/tenants from workspace settings. Each entry needs host + tenantId (single path segments; no separators or '..'). Optional tokenFile is a workspace-relative path to a JSON file with access_token. Absolute/escaping paths are rejected. Never put bearer tokens, refresh tokens, or OAuth client secrets in settings — only a path to a local file.",
+          "items": {
+            "type": "object",
+            "required": [
+              "host",
+              "tenantId"
+            ],
+            "properties": {
+              "host": {
+                "type": "string",
+                "description": "Reltio environment host (e.g. prod-usg.reltio.com). Used as a directory name — no path separators or '..'."
+              },
+              "tenantId": {
+                "type": "string",
+                "description": "Reltio tenant ID. Used as a directory name — no path separators or '..'."
+              },
+              "tokenFile": {
+                "type": "string",
+                "description": "Workspace-relative path to a JSON token file containing access_token (never absolute; never commit this file)"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "reltio.applyDefaultsOnActivate": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, apply reltio.defaultEnvironments once on extension activation if a workspace folder is open and the workspace is trusted. No-op without a folder or when untrusted. Default false."
+        },
+        "reltio.fetchL3AfterApplyDefaults": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, after applying default environments, fetch L3 for each seeded tenant that has a loaded token. Never auto-applies (PUT) configuration to the tenant."
+        }
+      }
+    },
+    "configurationDefaults": {
+      "[reltio.json]": {
+        "editor.wordBasedSuggestions": "off"
+      }
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "reltio.launchSetupWizard",
+          "when": "view == reltioConfigTree",
+          "group": "navigation"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "reltio.showOntologyPreview",
+          "when": "resourceFilename =~ /\\.reltio\\.json$/",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "reltio.showOntologyPreview",
+          "when": "resourceFilename =~ /\\.reltio\\.json$/"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "reltio.revealInEditor",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.(item|folder)\\./",
+          "group": "navigation@1"
+        },
+        {
+          "command": "reltio.showOntologyFromTree",
+          "when": "view == reltioConfigTree && (viewItem == reltio.folder.entityTypesFolder || viewItem == reltio.folder.relationTypesFolder)",
+          "group": "navigation@2"
+        },
+        {
+          "command": "reltio.addEntityType",
+          "when": "view == reltioConfigTree && (viewItem == reltio.folder.entityTypesFolder || viewItem == reltio.tenant.l3)",
+          "group": "5_insert@01"
+        },
+        {
+          "command": "reltio.addRelationType",
+          "when": "view == reltioConfigTree && (viewItem == reltio.folder.relationTypesFolder || viewItem == reltio.tenant.l3)",
+          "group": "5_insert@02"
+        },
+        {
+          "command": "reltio.insertInteractionType",
+          "when": "view == reltioConfigTree && (viewItem == reltio.folder.interactionTypesFolder || viewItem == reltio.tenant.l3)",
+          "group": "5_insert@03"
+        },
+        {
+          "command": "reltio.insertHierarchyType",
+          "when": "view == reltioConfigTree && (viewItem == reltio.folder.hierarchyTypesFolder || viewItem == reltio.tenant.l3)",
+          "group": "5_insert@04"
+        },
+        {
+          "command": "reltio.insertGraphType",
+          "when": "view == reltioConfigTree && (viewItem == reltio.folder.graphTypesFolder || viewItem == reltio.tenant.l3)",
+          "group": "5_insert@05"
+        },
+        {
+          "command": "reltio.insertGroupingType",
+          "when": "view == reltioConfigTree && (viewItem == reltio.folder.groupingTypesFolder || viewItem == reltio.tenant.l3)",
+          "group": "5_insert@06"
+        },
+        {
+          "command": "reltio.insertSource",
+          "when": "view == reltioConfigTree && (viewItem == reltio.folder.sourcesFolder || viewItem == reltio.tenant.l3)",
+          "group": "5_insert@07"
+        },
+        {
+          "command": "reltio.insertSimpleAttribute",
+          "when": "view == reltioConfigTree && (viewItem == reltio.item.entityType || viewItem == reltio.item.relationType || viewItem == reltio.item.nestedAttribute || viewItem == reltio.item.nestedAttribute.relationType || viewItem == reltio.folder.attributesFolder || viewItem == reltio.folder.attributesFolder.relationType)",
+          "group": "3_insert@10"
+        },
+        {
+          "command": "reltio.insertNestedAttribute",
+          "when": "view == reltioConfigTree && (viewItem == reltio.item.entityType || viewItem == reltio.item.relationType || viewItem == reltio.item.nestedAttribute || viewItem == reltio.item.nestedAttribute.relationType || viewItem == reltio.folder.attributesFolder || viewItem == reltio.folder.attributesFolder.relationType)",
+          "group": "3_insert@11"
+        },
+        {
+          "command": "reltio.insertReferenceAttribute",
+          "when": "view == reltioConfigTree && (viewItem == reltio.item.entityType || viewItem == reltio.item.nestedAttribute || viewItem == reltio.folder.attributesFolder)",
+          "group": "3_insert@12"
+        },
+        {
+          "command": "reltio.insertMatchGroup",
+          "when": "view == reltioConfigTree && viewItem == reltio.item.entityType",
+          "group": "3_insert@20"
+        },
+        {
+          "command": "reltio.insertSurvivorshipGroup",
+          "when": "view == reltioConfigTree && (viewItem == reltio.item.entityType || viewItem == reltio.item.relationType)",
+          "group": "3_insert@21"
+        },
+        {
+          "command": "reltio.insertCleanseConfig",
+          "when": "view == reltioConfigTree && viewItem == reltio.item.entityType",
+          "group": "3_insert@22"
+        },
+        {
+          "command": "reltio.deleteNode",
+          "when": "viewItem =~ /^reltio\\.item\\./",
+          "group": "7_modification"
+        },
+        {
+          "command": "reltio.renameNode",
+          "when": "viewItem =~ /^reltio\\.item\\./",
+          "group": "7_modification"
+        },
+        {
+          "command": "reltio.configureOAuthClient",
+          "when": "viewItem == reltio.environment.unauthorized.oauthBlocked || viewItem =~ /^reltio\\.environment\\.authorized(\\.noTenants)?$/",
+          "group": "1_auth@0"
+        },
+        {
+          "command": "reltio.resetOAuthClient",
+          "when": "viewItem =~ /^reltio\\.environment\\..*\\.oauthReady$/",
+          "group": "1_auth@0"
+        },
+        {
+          "command": "reltio.loginWithBrowser",
+          "when": "viewItem == reltio.environment.unauthorized.oauthReady",
+          "group": "1_auth@1"
+        },
+        {
+          "command": "reltio.reLoginWithBrowser",
+          "when": "viewItem =~ /^reltio\\.environment\\.authorized\\.oauthReady(\\.noTenants)?$/",
+          "group": "1_auth@1"
+        },
+        {
+          "command": "reltio.provideToken",
+          "when": "viewItem =~ /reltio\\.environment/",
+          "group": "1_auth@2"
+        },
+        {
+          "command": "reltio.refreshEnvironment",
+          "when": "viewItem =~ /reltio\\.environment/",
+          "group": "2_workspace"
+        },
+        {
+          "command": "reltio.removeEnvironment",
+          "when": "viewItem =~ /reltio\\.environment/",
+          "group": "9_delete"
+        },
+        {
+          "command": "reltio.addTenant",
+          "when": "viewItem =~ /^reltio\\.environment\\.authorized/",
+          "group": "3_tenant"
+        },
+        {
+          "command": "reltio.removeTenant",
+          "when": "viewItem =~ /^reltio\\.tenant/",
+          "group": "9_delete"
+        },
+        {
+          "command": "reltio.copyTenantId",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.tenant/",
+          "group": "8_tenantid"
+        },
+        {
+          "command": "reltio.fetchL3",
+          "when": "viewItem == reltio.tenant.l3",
+          "group": "3_getconfig@01"
+        },
+        {
+          "command": "reltio.fetchConfigurationHistory",
+          "when": "viewItem == reltio.tenant.l3",
+          "group": "3_getconfig@02"
+        },
+        {
+          "command": "reltio.applyL3Configuration",
+          "when": "viewItem == reltio.tenant.l3",
+          "group": "4_apply"
+        },
+        {
+          "command": "reltio.fetchMoreConfigurationHistory",
+          "when": "viewItem =~ /^reltio\\.history\\.folder/",
+          "group": "3_fetch"
+        },
+        {
+          "command": "reltio.historyCompareWithCurrent",
+          "when": "viewItem =~ /^reltio\\.history\\.snapshot/",
+          "group": "navigation@3"
+        },
+        {
+          "command": "reltio.historyCompareWithPrevious",
+          "when": "viewItem == reltio.history.snapshot.hasOlder",
+          "group": "navigation@3b"
+        },
+        {
+          "command": "reltio.historySelectForCompare",
+          "when": "viewItem =~ /^reltio\\.history\\.snapshot/",
+          "group": "navigation@4"
+        },
+        {
+          "command": "reltio.historyCompareSelected",
+          "when": "viewItem =~ /^reltio\\.history\\.snapshot/",
+          "group": "navigation@5"
+        },
+        {
+          "command": "reltio.signInEnvironment",
+          "when": "viewItem == reltio.environment.unauthorized.oauthBlocked",
+          "group": "inline@1"
+        },
+        {
+          "command": "reltio.loginWithBrowser",
+          "when": "viewItem == reltio.environment.unauthorized.oauthReady",
+          "group": "inline@1"
+        },
+        {
+          "command": "reltio.addTenant",
+          "when": "viewItem =~ /\\.noTenants$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "reltio.fetchL3",
+          "when": "viewItem == reltio.tenant",
+          "group": "inline@1"
+        },
+        {
+          "command": "reltio.openL3",
+          "when": "viewItem == reltio.tenant.l3",
+          "group": "inline@1"
+        }
+      ]
+    },
+    "walkthroughs": [
+      {
+        "id": "reltio.gettingStarted",
+        "title": "Get Started with Reltio IDE",
+        "description": "Connect to your Reltio tenant, download your business configuration, and start modeling with AI-assisted authoring.",
+        "featuredFor": [
+          "**/*.reltio.json"
+        ],
+        "steps": [
+          {
+            "id": "addEnvironment",
+            "title": "Step 1: Connect to your Reltio environment",
+            "description": "Your Reltio environment is the host where your tenant resides (e.g. `361.reltio.com`). Click **Connect Your Reltio Tenant** in the Reltio side panel to begin the guided setup.",
+            "completionEvents": [
+              "onCommand:reltio.never_fired"
+            ]
+          },
+          {
+            "id": "signIn",
+            "title": "Step 2: Authenticate",
+            "description": "Sign in so Reltio IDE can securely access your business configuration. Use **Browser Sign-In** (recommended) to authenticate via your organization's SSO, or paste a **Bearer Token** directly. Your credentials are never stored on disk.",
+            "completionEvents": [
+              "onCommand:reltio.never_fired"
+            ]
+          },
+          {
+            "id": "pickTenant",
+            "title": "Step 3: Select your tenant",
+            "description": "Reltio IDE retrieves the list of tenants you have access to. Select one and the extension automatically creates a local workspace, downloads your business configuration (`L3.reltio.json`), and saves a remote baseline for safe deployments.",
+            "completionEvents": [
+              "onCommand:reltio.never_fired"
+            ]
+          },
+          {
+            "id": "startModeling",
+            "title": "Step 4: Start Modeling",
+            "description": "Open `L3.reltio.json` and start editing. Get AI-assisted authoring, intelligent code completion, real-time validation, easy navigation across entities and relationships, and full ontology visualization.",
+            "completionEvents": [
+              "onCommand:reltio.never_fired"
+            ]
+          },
+          {
+            "id": "applyChanges",
+            "title": "Step 5: Apply Your Changes",
+            "description": "Right-click the tenant and select **Apply Configuration to Tenant**. Reltio IDE compares your local configuration against the latest remote version and shows you a diff before deploying — so you always deploy with confidence.",
+            "completionEvents": [
+              "onCommand:reltio.never_fired"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "build": "npm run build:ext && npm run build:webview",
+    "build:ext": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --main-fields=module,main",
+    "build:webview": "esbuild src/webview/ontologyView.ts --bundle --outfile=dist/webview.js --format=iife --platform=browser && node -e \"require('fs').copyFileSync('src/webview/ontologyView.css','dist/webview.css')\"",
+    "build:watch": "npm run build:ext -- --watch",
+    "clean": "node -e \"['dist','target'].forEach(d=>{try{require('fs').rmSync(d,{recursive:true,force:true})}catch(e){}})\"",
+    "prepackage": "npm version patch --no-git-tag-version",
+    "package": "npm run clean && npm run build && node -e \"require('fs').mkdirSync('target',{recursive:true})\" && npx vsce package --out target/ --no-rewrite-relative-links",
+    "openspec": "openspec",
+    "test": "npm run compile && node scripts/run-unit-tests.cjs",
+    "bench:format-json": "node scripts/bench-format-json.cjs"
+  },
+  "dependencies": {
+    "elkjs": "^0.11.1",
+    "jsonc-parser": "^3.2.1"
+  },
+  "devDependencies": {
+    "@fission-ai/openspec": "^1.3.0",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/codicons": "^0.0.45",
+    "@vscode/vsce": "^3.7.1",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.3.0"
+  }
+}

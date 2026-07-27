@@ -1,0 +1,34 @@
+{
+  "fixtures": [
+    {
+      "path": "samples/first-test.json",
+      "expect": {
+        "noParseErrors": true,
+        "schemaVersion": "vp_fin.3.2.0",
+        "topLevelKeys": [
+          "abstract",
+          "changeRequestTypes",
+          "createdBy",
+          "createdTime",
+          "description",
+          "entityTypes",
+          "graphTypes",
+          "groupingTypes",
+          "label",
+          "relationTypes",
+          "schemaVersion",
+          "sources",
+          "survivorshipStrategies",
+          "updatedBy",
+          "updatedTime",
+          "uri"
+        ],
+        "entityTypeCount": 9,
+        "relationTypeCount": 27,
+        "sourceCount": 21,
+        "definitionCount": 1934,
+        "unresolvedUriCount": 0
+      }
+    }
+  ]
+}

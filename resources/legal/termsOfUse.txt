@@ -1,0 +1,15 @@
+Reltio IDE Terms of Use
+
+You may use the code, data, and/or other functionality (the "IDE Materials") solely for your internal business purposes in connection with your use of the Reltio Services pursuant to your agreement with Reltio under which you subscribe to the Reltio Services (the "Agreement").
+
+Your use of the IDE Materials must comply at all times with restrictions and obligations contained in the Agreement and any in accordance with any applicable documentation. You may view, use, and/or copy the IDE Materials solely for the purposes of using IDE Materials within or in conjunction with the Reltio Services.
+
+If you do not agree to these terms, you may not view, use, or copy the IDE Materials.
+
+Permitted use of the IDE Materials will terminate automatically upon your breach of these terms and/or upon the termination of the Agreement. Additionally, Reltio may terminate this license at any time on notice. Upon termination, you must permanently delete the IDE Materials and any and all copies thereof.
+
+DISCLAIMER; LIMITATION OF LIABILITY.
+
+THE IDE MATERIALS ARE PROVIDED "AS IS". RELTIO, ON BEHALF OF ITSELF AND ITS LICENSORS, SPECIFICALLY DISCLAIMS ALL WARRANTIES RELATING TO THE IDE MATERIALS, WHETHER EXPRESS OR IMPLIED, INCLUDING, WITHOUT LIMITATION, ACCURACY, MERCHANTABILITY, QUALITY, AVAILABILITY, OR FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. NOTWITHSTANDING ANYTHING TO THE CONTRARY IN THE AGREEMENT, RELTIO'S AND ITS LICENSORS' TOTAL AGGREGATE LIABILITY RELATING TO OR ARISING OUT OF YOUR USE OF OR RELTIO'S PROVISIONING OF THE IDE MATERIALS SHALL NOT EXCEED ONE THOUSAND ($1,000) DOLLARS. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE IDE MATERIALS OR THE USE OR OTHER DEALINGS IN THE IDE MATERIALS.
+
+The RELTIO® mark is a registered trademark of Reltio, Inc. in the United States and other countries.

@@ -1,0 +1,175 @@
+{
+  "$schema": "../schemas/reltio-metadata.schema.json",
+  "label": "Sample Reltio Configuration",
+  "description": "Example configuration demonstrating the schema structure",
+  "schemaVersion": "1.0",
+  "entityTypes": [
+    {
+      "uri": "configuration/entityTypes/Individual",
+      "label": "Individual",
+      "searchable": true,
+      "matchBeforeCreate": true,
+      "attributes": [
+        {
+          "uri": "configuration/entityTypes/Individual/attributes/FirstName",
+          "type": "String",
+          "label": "First Name",
+          "searchable": "true",
+          "required": "true"
+        },
+        {
+          "uri": "configuration/entityTypes/Individual/attributes/LastName",
+          "type": "String",
+          "label": "Last Name",
+          "searchable": "true",
+          "required": "true"
+        },
+        {
+          "uri": "configuration/entityTypes/Individual/attributes/Email",
+          "type": "String",
+          "label": "Email",
+          "searchable": "true"
+        },
+        {
+          "uri": "configuration/entityTypes/Individual/attributes/Addresses",
+          "type": "Nested",
+          "label": "Addresses",
+          "attributes": [
+            {
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/AddressLine1",
+              "type": "String",
+              "label": "Address Line 1"
+            },
+            {
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/City",
+              "type": "String",
+              "label": "City"
+            },
+            {
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/State",
+              "type": "String",
+              "label": "State"
+            },
+            {
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/Zip",
+              "type": "String",
+              "label": "Zip Code"
+            }
+          ]
+        }
+      ],
+      "matchGroups": [
+        {
+          "uri": "configuration/entityTypes/Individual/matchGroups/NameSSN",
+          "type": "dedupe",
+          "label": "Name and SSN Match",
+          "scope": "internal",
+          "matchMethod": "rule_based",
+          "rule": {
+            "exact": ["configuration/entityTypes/Individual/attributes/LastName"],
+            "fuzzy": ["configuration/entityTypes/Individual/attributes/FirstName"]
+          }
+        }
+      ],
+      "survivorshipGroups": [
+        {
+          "uri": "configuration/entityTypes/Individual/survivorshipGroups/Default",
+          "label": "Default Survivorship",
+          "default": "LUD",
+          "mapping": {
+            "survivorshipStrategy": "MostRecent",
+            "attribute": "configuration/entityTypes/Individual/attributes/FirstName"
+          }
+        }
+      ]
+    },
+    {
+      "uri": "configuration/entityTypes/Organization",
+      "label": "Organization",
+      "searchable": true,
+      "attributes": [
+        {
+          "uri": "configuration/entityTypes/Organization/attributes/Name",
+          "type": "String",
+          "label": "Organization Name",
+          "searchable": "true",
+          "required": "true"
+        },
+        {
+          "uri": "configuration/entityTypes/Organization/attributes/Industry",
+          "type": "String",
+          "label": "Industry"
+        }
+      ]
+    },
+    {
+      "uri": "configuration/entityTypes/Location",
+      "label": "Location",
+      "attributes": [
+        {
+          "uri": "configuration/entityTypes/Location/attributes/Address",
+          "type": "String",
+          "label": "Address"
+        }
+      ]
+    }
+  ],
+  "relationTypes": [
+    {
+      "uri": "configuration/relationTypes/EmployedBy",
+      "label": "Employed By",
+      "direction": "Bidirectional",
+      "startObject": {
+        "objectTypeURI": "configuration/entityTypes/Individual"
+      },
+      "endObject": {
+        "objectTypeURI": "configuration/entityTypes/Organization"
+      },
+      "attributes": [
+        {
+          "uri": "configuration/relationTypes/EmployedBy/attributes/StartDate",
+          "type": "Date",
+          "label": "Start Date"
+        }
+      ]
+    },
+    {
+      "uri": "configuration/relationTypes/HasAddress",
+      "label": "Has Address",
+      "startObject": {
+        "objectTypeURI": "configuration/entityTypes/Individual"
+      },
+      "endObject": {
+        "objectTypeURI": "configuration/entityTypes/Location"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "uri": "configuration/sources/CRM",
+      "label": "CRM System",
+      "priority": "1"
+    },
+    {
+      "uri": "configuration/sources/ERP",
+      "label": "ERP System",
+      "priority": "2"
+    },
+    {
+      "uri": "configuration/sources/Manual",
+      "label": "Manual Entry",
+      "priority": "3"
+    }
+  ],
+  "survivorshipStrategies": [
+    {
+      "uri": "configuration/survivorshipStrategies/LUD",
+      "label": "Last Updated Date",
+      "default": true
+    },
+    {
+      "uri": "configuration/survivorshipStrategies/SourcePriority",
+      "label": "Source Priority"
+    }
+  ]
+}

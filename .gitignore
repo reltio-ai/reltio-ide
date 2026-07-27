@@ -1,0 +1,18 @@
+node_modules/
+dist/
+.vscode-test/
+
+.DS_Store
+*.reltio.layout.json
+examples/
+
+# Local materialized agent assets (extension sync) — not source
+samples/.reltio/
+.reltio/
+
+# Local developer reference docs — not source
+code_understanding/
+
+# Claude Code local files
+CLAUDE.md
+.claude/

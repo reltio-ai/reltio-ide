@@ -1,0 +1,31 @@
+PENDING: Login via login.reltio.com/tenant
+==========================================
+
+Requested by: Snehil
+Status: Deferred — needs investigation
+
+Description:
+  Instead of opening auth.reltio.com/oauth/sso, the login flow should open:
+    https://login.reltio.com/tenant?client_id=reltio_ui&redirect_uri=http://localhost:8081
+
+  This page asks the user to enter their tenant ID, then authenticates via SSO or
+  native credentials. After successful login, the browser redirects back to Cursor.
+
+  Desired behavior in Cursor:
+  - The tenant the user entered on the login page is automatically added to the tree
+    (no need to manually right-click → Add Tenant).
+
+Reference URL (from Reltio web app):
+  https://login.reltio.com/tenant?client_id=reltio_ui&redirect_uri=https%3A%2F%2Ftest-usg.reltio.com%2Fnui%2Fcallback%3FredirectUrl%3Dhttps%253A%252F%252Ftest-usg.reltio.com%252Fnui%252FbQoz2GkwOrJoml5
+
+What was tried:
+  - Changed buildAuthorizationUrl() to use https://login.reltio.com/tenant
+  - Browser login succeeded and redirect to localhost:8081 worked (code captured)
+  - Token exchange to auth.reltio.com/oauth/token failed with HTTP 400
+  - Tried token exchange to login.reltio.com/oauth/token — not tested yet
+
+Next steps to investigate:
+  1. Open browser devtools Network tab before logging in
+  2. Capture the exact URL that login.reltio.com redirects to (what params come back)
+  3. Identify the correct token endpoint for this login flow
+  4. Determine if tenant_id is included in the callback URL params

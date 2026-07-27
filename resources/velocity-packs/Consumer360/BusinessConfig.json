@@ -1,0 +1,3645 @@
+{
+  "uri": "configuration",
+  "description": "Consumer360",
+  "schemaVersion": "2.2.5",
+  "sources": [
+    {
+      "uri": "configuration/sources/Reltio",
+      "label": "Reltio",
+      "icon": "images/source/reltio.png",
+      "abbreviation": "Reltio"
+    }
+  ],
+  "label": "",
+  "abstract": false,
+  "referenceConfigurationURI": "configuration/_vertical/reltio-core-2020-1",
+  "entityTypes": [
+    {
+      "uri": "configuration/entityTypes/Individual",
+      "typeColor": "#99CCFF",
+      "typeIcon": "images/base_type/typeIcon_gender_neutral.png",
+      "typeImage": "images/defaultImage/typeImage_gender_neutral.png",
+      "typeGraphIcon": "images/graphIcon/graphIcon_gender_neutral.png",
+      "cleanseConfig": {
+        "mappings": [
+          {
+            "uri": "configuration/entityTypes/Individual/cleanse/mappings/Addresses",
+            "outputMapping": [
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/VerificationStatus",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "VerificationStatus"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/VerificationStatusDetails",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "VerificationStatusDetails"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/StateProvince",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "AdministrativeArea"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/City",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "Locality"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Country",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "ISO3166-2"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Zip5",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "PostalCodePrimary"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Zip4",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "PostalCodeSecondary"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Latitude",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "Latitude"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Longitude",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "Longitude"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/GeoAccuracy",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "GeoAccuracy"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Organization",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "Organization"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/DeliveryAddress1",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "DeliveryAddress1"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "DeliveryAddress1"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine2",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "DeliveryAddress2"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/ISO3166-2",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "ISO3166-2"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/ISO3166-3",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "ISO3166-3"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/DeliveryAddress",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "DeliveryAddress"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/PremiseNumber",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "PremiseNumber"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Premise",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "Premise"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/SubBuilding",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "SubBuilding"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Street",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "Thoroughfare"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/ISO3166-N",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "ISO3166-N"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Unmatched",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "Unmatched"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AVC",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "AVC"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AutoZoneIndicator",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "AutoZoneIndicator"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/CarrierRoute",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "CarrierRoute"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/CMRAIndicator",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "CMRAIndicator"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/CongressionalDistrict",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "CongressionalDistrict"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/DefaultFlag",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "DefaultFlag"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/DeliveryPointBarCode",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "DeliveryPointBarCode"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/DPVConfirmedIndicator",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "DPVConfirmedIndicator"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/DPVFootnotes",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "DPVFootnotes"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/eLOTCode",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "eLOTCode"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/eLOTNumber",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "eLOTNumber"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/EWSFlag",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "EWSFlag"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/FalsePositiveIndicator",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "FalsePositiveIndicator"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/FIPSCountyCode",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "FIPSCountyCode"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Footnotes",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "Footnotes"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/LACSLinkCode",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "LACSLinkCode"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/LACSLinkIndicator",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "LACSLinkIndicator"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/LACSStatus",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "LACSStatus"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/NoStatIndicator",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "NoStatIndicator"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/PMBNumber",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "PMBNumber"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/PMBType",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "PMBType"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/PrimaryAddressLine",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "PrimaryAddressLine"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/RecordType",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "RecordType"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/ReturnCode",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "ReturnCode"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/ResidentialDelivery",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "ResidentialDelivery"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/SecondaryAddressLine",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "SecondaryAddressLine"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/SUITELinkFootnote",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "SUITELinkFootnote"
+              },
+              {
+                "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/VacantIndicator",
+                "mandatory": false,
+                "allValues": false,
+                "cleanseAttribute": "VacantIndicator"
+              }
+            ]
+          }
+        ],
+        "infos": [
+          {
+            "uri": "configuration/entityTypes/Individual/cleanse/infos/default",
+            "useInCleansing": true,
+            "sequence": [
+              {
+                "chain": [
+                  {
+                    "useHash": true,
+                    "cleanseFunction": "Loqate",
+                    "params": {
+                      "verificationStatusMapping": {
+                        "Verified": [
+                          "V(4|5).*"
+                        ],
+                        "Partially Verified": [
+                          "V(1|2|3).*",
+                          "P.*"
+                        ],
+                        "Unverified": [
+                          "U.*"
+                        ],
+                        "Ambiguous": [
+                          "A.*"
+                        ],
+                        "Conflict": [
+                          "C.*"
+                        ],
+                        "Reverted": [
+                          "R.*"
+                        ]
+                      }
+                    },
+                    "resultingValuesSourceTypeUri": "configuration/sources/ReltioCleanser",
+                    "proceedOnSuccess": true,
+                    "proceedOnFailure": false,
+                    "mapping": {
+                      "inputMapping": [
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressInput",
+                          "mandatory": true,
+                          "allValues": false,
+                          "cleanseAttribute": "Address"
+                        }
+                      ],
+                      "outputMappingRef": "configuration/entityTypes/Individual/cleanse/mappings/Addresses/outputMapping"
+                    }
+                  }
+                ]
+              }
+            ],
+            "nestedAttributeToCleanse": "configuration/entityTypes/Individual/attributes/Addresses"
+          },
+          {
+            "uri": "configuration/entityTypes/Individual/cleanse/infos/other",
+            "useInCleansing": true,
+            "sequence": [
+              {
+                "chain": [
+                  {
+                    "cleanseFunction": "Loqate",
+                    "resultingValuesSourceTypeUri": "configuration/sources/ReltioCleanser",
+                    "proceedOnSuccess": true,
+                    "proceedOnFailure": false,
+                    "mapping": {
+                      "inputMapping": [
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1",
+                          "mandatory": true,
+                          "allValues": false,
+                          "cleanseAttribute": "Address1"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine2",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Address2"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Country",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Country"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/StateProvince",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "AdministrativeArea"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/City",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Locality"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Street",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Thoroughfare"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Premise",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Premise"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Zip5",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "PostalCode"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/PostalCode",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "PostalCode"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Organization",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Organization"
+                        }
+                      ],
+                      "outputMappingRef": "configuration/entityTypes/Individual/cleanse/mappings/Addresses/outputMapping"
+                    }
+                  }
+                ]
+              }
+            ],
+            "nestedAttributeToCleanse": "configuration/entityTypes/Individual/attributes/Addresses"
+          },
+          {
+            "uri": "configuration/entityTypes/Individual/cleanse/infos/PhoneCleanserFn",
+            "useInCleansing": true,
+            "sequence": [
+              {
+                "chain": [
+                  {
+                    "cleanseFunction": "PhoneCleanserFn",
+                    "resultingValuesSourceTypeUri": "configuration/sources/ReltioCleanser",
+                    "proceedOnSuccess": true,
+                    "proceedOnFailure": true,
+                    "mapping": {
+                      "inputMapping": [
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Phone/attributes/Number",
+                          "mandatory": true,
+                          "allValues": true,
+                          "cleanseAttribute": "Phone.Number"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Phone/attributes/CountryCode",
+                          "mandatory": false,
+                          "allValues": true,
+                          "cleanseAttribute": "Phone.CountryCode"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Phone/attributes/Type",
+                          "mandatory": false,
+                          "allValues": true,
+                          "cleanseAttribute": "Phone.Type"
+                        }
+                      ],
+                      "outputMapping": [
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Phone/attributes/Type",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.Type"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Phone/attributes/Number",
+                          "mandatory": true,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.Number"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Phone/attributes/CountryCode",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.CountryCode"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Phone/attributes/Extension",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.Extension"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Phone/attributes/LineType",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.LineType"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Phone/attributes/FormatMask",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.FormatMask"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Phone/attributes/ValidationStatus",
+                          "mandatory": true,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.ValidationStatus"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Phone/attributes/AreaCode",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.AreaCode"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Phone/attributes/GeoCountry",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.GeoCountry"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Phone/attributes/GeoArea",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.GeoArea"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Phone/attributes/DigitCount",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.DigitCount"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Phone/attributes/LocalNumber",
+                          "mandatory": true,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.LocalNumber"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Phone/attributes/FormattedNumber",
+                          "mandatory": true,
+                          "allValues": false,
+                          "cleanseAttribute": "Phone.FormattedNumber"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "uri": "configuration/entityTypes/Individual/cleanse/infos/EmailCleanserFn",
+            "useInCleansing": true,
+            "sequence": [
+              {
+                "chain": [
+                  {
+                    "cleanseFunction": "EmailCleanserFn",
+                    "resultingValuesSourceTypeUri": "configuration/sources/ReltioCleanser",
+                    "proceedOnSuccess": true,
+                    "proceedOnFailure": true,
+                    "mapping": {
+                      "inputMapping": [
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Email/attributes/Email",
+                          "mandatory": true,
+                          "allValues": true,
+                          "cleanseAttribute": "Email.Email"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Email/attributes/Type",
+                          "mandatory": false,
+                          "allValues": true,
+                          "cleanseAttribute": "Email.Type"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Email/attributes/Rank",
+                          "mandatory": false,
+                          "allValues": true,
+                          "cleanseAttribute": "Email.Rank"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Email/attributes/Active",
+                          "mandatory": false,
+                          "allValues": true,
+                          "cleanseAttribute": "Email.Active"
+                        }
+                      ],
+                      "outputMapping": [
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Email/attributes/Email",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Email.Email"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Email/attributes/Type",
+                          "mandatory": true,
+                          "allValues": false,
+                          "cleanseAttribute": "Email.Type"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Email/attributes/Rank",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Email.Rank"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Email/attributes/Active",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Email.Active"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Email/attributes/Domain",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Email.Domain"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Email/attributes/DomainType",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Email.DomainType"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Email/attributes/ValidationStatus",
+                          "mandatory": true,
+                          "allValues": false,
+                          "cleanseAttribute": "Email.ValidationStatus"
+                        },
+                        {
+                          "attribute": "configuration/entityTypes/Individual/attributes/Email/attributes/Username",
+                          "mandatory": false,
+                          "allValues": false,
+                          "cleanseAttribute": "Email.Username"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "attributes": [
+        {
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "uri": "configuration/entityTypes/Individual/attributes/Name"
+        },
+        {
+          "uri": "configuration/entityTypes/Individual/attributes/Prefix",
+          "lookupCode": "rdm/lookupTypes/Prefix"
+        },
+        {
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "uri": "configuration/entityTypes/Individual/attributes/FirstName"
+        },
+        {
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "uri": "configuration/entityTypes/Individual/attributes/MiddleName"
+        },
+        {
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "uri": "configuration/entityTypes/Individual/attributes/LastName"
+        },
+        {
+          "label": "Suffix",
+          "name": "SuffixName",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "uri": "configuration/entityTypes/Individual/attributes/SuffixName",
+          "lookupCode": "rdm/lookupTypes/Suffix"
+        },
+        {
+          "label": "Preferred Name",
+          "name": "PreferredName",
+          "description": "",
+          "type": "String",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/PreferredName"
+        },
+        {
+          "label": "Title",
+          "name": "Title",
+          "description": "",
+          "type": "String",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/Title"
+        },
+        {
+          "label": "Nickname",
+          "name": "Nickname",
+          "description": "",
+          "type": "String",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/Nickname"
+        },
+        {
+          "label": "Alternate Name",
+          "name": "AlternateName",
+          "type": "Nested",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "required": false,
+          "uri": "configuration/entityTypes/Individual/attributes/AlternateName",
+          "dataLabelPattern": "{FirstName} {MiddleName} {LastName}",
+          "attributes": [
+            {
+              "label": "Type Code",
+              "name": "Type",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/AlternateName/attributes/Type"
+            },
+            {
+              "label": "Type description",
+              "name": "Description",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/AlternateName/attributes/Description"
+            },
+            {
+              "label": "First Name",
+              "name": "FirstName",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/AlternateName/attributes/FirstName"
+            },
+            {
+              "label": "Last Name",
+              "name": "LastName",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/AlternateName/attributes/LastName"
+            },
+            {
+              "label": "Middle Name",
+              "name": "MiddleName",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/AlternateName/attributes/MiddleName"
+            },
+            {
+              "label": "Prefix",
+              "name": "Prefix",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/AlternateName/attributes/Prefix",
+              "lookupCode": "rdm/lookupTypes/Prefix"
+            },
+            {
+              "label": "Suffix",
+              "name": "Suffix",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/AlternateName/attributes/Suffix",
+              "lookupCode": "rdm/lookupTypes/Suffix"
+            }
+          ]
+        },
+        {
+          "hidden": true,
+          "important": false,
+          "system": false,
+          "uri": "configuration/entityTypes/Individual/attributes/MiddleInitial"
+        },
+        {
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "uri": "configuration/entityTypes/Individual/attributes/Gender",
+          "lookupCode": "rdm/lookupTypes/Gender"
+        },
+        {
+          "label": "Role Type",
+          "name": "roleType",
+          "type": "String",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "required": false,
+          "values": [
+            "Customer",
+            "Prospect",
+            "Employee"
+          ],
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/roleType"
+        },
+        {
+          "label": "Ethnicity",
+          "name": "Ethnicity",
+          "type": "String",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "uri": "configuration/entityTypes/Individual/attributes/Ethnicity",
+          "lookupCode": "rdm/lookupTypes/App-Consumer360Ethnicity"
+        },
+        {
+          "label": "Social Media",
+          "name": "SocialMedia",
+          "description": "Social media details of the individuals",
+          "type": "Nested",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "required": false,
+          "uri": "configuration/entityTypes/Individual/attributes/SocialMedia",
+          "dataLabelPattern": "{ChannelName} {Identifier}",
+          "attributes": [
+            {
+              "label": "Channel Name",
+              "name": "ChannelName",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/SocialMedia/attributes/ChannelName"
+            },
+            {
+              "label": "Identifier",
+              "name": "Identifier",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/SocialMedia/attributes/Identifier"
+            },
+            {
+              "label": "Join Date",
+              "name": "JoinDate",
+              "description": "",
+              "type": "Date",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/SocialMedia/attributes/JoinDate"
+            },
+            {
+              "label": "Active Status",
+              "name": "ActiveStatus",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/SocialMedia/attributes/ActiveStatus",
+              "lookupCode": "rdm/lookupTypes/App-Consumer360ActiveStatus"
+            }
+          ]
+        },
+        {
+          "label": "Phone",
+          "name": "Phone",
+          "type": "Nested",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "required": false,
+          "attributeOrdering": {
+            "fieldURI": "configuration/entityTypes/Individual/attributes/Phone/attributes/Rank",
+            "orderType": "ASC",
+            "orderingStrategy": "FieldBased"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/Phone",
+          "dataLabelPattern": "{Type} - {Number}",
+          "matchFieldURIs": [
+            "configuration/entityTypes/Individual/attributes/Phone/attributes/Number",
+            "configuration/entityTypes/Individual/attributes/Phone/attributes/Type"
+          ],
+          "attributes": [
+            {
+              "label": "Type",
+              "name": "Type",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": true,
+              "values": [
+                "Mobile",
+                "Home",
+                "Work",
+                "Fax",
+                "Main",
+                "Work Fax",
+                "Home Fax",
+                "Pager",
+                "Other"
+              ],
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Phone/attributes/Type"
+            },
+            {
+              "label": "Number",
+              "name": "Number",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Phone/attributes/Number"
+            },
+            {
+              "label": "Country Code",
+              "name": "CountryCode",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": true,
+              "values": [
+                "US",
+                "IN",
+                "GB",
+                "AU"
+              ],
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Phone/attributes/CountryCode"
+            },
+            {
+              "label": "Extension",
+              "name": "Extension",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Phone/attributes/Extension"
+            },
+            {
+              "label": "Formatted Number",
+              "name": "FormattedNumber",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Phone/attributes/FormattedNumber"
+            },
+            {
+              "label": "Rank",
+              "name": "Rank",
+              "description": "",
+              "type": "Int",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Phone/attributes/Rank"
+            },
+            {
+              "label": "Area Code",
+              "name": "AreaCode",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Phone/attributes/AreaCode"
+            },
+            {
+              "label": "Local Number",
+              "name": "LocalNumber",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Phone/attributes/LocalNumber"
+            },
+            {
+              "label": "Validation Status",
+              "name": "ValidationStatus",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Phone/attributes/ValidationStatus"
+            },
+            {
+              "label": "Line Type",
+              "name": "LineType",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Phone/attributes/LineType"
+            },
+            {
+              "label": "Format Mask",
+              "name": "FormatMask",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Phone/attributes/FormatMask"
+            },
+            {
+              "label": "Digit Count",
+              "name": "DigitCount",
+              "description": "",
+              "type": "Int",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Phone/attributes/DigitCount"
+            },
+            {
+              "label": "Geo Area",
+              "name": "GeoArea",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Phone/attributes/GeoArea"
+            },
+            {
+              "label": "Geo Country",
+              "name": "GeoCountry",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Phone/attributes/GeoCountry"
+            },
+            {
+              "label": "Active",
+              "name": "Active",
+              "description": "DO NOT USE THIS ATTRIBUTE - will be deprecated",
+              "type": "Boolean",
+              "hidden": true,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Phone/attributes/Active"
+            },
+            {
+              "label": "Suppress",
+              "name": "Suppress",
+              "description": "Suppress",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "faceted": true,
+              "values": [
+                "Yes",
+                "No",
+                "Exception"
+              ],
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Phone/attributes/Suppress"
+            },
+            {
+              "label": "Exception",
+              "name": "Exception",
+              "description": "Exception",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Phone/attributes/Exception"
+            }
+          ]
+        },
+        {
+          "name": "Address",
+          "hidden": true,
+          "important": false,
+          "system": false,
+          "uri": "configuration/entityTypes/Individual/attributes/Address"
+        },
+        {
+          "label": "Address",
+          "name": "Addresses",
+          "type": "Nested",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "searchable": true,
+          "attributeOrdering": {
+            "fieldURI": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressType",
+            "orderType": "ASC",
+            "orderingStrategy": "FieldBased"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/Addresses",
+          "dataLabelPattern": "[{AddressType} :] {AddressLine1}, {City}, {StateProvince}",
+          "matchFieldURIsExactOrNull": [
+            "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressType",
+            "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1",
+            "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine2",
+            "configuration/entityTypes/Individual/attributes/Addresses/attributes/City",
+            "configuration/entityTypes/Individual/attributes/Addresses/attributes/StateProvince",
+            "configuration/entityTypes/Individual/attributes/Addresses/attributes/Zip4",
+            "configuration/entityTypes/Individual/attributes/Addresses/attributes/Zip5"
+          ],
+          "attributes": [
+            {
+              "label": "Address Type",
+              "name": "AddressType",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressType",
+              "lookupCode": "rdm/lookupTypes/AddressType"
+            },
+            {
+              "label": "Address Input",
+              "name": "AddressInput",
+              "type": "Blob",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressInput"
+            },
+            {
+              "label": "Address Line 1",
+              "name": "AddressLine1",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1"
+            },
+            {
+              "label": "Address Line 2",
+              "name": "AddressLine2",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine2"
+            },
+            {
+              "label": "City",
+              "name": "City",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "faceted": true,
+              "searchable": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/City"
+            },
+            {
+              "label": "State",
+              "name": "StateProvince",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "faceted": true,
+              "searchable": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/StateProvince",
+              "lookupCode": "rdm/lookupTypes/State"
+            },
+            {
+              "label": "Country",
+              "name": "Country",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Country",
+              "lookupCode": "rdm/lookupTypes/Country",
+              "dependentLookupAttributes": [
+                "configuration/entityTypes/Individual/attributes/Addresses/attributes/StateProvince"
+              ]
+            },
+            {
+              "label": "Postal Code",
+              "name": "PostalCode",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/PostalCode"
+            },
+            {
+              "label": "Zip5",
+              "name": "Zip5",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "searchable": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Zip5"
+            },
+            {
+              "label": "Zip4",
+              "name": "Zip4",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Zip4"
+            },
+            {
+              "label": "Verification Status",
+              "name": "VerificationStatus",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/VerificationStatus"
+            },
+            {
+              "label": "Verification Status Details",
+              "name": "VerificationStatusDetails",
+              "type": "Blob",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/VerificationStatusDetails"
+            },
+            {
+              "label": "AVC",
+              "name": "AVC",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AVC"
+            },
+            {
+              "label": "Country Name",
+              "name": "CountryName",
+              "description": "DO NOT USE this field - use Country instead",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/CountryName"
+            },
+            {
+              "label": "ISO3166-2",
+              "name": "ISO3166-2",
+              "description": "This field holds the ISO 3166 2-character country code.",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/ISO3166-2"
+            },
+            {
+              "label": "ISO3166-3",
+              "name": "ISO3166-3",
+              "description": "This field holds the ISO 3166 3-character country code.",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/ISO3166-3"
+            },
+            {
+              "label": "ISO3166-N",
+              "name": "ISO3166-N",
+              "description": "This field holds the ISO 3166 N-digit numeric country code.",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/ISO3166-N"
+            },
+            {
+              "label": "Super Admin Area",
+              "name": "SuperAdministrativeArea",
+              "description": "This field holds the largest geographic data element within a country.",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/SuperAdministrativeArea"
+            },
+            {
+              "label": "Street",
+              "name": "Street",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Street"
+            },
+            {
+              "label": "Admin Area",
+              "name": "AdministrativeArea",
+              "description": "This field holds the most common geographic data element within a country. For instance, USA State, and Canadian Province.",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AdministrativeArea"
+            },
+            {
+              "label": "County",
+              "name": "SubAdministrativeArea",
+              "description": "This field holds the smallest geographic data element within a country. For instance, USA County.",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "faceted": true,
+              "searchable": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/SubAdministrativeArea"
+            },
+            {
+              "label": "Postal Code Extension",
+              "name": "PostalCodeExtension",
+              "description": "DO NOT USE this field - use Zip/zip4 instead",
+              "type": "String",
+              "hidden": true,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/PostalCodeExtension"
+            },
+            {
+              "label": "UnitName",
+              "name": "UnitName",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/UnitName"
+            },
+            {
+              "label": "UnitValue",
+              "name": "UnitValue",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/UnitValue"
+            },
+            {
+              "label": "Floor",
+              "name": "Floor",
+              "description": "N/A",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Floor"
+            },
+            {
+              "label": "Building",
+              "name": "Building",
+              "description": "N/A",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Building"
+            },
+            {
+              "label": "SubBuilding",
+              "name": "SubBuilding",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/SubBuilding"
+            },
+            {
+              "label": "PO Box",
+              "name": "POBox",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/POBox"
+            },
+            {
+              "label": "Neighborhood",
+              "name": "Neighborhood",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Neighborhood"
+            },
+            {
+              "label": "Double Dependent Locality",
+              "name": "DoubleDependentLocality",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/DoubleDependentLocality"
+            },
+            {
+              "label": "Dependent Thoroughfare",
+              "name": "DependentThoroughfare",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/DependentThoroughfare"
+            },
+            {
+              "label": "Locality",
+              "name": "Locality",
+              "description": "This field holds the most common population center data element within a country. For instance, USA City, Canadian Municipality.",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Locality"
+            },
+            {
+              "label": "Latitude",
+              "name": "Latitude",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Latitude"
+            },
+            {
+              "label": "Longitude",
+              "name": "Longitude",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Longitude"
+            },
+            {
+              "label": "GeoAccuracy",
+              "name": "GeoAccuracy",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/GeoAccuracy"
+            },
+            {
+              "label": "Organization",
+              "name": "Organization",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Organization"
+            },
+            {
+              "label": "Premise",
+              "name": "Premise",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Premise"
+            },
+            {
+              "label": "PremiseNumber",
+              "name": "PremiseNumber",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/PremiseNumber"
+            },
+            {
+              "label": "Delivery Address",
+              "name": "DeliveryAddress",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/DeliveryAddress"
+            },
+            {
+              "label": "Delivery Address #1",
+              "name": "DeliveryAddress1",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/DeliveryAddress1"
+            },
+            {
+              "label": "Leftover",
+              "name": "Unmatched",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Unmatched"
+            },
+            {
+              "label": "Commenters",
+              "name": "Commenters",
+              "description": "Commenters",
+              "type": "String",
+              "hidden": true,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Commenters"
+            },
+            {
+              "label": "Automated Zone Indicator",
+              "name": "AutoZoneIndicator",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AutoZoneIndicator"
+            },
+            {
+              "label": "Carrier Route",
+              "name": "CarrierRoute",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/CarrierRoute"
+            },
+            {
+              "label": "CMRA Indicator",
+              "name": "CMRAIndicator",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/CMRAIndicator"
+            },
+            {
+              "label": "Congressional District",
+              "name": "CongressionalDistrict",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/CongressionalDistrict"
+            },
+            {
+              "label": "Default Flag",
+              "name": "DefaultFlag",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/DefaultFlag"
+            },
+            {
+              "label": "Delivery Point Bar Code",
+              "name": "DeliveryPointBarCode",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/DeliveryPointBarCode"
+            },
+            {
+              "label": "DPV Confirmed Indicator",
+              "name": "DPVConfirmedIndicator",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/DPVConfirmedIndicator"
+            },
+            {
+              "label": "DPV Footnotes",
+              "name": "DPVFootnotes",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/DPVFootnotes"
+            },
+            {
+              "label": "eLOT Code",
+              "name": "eLOTCode",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/eLOTCode"
+            },
+            {
+              "label": "eLOT Number",
+              "name": "eLOTNumber",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/eLOTNumber"
+            },
+            {
+              "label": "EWS Flag",
+              "name": "EWSFlag",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/EWSFlag"
+            },
+            {
+              "label": "False Positive Indicator",
+              "name": "FalsePositiveIndicator",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/FalsePositiveIndicator"
+            },
+            {
+              "label": "FIPS County Code",
+              "name": "FIPSCountyCode",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/FIPSCountyCode"
+            },
+            {
+              "label": "Footnotes",
+              "name": "Footnotes",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Footnotes"
+            },
+            {
+              "label": "LACS Link Code",
+              "name": "LACSLinkCode",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/LACSLinkCode"
+            },
+            {
+              "label": "LACS Link Indicator",
+              "name": "LACSLinkIndicator",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/LACSLinkIndicator"
+            },
+            {
+              "label": "LACS Status",
+              "name": "LACSStatus",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/LACSStatus"
+            },
+            {
+              "label": "No Stat Indicator",
+              "name": "NoStatIndicator",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/NoStatIndicator"
+            },
+            {
+              "label": "PMB Number",
+              "name": "PMBNumber",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/PMBNumber"
+            },
+            {
+              "label": "PMB Type",
+              "name": "PMBType",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/PMBType"
+            },
+            {
+              "label": "Primary Address Line",
+              "name": "PrimaryAddressLine",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/PrimaryAddressLine"
+            },
+            {
+              "label": "Record Type",
+              "name": "RecordType",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/RecordType"
+            },
+            {
+              "label": "Return Code",
+              "name": "ReturnCode",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/ReturnCode"
+            },
+            {
+              "label": "Residential Delivery",
+              "name": "ResidentialDelivery",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/ResidentialDelivery"
+            },
+            {
+              "label": "Secondary Address Line",
+              "name": "SecondaryAddressLine",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/SecondaryAddressLine"
+            },
+            {
+              "label": "SUITE Link Footnote",
+              "name": "SUITELinkFootnote",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/SUITELinkFootnote"
+            },
+            {
+              "label": "Vacant Indicator",
+              "name": "VacantIndicator",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/VacantIndicator"
+            }
+          ]
+        },
+        {
+          "label": "Email",
+          "name": "Email",
+          "type": "Nested",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "fieldURI": "configuration/entityTypes/Individual/attributes/Email/attributes/Rank",
+            "orderType": "ASC",
+            "orderingStrategy": "FieldBased"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/Email",
+          "dataLabelPattern": "{Type} {Email} ",
+          "matchFieldURIs": [
+            "configuration/entityTypes/Individual/attributes/Email/attributes/Type",
+            "configuration/entityTypes/Individual/attributes/Email/attributes/Email"
+          ],
+          "attributes": [
+            {
+              "label": "Type",
+              "name": "Type",
+              "description": "",
+              "type": "String",
+              "required": true,
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "values": [
+                "Home",
+                "Work",
+                "Other",
+                "Unknown"
+              ],
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Email/attributes/Type"
+            },
+            {
+              "label": "Email",
+              "name": "Email",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "required": true,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Email/attributes/Email"
+            },
+            {
+              "label": "Domain",
+              "name": "Domain",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Email/attributes/Domain"
+            },
+            {
+              "label": "Domain Type",
+              "name": "DomainType",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Email/attributes/DomainType"
+            },
+            {
+              "label": "Username",
+              "name": "Username",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Email/attributes/Username"
+            },
+            {
+              "label": "Rank",
+              "name": "Rank",
+              "description": "",
+              "type": "Int",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Email/attributes/Rank"
+            },
+            {
+              "label": "Validation Status",
+              "name": "ValidationStatus",
+              "description": "",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Email/attributes/ValidationStatus"
+            },
+            {
+              "label": "Active",
+              "name": "Active",
+              "description": "",
+              "type": "Boolean",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Email/attributes/Active"
+            },
+            {
+              "label": "Source CD",
+              "name": "SourceCD",
+              "description": "DO NOT USE THIS ATTRIBUTE - will be deprecated",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Email/attributes/SourceCD"
+            }
+          ]
+        },
+        {
+          "label": "Multi Channel Communication Consent",
+          "name": "MultiChannelCommunicationConsent",
+          "type": "Nested",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "required": false,
+          "uri": "configuration/entityTypes/Individual/attributes/MultiChannelCommunicationConsent",
+          "dataLabelPattern": "{ChannelType} {ChannelValue} {CommunicationType} {ChannelConsent}",
+          "matchFieldURIs": [
+            "configuration/entityTypes/Individual/attributes/MultiChannelCommunicationConsent/attributes/ChannelType",
+            "configuration/entityTypes/Individual/attributes/MultiChannelCommunicationConsent/attributes/ChannelValue",
+            "configuration/entityTypes/Individual/attributes/MultiChannelCommunicationConsent/attributes/CommunicationType"
+          ],
+          "attributes": [
+            {
+              "label": "Channel Type",
+              "name": "ChannelType",
+              "description": "Channel type for the consent, e.g. email, SMS, etc. ",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/MultiChannelCommunicationConsent/attributes/ChannelType"
+            },
+            {
+              "label": "Channel Value",
+              "name": "ChannelValue",
+              "description": "Value of the channel for consent - john.doe@email.com",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/MultiChannelCommunicationConsent/attributes/ChannelValue"
+            },
+            {
+              "label": "Channel Consent",
+              "name": "ChannelConsent",
+              "description": "The consent for the corresponding channel and the id - yes or no",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "cardinality": {
+                "minValue": 0,
+                "maxValue": 1
+              },
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/MultiChannelCommunicationConsent/attributes/ChannelConsent",
+              "lookupCode": "rdm/lookupTypes/ChannelConsent"
+            },
+            {
+              "label": "Start Date",
+              "name": "StartDate",
+              "description": "Start date of the consent ",
+              "type": "Date",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/MultiChannelCommunicationConsent/attributes/StartDate"
+            },
+            {
+              "label": "Expiration Date",
+              "name": "ExpirationDate",
+              "description": "Expiration date of the consent",
+              "type": "Date",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/MultiChannelCommunicationConsent/attributes/ExpirationDate"
+            },
+            {
+              "label": "Communication Type",
+              "name": "CommunicationType",
+              "description": "Different communication type that the individual prefers, for e.g. - New Product Launches, Sales/Discounts, Brand-level News",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/MultiChannelCommunicationConsent/attributes/CommunicationType"
+            },
+            {
+              "label": "Communication Frequency",
+              "name": "CommunicationFrequency",
+              "description": "How frequently can the individual be communicated to. Example - Daily/monthly/weekly",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/MultiChannelCommunicationConsent/attributes/CommunicationFrequency"
+            },
+            {
+              "label": "Channel Preference Flag",
+              "name": "ChannelPreferenceFlag",
+              "description": "When checked denotes the preferred channel of communication",
+              "type": "Boolean",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "required": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/MultiChannelCommunicationConsent/attributes/ChannelPreferenceFlag"
+            }
+          ]
+        },
+        {
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "faceted": true,
+          "searchable": true,
+          "uri": "configuration/entityTypes/Individual/attributes/Status",
+          "lookupCode": "rdm/lookupTypes/App-Consumer360Status",
+          "dependentLookupAttributes": [
+            "configuration/entityTypes/Individual/attributes/StatusReasonCode"
+          ]
+        },
+        {
+          "label": "Status Reason Code",
+          "name": "StatusReasonCode",
+          "description": "",
+          "type": "String",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/StatusReasonCode",
+          "lookupCode": "rdm/lookupTypes/App-Consumer360StatusReasonCode"
+        },
+        {
+          "label": "Status Update Date",
+          "name": "StatusUpdateDate",
+          "description": "",
+          "type": "Date",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/StatusUpdateDate"
+        },
+        {
+          "label": "Education",
+          "name": "Education",
+          "type": "Nested",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderType": "ASC",
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/Education",
+          "dataLabelPattern": "{Type} {Degree}",
+          "matchFieldURIs": [
+            "configuration/entityTypes/Individual/attributes/Education/attributes/SchoolName",
+            "configuration/entityTypes/Individual/attributes/Education/attributes/Type",
+            "configuration/entityTypes/Individual/attributes/Education/attributes/Degree",
+            "configuration/entityTypes/Individual/attributes/Education/attributes/YearOfGraduation"
+          ],
+          "attributes": [
+            {
+              "label": "School Name",
+              "name": "SchoolName",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Education/attributes/SchoolName"
+            },
+            {
+              "label": "Type",
+              "name": "Type",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Education/attributes/Type"
+            },
+            {
+              "label": "Degree",
+              "name": "Degree",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "faceted": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Education/attributes/Degree"
+            },
+            {
+              "label": "Year of graduation",
+              "name": "YearOfGraduation",
+              "description": "DO NOT USE THIS ATTRIBUTE - will be deprecated",
+              "type": "Int",
+              "hidden": true,
+              "important": false,
+              "system": false,
+              "faceted": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Education/attributes/YearOfGraduation"
+            },
+            {
+              "label": "Graduated",
+              "name": "Graduated",
+              "description": "DO NOT USE THIS ATTRIBUTE - will be deprecated",
+              "type": "Boolean",
+              "hidden": true,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Education/attributes/Graduated"
+            },
+            {
+              "label": "GPA",
+              "name": "GPA",
+              "type": "Number",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Education/attributes/GPA"
+            },
+            {
+              "label": "Years In Program",
+              "name": "YearsInProgram",
+              "description": "Year in Grad Training Program, Year in training in current program",
+              "type": "Int",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Education/attributes/YearsInProgram"
+            },
+            {
+              "label": "Start Year",
+              "name": "StartYear",
+              "description": "",
+              "type": "Int",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Education/attributes/StartYear"
+            },
+            {
+              "label": "End Year",
+              "name": "EndYear",
+              "description": "",
+              "type": "Int",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Education/attributes/EndYear"
+            },
+            {
+              "label": "Field of Study",
+              "name": "FieldofStudy",
+              "description": "Specialty Focus or Specialty Training",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Education/attributes/FieldofStudy"
+            },
+            {
+              "label": "Eligibility",
+              "name": "Eligibility",
+              "description": "DO NOT USE THIS ATTRIBUTE - will be deprecated",
+              "type": "String",
+              "hidden": true,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Education/attributes/Eligibility"
+            },
+            {
+              "label": "Type",
+              "name": "EducationType",
+              "description": "DO NOT USE THIS ATTRIBUTE - will be deprecated",
+              "type": "String",
+              "hidden": true,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/Education/attributes/EducationType"
+            }
+          ]
+        },
+        {
+          "label": "Marital Status",
+          "name": "MaritalStatus",
+          "type": "String",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/MaritalStatus",
+          "lookupCode": "rdm/lookupTypes/App-Consumer360MaritalStatus"
+        },
+        {
+          "label": "Income Band",
+          "name": "IncomeBand",
+          "type": "String",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/IncomeBand",
+          "lookupCode": "rdm/lookupTypes/App-Consumer360IncomeBand"
+        },
+        {
+          "label": "Age Band",
+          "name": "AgeBand",
+          "type": "String",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/AgeBand",
+          "lookupCode": "rdm/lookupTypes/App-Consumer360AgeBand"
+        },
+        {
+          "label": "Has Children",
+          "name": "hasChildren",
+          "type": "Boolean",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/hasChildren"
+        },
+        {
+          "label": "Privacy Prefs",
+          "name": "PrivacyPreferences",
+          "type": "Nested",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/PrivacyPreferences",
+          "dataLabelPattern": "Phone: {PhoneOptOut}",
+          "attributes": [
+            {
+              "label": "Opt Out",
+              "name": "OptOut",
+              "description": "",
+              "type": "Boolean",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "faceted": true,
+              "searchable": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/PrivacyPreferences/attributes/OptOut"
+            },
+            {
+              "label": "Opt Out Start Date",
+              "name": "OptOutStartDate",
+              "description": "",
+              "type": "Date",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/PrivacyPreferences/attributes/OptOutStartDate"
+            },
+            {
+              "label": "Allowed To Contact",
+              "name": "AllowedToContact",
+              "description": "",
+              "type": "Boolean",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "faceted": true,
+              "searchable": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/PrivacyPreferences/attributes/AllowedToContact"
+            },
+            {
+              "label": "Phone Opt Out",
+              "name": "PhoneOptOut",
+              "description": "",
+              "type": "Boolean",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "faceted": true,
+              "searchable": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/PrivacyPreferences/attributes/PhoneOptOut"
+            },
+            {
+              "label": "Email Opt Out",
+              "name": "EmailOptOut",
+              "description": "",
+              "type": "Boolean",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "faceted": true,
+              "searchable": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/PrivacyPreferences/attributes/EmailOptOut"
+            },
+            {
+              "label": "Fax Opt Out",
+              "name": "FaxOptOut",
+              "description": "",
+              "type": "Boolean",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "faceted": true,
+              "searchable": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/PrivacyPreferences/attributes/FaxOptOut"
+            },
+            {
+              "label": "Text Message Opt Out",
+              "name": "TextMessageOptOut",
+              "description": "",
+              "type": "Boolean",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "faceted": true,
+              "searchable": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/PrivacyPreferences/attributes/TextMessageOptOut"
+            },
+            {
+              "label": "Mail Opt Out",
+              "name": "MailOptOut",
+              "description": "",
+              "type": "Boolean",
+              "hidden": false,
+              "important": false,
+              "system": false,
+              "faceted": true,
+              "searchable": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/PrivacyPreferences/attributes/MailOptOut"
+            }
+          ]
+        },
+        {
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "uri": "configuration/entityTypes/Individual/attributes/Identifiers",
+          "dataLabelPattern": "{Type} {ID}",
+          "matchFieldURIs": [
+            "configuration/entityTypes/Individual/attributes/Identifiers/attributes/Type",
+            "configuration/entityTypes/Individual/attributes/Identifiers/attributes/ID"
+          ],
+          "attributes": [
+            {
+              "hidden": true,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Individual/attributes/Identifiers/attributes/DeactivationReasonCode"
+            },
+            {
+              "hidden": true,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Individual/attributes/Identifiers/attributes/DeactivationDate"
+            },
+            {
+              "hidden": true,
+              "important": false,
+              "system": false,
+              "uri": "configuration/entityTypes/Individual/attributes/Identifiers/attributes/ReactivationDate"
+            }
+          ]
+        },
+        {
+          "label": "Tax ID",
+          "name": "TaxID",
+          "description": "DEPRECATED - DO NOT USE",
+          "type": "String",
+          "hidden": true,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/TaxID"
+        },
+        {
+          "label": "SSN",
+          "name": "SSN",
+          "description": "DEPRECATED - DO NOT USE",
+          "type": "String",
+          "hidden": true,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/SSN"
+        },
+        {
+          "label": "SSN Last 4",
+          "name": "SSNLast4",
+          "description": "DEPRECATED - DO NOT USE",
+          "type": "String",
+          "hidden": true,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/SSNLast4"
+        },
+        {
+          "label": "Date of Birth",
+          "name": "DoB",
+          "description": "Date of Birth",
+          "type": "Date",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/DoB"
+        },
+        {
+          "label": "Year of Birth",
+          "name": "YoB",
+          "description": "Birth Year",
+          "type": "Int",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/YoB"
+        },
+        {
+          "label": "Birth City",
+          "name": "BirthCity",
+          "description": "Birth City",
+          "type": "String",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/BirthCity"
+        },
+        {
+          "label": "Birth State",
+          "name": "BirthState",
+          "description": "Birth State",
+          "type": "String",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/BirthState"
+        },
+        {
+          "label": "Birth Country",
+          "name": "BirthCountry",
+          "description": "Birth Country",
+          "type": "String",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "faceted": true,
+          "searchable": true,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/BirthCountry"
+        },
+        {
+          "label": "Date of Death",
+          "name": "DoD",
+          "description": "",
+          "type": "Date",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/DoD"
+        },
+        {
+          "label": "Year of Death",
+          "name": "YoD",
+          "description": "",
+          "type": "Int",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/YoD"
+        },
+        {
+          "label": "Presumed Dead",
+          "name": "PresumedDead",
+          "description": "",
+          "type": "Boolean",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "faceted": true,
+          "searchable": true,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/PresumedDead"
+        },
+        {
+          "label": "Image Link",
+          "name": "ImageLinks",
+          "type": "Image URL",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/ImageLinks"
+        },
+        {
+          "label": "Video Link",
+          "name": "VideoLinks",
+          "type": "URL",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/VideoLinks"
+        },
+        {
+          "label": "Document Link",
+          "name": "DocumentLinks",
+          "type": "URL",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/DocumentLinks"
+        },
+        {
+          "label": "Website URL",
+          "name": "WebsiteURL",
+          "type": "URL",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/WebsiteURL"
+        },
+        {
+          "label": "Description",
+          "name": "Description",
+          "description": "",
+          "type": "Blob",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/Description"
+        },
+        {
+          "label": "Commenters",
+          "name": "Commenters",
+          "description": "Commenters",
+          "type": "String",
+          "hidden": true,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/Commenters"
+        },
+        {
+          "label": "Image Gallery",
+          "name": "ImageGallery",
+          "type": "Image",
+          "hidden": false,
+          "important": false,
+          "system": false,
+          "attributeOrdering": {
+            "orderType": "ASC",
+            "orderingStrategy": "LUD"
+          },
+          "uri": "configuration/entityTypes/Individual/attributes/ImageGallery",
+          "attributes": [
+            {
+              "label": "Full image url (S3)",
+              "name": "Url",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": true,
+              "searchable": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/ImageGallery/attributes/Url",
+              "skipInDataAccess": false
+            },
+            {
+              "label": "Full image url (CDN)",
+              "name": "CdnUrl",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": true,
+              "searchable": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/ImageGallery/attributes/CdnUrl",
+              "skipInDataAccess": false
+            },
+            {
+              "label": "Preview image url (S3)",
+              "name": "UrlPreview",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/ImageGallery/attributes/UrlPreview",
+              "skipInDataAccess": false
+            },
+            {
+              "label": "Preview image url (CDN)",
+              "name": "CdnUrlPreview",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/ImageGallery/attributes/CdnUrlPreview",
+              "skipInDataAccess": false
+            },
+            {
+              "label": "Small image url (S3)",
+              "name": "UrlThumbnail",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/ImageGallery/attributes/UrlThumbnail",
+              "skipInDataAccess": false
+            },
+            {
+              "label": "Small image url (CDN)",
+              "name": "CdnUrlThumbnail",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/ImageGallery/attributes/CdnUrlThumbnail",
+              "skipInDataAccess": false
+            },
+            {
+              "label": "Full Image width",
+              "name": "Width",
+              "type": "Number",
+              "hidden": false,
+              "important": false,
+              "system": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/ImageGallery/attributes/Width",
+              "skipInDataAccess": false
+            },
+            {
+              "label": "Full Image height",
+              "name": "Height",
+              "type": "Number",
+              "hidden": false,
+              "important": false,
+              "system": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/ImageGallery/attributes/Height",
+              "skipInDataAccess": false
+            },
+            {
+              "label": "Size of full image",
+              "name": "Size",
+              "type": "Number",
+              "hidden": false,
+              "important": false,
+              "system": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/ImageGallery/attributes/Size",
+              "skipInDataAccess": false
+            },
+            {
+              "label": "Mime Type",
+              "name": "MimeType",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/ImageGallery/attributes/MimeType",
+              "skipInDataAccess": false
+            },
+            {
+              "label": "Creation Timestamp",
+              "name": "CreationTimestamp",
+              "type": "Timestamp",
+              "hidden": false,
+              "important": false,
+              "system": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/ImageGallery/attributes/CreationTimestamp",
+              "skipInDataAccess": false
+            },
+            {
+              "label": "MPX Account",
+              "name": "mpxAccount",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/ImageGallery/attributes/mpxAccount",
+              "skipInDataAccess": false
+            },
+            {
+              "label": "Image Type",
+              "name": "imageType",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/ImageGallery/attributes/imageType",
+              "lookupCode": "\"rdm/lookupTypes/App-Consumer360ImageType\"",
+              "skipInDataAccess": false
+            },
+            {
+              "label": "Copyright",
+              "name": "Copyright",
+              "type": "String",
+              "hidden": false,
+              "important": false,
+              "system": true,
+              "attributeOrdering": {
+                "orderingStrategy": "LUD"
+              },
+              "uri": "configuration/entityTypes/Individual/attributes/ImageGallery/attributes/Copyright",
+              "skipInDataAccess": false
+            }
+          ],
+          "skipInDataAccess": false
+        }
+      ],
+      "dataLabelPattern": "{LastName} {FirstName}",
+      "secondaryLabelPattern": "{Addresses.City} {Addresses.StateProvince}",
+      "survivorshipGroups": [
+        {
+          "uri": "configuration/entityTypes/Individual/survivorshipGroups/default",
+          "default": true,
+          "mapping": [
+            {
+              "attribute": "configuration/entityTypes/Individual/attributes/Employment",
+              "survivorshipStrategy": "Aggregation"
+            },
+            {
+              "attribute": "configuration/entityTypes/Individual/attributes/Addresses",
+              "survivorshipStrategy": "Aggregation"
+            },
+            {
+              "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1",
+              "sourcesUriOrder": [
+                "configuration/sources/ReltioCleanser",
+                "configuration/sources/Reltio"
+              ],
+              "fallbackStrategies": [
+                {
+                  "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1",
+                  "survivorshipStrategy": "LUD"
+                }
+              ],
+              "fallbackUsingCriteria": "ZERO_OR_MORE_THAN_ONE",
+              "survivorshipStrategy": "SRC_SYS"
+            },
+            {
+              "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine2",
+              "primaryAttributeUri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1",
+              "survivorshipStrategy": "OtherAttributeWinnerCrosswalk"
+            },
+            {
+              "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/City",
+              "primaryAttributeUri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1",
+              "survivorshipStrategy": "OtherAttributeWinnerCrosswalk"
+            },
+            {
+              "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Country",
+              "primaryAttributeUri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1",
+              "survivorshipStrategy": "OtherAttributeWinnerCrosswalk"
+            },
+            {
+              "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/SubAdministrativeArea",
+              "primaryAttributeUri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1",
+              "survivorshipStrategy": "OtherAttributeWinnerCrosswalk"
+            },
+            {
+              "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Premise",
+              "primaryAttributeUri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1",
+              "survivorshipStrategy": "OtherAttributeWinnerCrosswalk"
+            },
+            {
+              "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/PremiseNumber",
+              "primaryAttributeUri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1",
+              "survivorshipStrategy": "OtherAttributeWinnerCrosswalk"
+            },
+            {
+              "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Zip4",
+              "primaryAttributeUri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1",
+              "survivorshipStrategy": "OtherAttributeWinnerCrosswalk"
+            },
+            {
+              "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/Zip5",
+              "primaryAttributeUri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1",
+              "survivorshipStrategy": "OtherAttributeWinnerCrosswalk"
+            },
+            {
+              "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/StateProvince",
+              "primaryAttributeUri": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1",
+              "survivorshipStrategy": "OtherAttributeWinnerCrosswalk"
+            },
+            {
+              "attribute": "configuration/entityTypes/Individual/attributes/Identifiers",
+              "survivorshipStrategy": "Aggregation"
+            },
+            {
+              "attribute": "configuration/entityTypes/Individual/attributes/Phone",
+              "survivorshipStrategy": "Aggregation"
+            },
+            {
+              "attribute": "configuration/entityTypes/Individual/attributes/Education",
+              "survivorshipStrategy": "Aggregation"
+            },
+            {
+              "attribute": "configuration/entityTypes/Individual/attributes/MultiChannelCommunicationConsent",
+              "survivorshipStrategy": "Aggregation"
+            }
+          ]
+        }
+      ],
+      "abstract": false,
+      "matchGroups": [
+        {
+          "uri": "configuration/entityTypes/Individual/matchGroups/Rule1",
+          "label": "Rule1:Exact(first, last, addressline1, city, state, identifier type, identifier);ExactOrNull(Middle, Suffix, Gender)",
+          "type": "suspect",
+          "rule": {
+            "and": {
+              "exact": [
+                "configuration/entityTypes/Individual/attributes/FirstName",
+                "configuration/entityTypes/Individual/attributes/LastName",
+                "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1",
+                "configuration/entityTypes/Individual/attributes/Addresses/attributes/City",
+                "configuration/entityTypes/Individual/attributes/Addresses/attributes/StateProvince",
+                "configuration/entityTypes/Individual/attributes/Identifiers/attributes/ID",
+                "configuration/entityTypes/Individual/attributes/Identifiers/attributes/Type"
+              ],
+              "exactOrAllNull": [
+                "configuration/entityTypes/Individual/attributes/MiddleName",
+                "configuration/entityTypes/Individual/attributes/SuffixName",
+                "configuration/entityTypes/Individual/attributes/Gender"
+              ]
+            }
+          },
+          "scoreStandalone": 60,
+          "scoreIncremental": 70
+        },
+        {
+          "uri": "configuration/entityTypes/Individual/matchGroups/Rule2",
+          "label": "Rule2:Fuzzy(first, Last name);Exact (Addressline1, Zip5);ExactOrNull(Suffix, Zip4, Email id)",
+          "type": "suspect",
+          "rule": {
+            "and": {
+              "exact": [
+                "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1",
+                "configuration/entityTypes/Individual/attributes/Addresses/attributes/Zip5"
+              ],
+              "exactOrAllNull": [
+                "configuration/entityTypes/Individual/attributes/Addresses/attributes/Zip4",
+                "configuration/entityTypes/Individual/attributes/Email/attributes/Email",
+                "configuration/entityTypes/Individual/attributes/SuffixName"
+              ],
+              "fuzzy": [
+                "configuration/entityTypes/Individual/attributes/FirstName",
+                "configuration/entityTypes/Individual/attributes/LastName"
+              ],
+              "cleanse": [
+                {
+                  "cleanseAdapter": "com.reltio.cleanse.impl.NameDictionaryCleanser",
+                  "mappings": [
+                    {
+                      "attribute": "configuration/entityTypes/Individual/attributes/FirstName",
+                      "mandatory": false,
+                      "allValues": false,
+                      "cleanseAttribute": "configuration/entityTypes/Individual/attributes/FirstName"
+                    },
+                    {
+                      "attribute": "configuration/entityTypes/Individual/attributes/LastName",
+                      "mandatory": false,
+                      "allValues": false,
+                      "cleanseAttribute": "configuration/entityTypes/Individual/attributes/LastName"
+                    }
+                  ]
+                }
+              ],
+              "matchTokenClasses": {
+                "mapping": [
+                  {
+                    "attribute": "configuration/entityTypes/Individual/attributes/FirstName",
+                    "parameters": [
+                      {
+                        "parameter": "pattern",
+                        "value": "[a-zA-Z]+"
+                      },
+                      {
+                        "parameter": "useStemmer",
+                        "value": "true"
+                      },
+                      {
+                        "parameter": "useSoundex",
+                        "value": "true"
+                      }
+                    ],
+                    "class": "com.reltio.match.token.DistinctWordsMatchToken"
+                  },
+                  {
+                    "attribute": "configuration/entityTypes/Individual/attributes/LastName",
+                    "parameters": [
+                      {
+                        "parameter": "pattern",
+                        "value": "[a-zA-Z]+"
+                      },
+                      {
+                        "parameter": "useStemmer",
+                        "value": "true"
+                      },
+                      {
+                        "parameter": "useSoundex",
+                        "value": "true"
+                      }
+                    ],
+                    "class": "com.reltio.match.token.DistinctWordsMatchToken"
+                  }
+                ]
+              },
+              "comparatorClasses": {
+                "mapping": [
+                  {
+                    "attribute": "configuration/entityTypes/Individual/attributes/FirstName",
+                    "class": "com.reltio.match.comparator.SoundexComparator"
+                  },
+                  {
+                    "attribute": "configuration/entityTypes/Individual/attributes/LastName",
+                    "class": "com.reltio.match.comparator.SoundexComparator"
+                  }
+                ]
+              }
+            }
+          },
+          "scoreStandalone": 50,
+          "scoreIncremental": 30
+        },
+        {
+          "uri": "configuration/entityTypes/Individual/matchGroups/Rule3",
+          "label": "Rule3:Fuzzy(first, Last name);Exact (Identifier Id, Identifier Type)",
+          "type": "suspect",
+          "rule": {
+            "and": {
+              "exact": [
+                "configuration/entityTypes/Individual/attributes/Identifiers/attributes/ID",
+                "configuration/entityTypes/Individual/attributes/Identifiers/attributes/Type"
+              ],
+              "fuzzy": [
+                "configuration/entityTypes/Individual/attributes/FirstName",
+                "configuration/entityTypes/Individual/attributes/LastName"
+              ],
+              "cleanse": [
+                {
+                  "cleanseAdapter": "com.reltio.cleanse.impl.NameDictionaryCleanser",
+                  "mappings": [
+                    {
+                      "attribute": "configuration/entityTypes/Individual/attributes/FirstName",
+                      "mandatory": false,
+                      "allValues": false,
+                      "cleanseAttribute": "configuration/entityTypes/Individual/attributes/FirstName"
+                    },
+                    {
+                      "attribute": "configuration/entityTypes/Individual/attributes/LastName",
+                      "mandatory": false,
+                      "allValues": false,
+                      "cleanseAttribute": "configuration/entityTypes/Individual/attributes/LastName"
+                    }
+                  ]
+                }
+              ],
+              "matchTokenClasses": {
+                "mapping": [
+                  {
+                    "attribute": "configuration/entityTypes/Individual/attributes/FirstName",
+                    "parameters": [
+                      {
+                        "parameter": "pattern",
+                        "value": "[a-zA-Z]+"
+                      },
+                      {
+                        "parameter": "useStemmer",
+                        "value": "true"
+                      },
+                      {
+                        "parameter": "useSoundex",
+                        "value": "true"
+                      }
+                    ],
+                    "class": "com.reltio.match.token.DistinctWordsMatchToken"
+                  },
+                  {
+                    "attribute": "configuration/entityTypes/Individual/attributes/LastName",
+                    "parameters": [
+                      {
+                        "parameter": "pattern",
+                        "value": "[a-zA-Z]+"
+                      },
+                      {
+                        "parameter": "useStemmer",
+                        "value": "true"
+                      },
+                      {
+                        "parameter": "useSoundex",
+                        "value": "true"
+                      }
+                    ],
+                    "class": "com.reltio.match.token.DistinctWordsMatchToken"
+                  }
+                ]
+              },
+              "comparatorClasses": {
+                "mapping": [
+                  {
+                    "attribute": "configuration/entityTypes/Individual/attributes/FirstName",
+                    "class": "com.reltio.match.comparator.SoundexComparator"
+                  },
+                  {
+                    "attribute": "configuration/entityTypes/Individual/attributes/LastName",
+                    "class": "com.reltio.match.comparator.SoundexComparator"
+                  }
+                ]
+              }
+            }
+          },
+          "scoreStandalone": 50,
+          "scoreIncremental": 30
+        },
+        {
+          "uri": "configuration/entityTypes/Individual/matchGroups/Rule4",
+          "label": "Rule4:Exact(first, last, Zip5);ExactOrNull(Middle, Email Id);Fuzzy(Addressline1)",
+          "type": "suspect",
+          "rule": {
+            "and": {
+              "exact": [
+                "configuration/entityTypes/Individual/attributes/FirstName",
+                "configuration/entityTypes/Individual/attributes/LastName",
+                "configuration/entityTypes/Individual/attributes/Addresses/attributes/Zip5"
+              ],
+              "exactOrAllNull": [
+                "configuration/entityTypes/Individual/attributes/MiddleName",
+                "configuration/entityTypes/Individual/attributes/Email/attributes/Email"
+              ],
+              "fuzzy": [
+                "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1"
+              ],
+              "matchTokenClasses": {
+                "mapping": [
+                  {
+                    "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1",
+                    "class": "com.reltio.match.token.AddressLineMatchToken"
+                  }
+                ]
+              },
+              "comparatorClasses": {
+                "mapping": [
+                  {
+                    "attribute": "configuration/entityTypes/Individual/attributes/Addresses/attributes/AddressLine1",
+                    "class": "com.reltio.match.comparator.AddressLineComparator"
+                  }
+                ]
+              }
+            }
+          },
+          "scoreStandalone": 30,
+          "scoreIncremental": 20
+        }
+      ],
+      "imageAttributeURIs": [
+        "configuration/entityTypes/Individual/attributes/ImageGallery"
+      ]
+    }
+  ]
+}

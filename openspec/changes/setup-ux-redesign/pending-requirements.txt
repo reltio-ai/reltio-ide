@@ -1,0 +1,1 @@
+Spec deltas under specs/ will be authored after the writing-plans phase determines the final command surface.

@@ -1,0 +1,161 @@
+{
+  "$schema_note": "Routing manifest for the LCA Assistant knowledge base. This directory is the SOURCE OF TRUTH: exactly 8 retrievable docs (KB-LCA-00..07) plus this manifest and README.md. Any agent/RAG index should index ONLY the 8 docs listed under 'documents'. Line ranges are 1-indexed and inclusive; recompute them after any edit that changes a doc's line count (rg -n '^## ' <file>).",
+  "version": "3.0",
+  "generated": "2026-07-21",
+  "structure_note": "Rebuilt 2026-07-21 from a comparison of two prior KBs. The winning set is 8 focused, deduplicated, doc-portal-verified docs (retrieve per query intent for low token cost) instead of 3 mega-masters (one was ~6000 lines). The 32-hook catalog and the presence of the `validate` hook were re-verified against this repo's src/main/java/com/reltio/lifecycle/framework/ILifeCycleAction.java. Prior files (3 consolidated masters, old README/manifest, legacy per-topic files, and out-of-scope meta files such as the agent-ops-api system prompt and the time-to-value story) are retained under archive/ and are NOT indexed or referenced by these 8 docs.",
+  "indexing_policy": {
+    "rule": "Index only the 8 documents below (index: true). Do not index or cross-reference anything under archive/.",
+    "read_order": "Read 00 (routing) first, then retrieve the minimum doc set per the intent table.",
+    "precedence": "06 (doc portal) wins for anything it states explicitly; 01 §7 flags known ambiguities; for live REST schemas none of these replace the authenticated Swagger UI at developer.reltio.com/private/swagger.htm."
+  },
+  "retrieval_routing": [
+    {"intent": "What is an LCA / architecture / hooks / data interfaces", "docs": ["KB-LCA-01"]},
+    {"intent": "Hook execution order / timeout / config JSON / filters / inheritance", "docs": ["KB-LCA-01", "KB-LCA-06"]},
+    {"intent": "How to build/write/test an LCA / Maven / Java patterns / JSON payloads", "docs": ["KB-LCA-02"]},
+    {"intent": "LCA not working / NPE / recursion / timeout / wrong crosswalk", "docs": ["KB-LCA-02", "KB-LCA-05"]},
+    {"intent": "Business need -> which hook / real-world use case", "docs": ["KB-LCA-03", "KB-LCA-01", "KB-LCA-02"]},
+    {"intent": "LCA vs no-code validation rule / DVF", "docs": ["KB-LCA-04"]},
+    {"intent": "Security / secrets / PII in logs", "docs": ["KB-LCA-05"]},
+    {"intent": "Deployment / AWS Lambda / GCP / Azure / connectivity / CI-CD", "docs": ["KB-LCA-05", "KB-LCA-02"]},
+    {"intent": "Best-practice checklist / delivery playbook", "docs": ["KB-LCA-05"]},
+    {"intent": "Official Reltio doc fact / citable link / LCA Service API / disable-deregister", "docs": ["KB-LCA-06"]},
+    {"intent": "Ingestion API / which Reltio API for a business need", "docs": ["KB-LCA-07", "KB-LCA-03"]},
+    {"intent": "Which source is right when guidance conflicts", "docs": ["KB-LCA-01", "KB-LCA-06"]}
+  ],
+  "documents": [
+    {
+      "id": "index-routing",
+      "doc_id": "KB-LCA-00",
+      "path": "00_INDEX_RAG_RETRIEVAL_MAP.md",
+      "title": "RAG Retrieval Map",
+      "category": "Index / Routing",
+      "index": true,
+      "topics": ["document-inventory", "query-intent-routing", "source-precedence"],
+      "sections": [
+        {"title": "Document Inventory", "line_start": 6, "line_end": 20},
+        {"title": "Retrieval Rules by Query Intent", "line_start": 21, "line_end": 43},
+        {"title": "Precedence Rules", "line_start": 44, "line_end": 50},
+        {"title": "Answering Pattern for the Agent", "line_start": 51, "line_end": 64}
+      ]
+    },
+    {
+      "id": "core-concepts-hooks",
+      "doc_id": "KB-LCA-01",
+      "path": "01_LCA_CORE_CONCEPTS_AND_HOOKS.md",
+      "title": "LCA Core Concepts, Architecture & Hook Catalog",
+      "category": "Core Concepts",
+      "index": true,
+      "authoritative_for": ["hook-catalog", "data-interfaces", "config-schema", "known-ambiguities"],
+      "topics": ["what-is-lca", "architecture", "hook-catalog-32", "configuration", "gotchas", "glossary", "known-ambiguities"],
+      "sections": [
+        {"title": "1. What is an LCA", "line_start": 7, "line_end": 14},
+        {"title": "2. Architecture", "line_start": 15, "line_end": 56},
+        {"title": "3. Hook Catalog (32 hooks)", "line_start": 57, "line_end": 95},
+        {"title": "4. Configuration", "line_start": 96, "line_end": 144},
+        {"title": "5. Key Gotchas & Constraints", "line_start": 145, "line_end": 158},
+        {"title": "6. Terminology Glossary", "line_start": 159, "line_end": 174},
+        {"title": "7. Known Ambiguities / Needs Verification", "line_start": 175, "line_end": 186}
+      ]
+    },
+    {
+      "id": "code-patterns-cookbook",
+      "doc_id": "KB-LCA-02",
+      "path": "02_LCA_CODE_PATTERNS_AND_COOKBOOK.md",
+      "title": "LCA Code Patterns, Cookbook & Testing",
+      "category": "Implementation",
+      "index": true,
+      "topics": ["maven-project", "handler-patterns", "io-json-contract", "testing", "code-pitfalls"],
+      "sections": [
+        {"title": "1. Maven Project Structure", "line_start": 6, "line_end": 48},
+        {"title": "2. Handler Code Patterns", "line_start": 49, "line_end": 115},
+        {"title": "3. Input/Output Contract", "line_start": 116, "line_end": 152},
+        {"title": "4. Testing Patterns", "line_start": 153, "line_end": 176},
+        {"title": "5. Common Pitfalls in Code", "line_start": 177, "line_end": 194}
+      ]
+    },
+    {
+      "id": "business-use-cases",
+      "doc_id": "KB-LCA-03",
+      "path": "03_LCA_BUSINESS_USE_CASES.md",
+      "title": "LCA Business Use Case Catalog",
+      "category": "Business Use Cases",
+      "index": true,
+      "topics": ["use-case-to-hook-map", "complexity-estimate", "customer-advising"],
+      "sections": [
+        {"title": "Use Case -> Hook Map", "line_start": 6, "line_end": 34},
+        {"title": "Notes on Sourcing", "line_start": 35, "line_end": 38},
+        {"title": "How to Use This Table When Advising a Customer", "line_start": 39, "line_end": 46}
+      ]
+    },
+    {
+      "id": "dvf-vs-lca",
+      "doc_id": "KB-LCA-04",
+      "path": "04_DVF_AND_LCA_VS_DVF_DECISION_GUIDE.md",
+      "title": "DVF Overview & LCA vs. DVF Decision Guide",
+      "category": "Architecture Decisions",
+      "index": true,
+      "topics": ["dvf-overview", "dvf-live-api", "lca-vs-dvf-decision", "customer-checklist"],
+      "sections": [
+        {"title": "1. What is DVF", "line_start": 6, "line_end": 22},
+        {"title": "2. Live API", "line_start": 23, "line_end": 31},
+        {"title": "3. LCA vs. DVF Decision Guide", "line_start": 32, "line_end": 54},
+        {"title": "4. Recommendation Checklist", "line_start": 55, "line_end": 61}
+      ]
+    },
+    {
+      "id": "ops-best-practices",
+      "doc_id": "KB-LCA-05",
+      "path": "05_BEST_PRACTICES_TROUBLESHOOTING_SECURITY_DEPLOYMENT.md",
+      "title": "Best Practices, Troubleshooting, Security & Deployment",
+      "category": "Operations",
+      "index": true,
+      "topics": ["best-practices", "troubleshooting", "security", "cloud-deployment", "connectivity", "lifecycle-playbook"],
+      "sections": [
+        {"title": "1. Best Practices", "line_start": 5, "line_end": 24},
+        {"title": "2. Troubleshooting Playbook", "line_start": 25, "line_end": 41},
+        {"title": "3. Security Guidelines", "line_start": 42, "line_end": 55},
+        {"title": "4. Deployment & Cloud Connectivity", "line_start": 56, "line_end": 70},
+        {"title": "5. Project Lifecycle Playbook", "line_start": 71, "line_end": 81}
+      ]
+    },
+    {
+      "id": "doc-portal-reference",
+      "doc_id": "KB-LCA-06",
+      "path": "06_RELTIO_DOC_PORTAL_REFERENCE.md",
+      "title": "Reltio Doc Portal Reference — LCA Section",
+      "category": "External Reference",
+      "index": true,
+      "authoritative_for": ["official-doc-facts", "lca-service-api", "hook-event-sequencing", "disable-deregister"],
+      "topics": ["page-map", "lca-service-api", "hook-event-sequencing", "configuration", "conditional-execution", "disable-deregister", "data-validation-apis"],
+      "sections": [
+        {"title": "Page Map", "line_start": 8, "line_end": 27},
+        {"title": "LCA Service API — Confirmed Facts", "line_start": 28, "line_end": 65},
+        {"title": "LCA Hooks — Official Event Sequencing", "line_start": 66, "line_end": 93},
+        {"title": "LCA Configuration — Confirmed Facts", "line_start": 94, "line_end": 103},
+        {"title": "Conditional Execution of LCA", "line_start": 104, "line_end": 110},
+        {"title": "Disable or Deregister LCA", "line_start": 111, "line_end": 119},
+        {"title": "Data Validation APIs", "line_start": 120, "line_end": 126},
+        {"title": "Related Public API Categories", "line_start": 127, "line_end": 144},
+        {"title": "Access Notes", "line_start": 145, "line_end": 148}
+      ]
+    },
+    {
+      "id": "ingestion-api-reference",
+      "doc_id": "KB-LCA-07",
+      "path": "07_RELTIO_DATA_INGESTION_API_REFERENCE.md",
+      "title": "Reltio Data Ingestion API Reference",
+      "category": "External Reference",
+      "index": true,
+      "topics": ["entity-management-apis", "relation-management-apis", "load-export-apis", "data-integration-apis", "data-validation-apis", "api-lca-pairing"],
+      "sections": [
+        {"title": "Purpose of This Doc", "line_start": 7, "line_end": 14},
+        {"title": "1. Entity Management APIs", "line_start": 15, "line_end": 28},
+        {"title": "2. Relation Management APIs", "line_start": 29, "line_end": 32},
+        {"title": "3. Load and Export APIs", "line_start": 33, "line_end": 39},
+        {"title": "4. Data Integration APIs", "line_start": 40, "line_end": 51},
+        {"title": "5. Data Validation APIs (DVF)", "line_start": 52, "line_end": 55},
+        {"title": "6. Recommendation Framework — API + LCA Pairing", "line_start": 56, "line_end": 67}
+      ]
+    }
+  ]
+}
