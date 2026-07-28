@@ -1,0 +1,168 @@
+name: Release VSIX
+
+on:
+  push:
+    branches:
+      - main
+
+  # Manual runs release the current tip of main.
+  workflow_dispatch:
+
+# Every write goes through the GitHub App token, so the default token for this
+# workflow stays read-only.
+permissions:
+  contents: read
+
+concurrency:
+  group: reltio-ide-release
+  queue: max
+
+jobs:
+  release:
+    runs-on: reltio-ide-runners
+    timeout-minutes: 30
+
+    # Holds RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY. Limit the
+    # environment's deployment branches to main so no other branch can mint
+    # the App token.
+    environment: release
+
+    steps:
+      # The App needs Contents: write, must be installed on this repository,
+      # and must be on the main ruleset's bypass list. The built-in
+      # github-actions[bot] cannot be a bypass actor, which is why the release
+      # pushes as an App instead.
+      - name: Mint GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      # main is the source of truth for the version: the bump is computed from
+      # whatever main currently holds, never from a feature branch.
+      - name: Bump patch version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          npm version patch \
+            --no-git-tag-version \
+            --ignore-scripts
+
+          version="$(node -p "require('./package.json').version")"
+
+          {
+            echo "version=${version}"
+            echo "tag=v${version}"
+          } >> "${GITHUB_OUTPUT}"
+
+          echo "Releasing ${version}"
+
+      - name: Ensure the release tag is free
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" \
+            >/dev/null 2>&1; then
+            echo "::error::Tag ${TAG} already exists"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Tests are intentionally omitted here: they run as a required check on
+      # the pull request that produced this commit.
+      - name: Build extension
+        run: npm run build
+
+      - name: Package VSIX
+        run: npm run package
+
+      - name: Locate VSIX
+        id: vsix
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          packaged="$(node -p "require('./package.json').version")"
+
+          if [ "${packaged}" != "${VERSION}" ]; then
+            echo "::error::package.json is ${packaged}, expected ${VERSION}"
+            exit 1
+          fi
+
+          files=(target/*.vsix)
+
+          if [ "${#files[@]}" -ne 1 ]; then
+            echo "::error::Expected one VSIX in target/, found ${#files[@]}"
+            printf '%s\n' "${files[@]}"
+            exit 1
+          fi
+
+          echo "path=${files[0]}" >> "${GITHUB_OUTPUT}"
+          echo "VSIX: ${files[0]}"
+
+      - name: Push release commit and tag
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add package.json
+
+          if [ -f package-lock.json ]; then
+            git add package-lock.json
+          fi
+
+          # [skip ci] stops this push from starting another release run.
+          # App-token pushes do trigger workflows, unlike GITHUB_TOKEN pushes.
+          git commit -m "chore(release): ${TAG} [skip ci]"
+
+          git tag -a "${TAG}" -m "Release ${TAG}"
+
+          # Atomic: main is never left bumped without its matching tag.
+          if ! git push --atomic origin HEAD:main "refs/tags/${TAG}"; then
+            echo "::error::Push rejected: main moved while this run was building."
+            echo "::error::Nothing was published; the next push to main will release these changes."
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          files: ${{ steps.vsix.outputs.path }}
+          fail_on_unmatched_files: true
+          overwrite_files: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
