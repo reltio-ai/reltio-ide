@@ -44,7 +44,9 @@ npm run package
 npm run package
 ```
 
-Runs `clean` → increments patch version → `build` → `vsce package`. Output goes to `target/reltio-ide-<version>.vsix`.
+Runs `clean` → `build` → `vsce package`. Output goes to `target/reltio-ide-<version>.vsix`.
+
+The version is not bumped locally: the release workflow owns versioning and commits each patch bump to `main`, so a local package reuses whatever version `main` currently holds.
 
 ## Install locally
 
