@@ -4,12 +4,9 @@ on:
   push:
     branches:
       - main
-
-  # Manual runs release the current tip of main.
   workflow_dispatch:
 
-# Every write goes through the GitHub App token, so the default token for this
-# workflow stays read-only.
+# Everything that writes goes through the App token minted below.
 permissions:
   contents: read
 
@@ -22,16 +19,13 @@ jobs:
     runs-on: reltio-ide-runners
     timeout-minutes: 30
 
-    # Holds RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY. Limit the
-    # environment's deployment branches to main so no other branch can mint
-    # the App token.
+    # Holds RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY; its deployment branches
+    # are limited to main.
     environment: release
 
     steps:
-      # The App needs Contents: write, must be installed on this repository,
-      # and must be on the main ruleset's bypass list. The built-in
-      # github-actions[bot] cannot be a bypass actor, which is why the release
-      # pushes as an App instead.
+      # The App needs Contents: write and a spot on the main ruleset's bypass
+      # list, which the built-in github-actions[bot] cannot have.
       - name: Mint GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v3
@@ -52,8 +46,6 @@ jobs:
           node-version: '22'
           cache: npm
 
-      # main is the source of truth for the version: the bump is computed from
-      # whatever main currently holds, never from a feature branch.
       - name: Bump patch version
         id: version
         shell: bash
@@ -89,8 +81,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Tests are intentionally omitted here: they run as a required check on
-      # the pull request that produced this commit.
+      # Tests are not repeated here: they are a required check on the pull
+      # request that produced this commit.
       - name: Build extension
         run: npm run build
 
@@ -124,6 +116,16 @@ jobs:
           echo "path=${files[0]}" >> "${GITHUB_OUTPUT}"
           echo "VSIX: ${files[0]}"
 
+      # Uploaded before the push so a failure below still leaves a VSIX that can
+      # be attached by hand, without rebuilding.
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.vsix.outputs.path }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Push release commit and tag
         shell: bash
         env:
@@ -141,13 +143,12 @@ jobs:
             git add package-lock.json
           fi
 
-          # [skip ci] stops this push from starting another release run.
-          # App-token pushes do trigger workflows, unlike GITHUB_TOKEN pushes.
+          # App-token pushes do trigger workflows, unlike GITHUB_TOKEN pushes,
+          # so [skip ci] is what stops this from starting another release run.
           git commit -m "chore(release): ${TAG} [skip ci]"
 
           git tag -a "${TAG}" -m "Release ${TAG}"
 
-          # Atomic: main is never left bumped without its matching tag.
           if ! git push --atomic origin HEAD:main "refs/tags/${TAG}"; then
             echo "::error::Push rejected: main moved while this run was building."
             echo "::error::Nothing was published; the next push to main will release these changes."
@@ -157,6 +158,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
+          # Must be the token input: it defaults to github.token, and a
+          # non-empty input overrides env GITHUB_TOKEN.
+          token: ${{ steps.app-token.outputs.token }}
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
           generate_release_notes: true
@@ -164,5 +168,3 @@ jobs:
           fail_on_unmatched_files: true
           overwrite_files: false
           make_latest: true
-        env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
