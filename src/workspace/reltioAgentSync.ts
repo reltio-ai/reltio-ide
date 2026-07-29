@@ -3,13 +3,11 @@ import * as vscode from 'vscode';
 export interface ReltioAgentAssets {
 	skillsBundleVersion: string;
 	velocityPacksBundleVersion: string;
-	lcaKnowledgeBaseBundleVersion: string;
 }
 
 export interface ReltioAgentSyncState {
 	skillsBundleVersion?: string;
 	velocityPacksBundleVersion?: string;
-	lcaKnowledgeBaseBundleVersion?: string;
 	extensionVersion?: string;
 }
 
@@ -71,7 +69,7 @@ function versionsDiffer(bundled: string | undefined, stamped: string | undefined
 }
 
 /**
- * Copies bundled default skills, Velocity Packs, and LCA knowledge base into
+ * Copies bundled default skills and Velocity Pack reference files into
  * `.reltio/reltio-agent/` when versions in `resources/reltio-agent-assets.json`
  * advance (or when `force` is true). Never touches `skills/workspace/**`.
  */
@@ -89,17 +87,12 @@ export async function syncReltioAgentAssets(
 
 	const assetsUri = vscode.Uri.joinPath(context.extensionUri, ...ASSETS_SEGMENTS);
 	const bundled = await readJsonFile<ReltioAgentAssets>(assetsUri);
-	if (
-		!bundled?.skillsBundleVersion ||
-		!bundled?.velocityPacksBundleVersion ||
-		!bundled?.lcaKnowledgeBaseBundleVersion
-	) {
+	if (!bundled?.skillsBundleVersion || !bundled?.velocityPacksBundleVersion) {
 		return;
 	}
 
 	const skillsSrc = vscode.Uri.joinPath(context.extensionUri, 'skills', 'reltio-default');
 	const packsSrc = vscode.Uri.joinPath(context.extensionUri, 'resources', 'velocity-packs');
-	const lcaKbSrc = vscode.Uri.joinPath(context.extensionUri, 'resources', 'lca-knowledge-base');
 
 	for (const ws of folders) {
 		const root = managedRootUri(ws);
@@ -110,7 +103,6 @@ export async function syncReltioAgentAssets(
 
 		const destSkills = vscode.Uri.joinPath(root, 'skills', 'default');
 		const destPacks = vscode.Uri.joinPath(root, 'velocity-packs');
-		const destLcaKb = vscode.Uri.joinPath(root, 'lca-knowledge-base');
 
 		const needSkills =
 			force ||
@@ -120,14 +112,9 @@ export async function syncReltioAgentAssets(
 			force ||
 			!(await pathExists(destPacks)) ||
 			versionsDiffer(bundled.velocityPacksBundleVersion, stamp.velocityPacksBundleVersion);
-		const needLcaKb =
-			force ||
-			!(await pathExists(destLcaKb)) ||
-			versionsDiffer(bundled.lcaKnowledgeBaseBundleVersion, stamp.lcaKnowledgeBaseBundleVersion);
 
 		let skillsSynced = false;
 		let packsSynced = false;
-		let lcaKbSynced = false;
 
 		if (needSkills && (await pathExists(skillsSrc))) {
 			await deleteIfExists(destSkills);
@@ -141,13 +128,7 @@ export async function syncReltioAgentAssets(
 			packsSynced = true;
 		}
 
-		if (needLcaKb && (await pathExists(lcaKbSrc))) {
-			await deleteIfExists(destLcaKb);
-			await copyDirectory(lcaKbSrc, destLcaKb);
-			lcaKbSynced = true;
-		}
-
-		if (skillsSynced || packsSynced || lcaKbSynced) {
+		if (skillsSynced || packsSynced) {
 			const next: ReltioAgentSyncState = {
 				extensionVersion: String(context.extension.packageJSON?.version ?? ''),
 			};
@@ -160,11 +141,6 @@ export async function syncReltioAgentAssets(
 				next.velocityPacksBundleVersion = bundled.velocityPacksBundleVersion;
 			} else if (stamp.velocityPacksBundleVersion) {
 				next.velocityPacksBundleVersion = stamp.velocityPacksBundleVersion;
-			}
-			if (lcaKbSynced) {
-				next.lcaKnowledgeBaseBundleVersion = bundled.lcaKnowledgeBaseBundleVersion;
-			} else if (stamp.lcaKnowledgeBaseBundleVersion) {
-				next.lcaKnowledgeBaseBundleVersion = stamp.lcaKnowledgeBaseBundleVersion;
 			}
 			await writeJsonFile(stampUri, next);
 		}

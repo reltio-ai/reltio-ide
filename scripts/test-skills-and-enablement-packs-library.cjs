@@ -18,12 +18,8 @@ const assetsPath = path.join(repoRoot, 'resources', 'reltio-agent-assets.json');
 const assets = JSON.parse(fs.readFileSync(assetsPath, 'utf8'));
 assert.ok(assets.skillsBundleVersion);
 assert.ok(assets.velocityPacksBundleVersion);
-assert.ok(assets.lcaKnowledgeBaseBundleVersion);
 
 const skillMd = path.join(repoRoot, 'skills', 'reltio-default', 'entity-type-concepts', 'SKILL.md');
 assert.ok(fs.existsSync(skillMd), 'bundled default skill');
-
-const lcaSkill = path.join(repoRoot, 'skills', 'reltio-default', 'lca-assistant', 'SKILL.md');
-assert.ok(fs.existsSync(lcaSkill), 'lca-assistant skill');
 
 console.log('test-skills-and-enablement-packs-library: OK');
