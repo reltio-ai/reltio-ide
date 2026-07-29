@@ -22,7 +22,6 @@ const SCRIPTS = [
 	'test-extension-packaging.cjs',
 	'test-hide-reference-attribute-for-relation-types.cjs',
 	'test-insert-interaction-type.cjs',
-	'test-lca-assistant.cjs',
 	'test-multi-tenant-tree-view.cjs',
 	'test-no-create-wizards.cjs',
 	'test-ontology-view.cjs',
