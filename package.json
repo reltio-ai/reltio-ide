@@ -2,7 +2,7 @@
   "name": "reltio-ide",
   "displayName": "Reltio IDE",
   "description": "Use the Reltio IDE to review and update the business configuration of your Reltio tenant.",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "publisher": "Reltio",
   "icon": "resources/icons/reltio-icon.png",
   "license": "SEE LICENSE IN LICENSE",
