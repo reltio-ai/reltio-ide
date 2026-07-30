@@ -1,8 +1,8 @@
 Reltio IDE Terms of Use
 
-You may use the code, data, and/or other functionality (the "IDE Materials") solely for your internal business purposes in connection with your use of the Reltio Services pursuant to your agreement with Reltio under which you subscribe to the Reltio Services (the "Agreement").
+You may use the code, data, and/or other functionality (the "IDE Materials") solely for your internal business purposes in connection with your use of the Reltio Services pursuant to your agreement with Reltio under which you subscribe to the Reltio Services (the "Agreement"). You agree and understand that, as between you and Reltio, the IDE Materials are and remain Reltio property.
 
-Your use of the IDE Materials must comply at all times with restrictions and obligations contained in the Agreement and any in accordance with any applicable documentation. You may view, use, and/or copy the IDE Materials solely for the purposes of using IDE Materials within or in conjunction with the Reltio Services.
+Your use of the IDE Materials must comply at all times with restrictions and obligations contained in the Agreement and any in accordance with any applicable documentation and/or applicable open source license terms. You may view, use, and/or copy the IDE Materials solely for the purposes of using IDE Materials within or in conjunction with the Reltio Services.
 
 If you do not agree to these terms, you may not view, use, or copy the IDE Materials.
 
