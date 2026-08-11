@@ -1,9 +1,7 @@
 name: Release VSIX
 
+# Temporary: release on demand `push: branches: [main]` once those fixes are released as one cut.
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 # Everything that writes goes through the App token minted below.
