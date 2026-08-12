@@ -1,6 +1,6 @@
 ## Why
 
-`GET /reltio/tenants` is an internal-only endpoint. External users hit `HTTP 403` on it, which blocks the setup wizard at the tenant selection step and blocks the **Add Tenant** command, so no tenant is added and no L3 configuration is ever downloaded (RP-195788). The supported public endpoint for listing the tenants a caller can see is `GET /reltio/enhancedTenants`.
+`GET /reltio/tenants` is restricted to callers in the internal `*.reltio.com` user domain. Every user outside it receives `HTTP 403`, which blocks the setup wizard at the tenant selection step and blocks the **Add Tenant** command, so no tenant is added and no L3 configuration is ever downloaded (RP-195788). The supported public endpoint for listing the tenants a caller can see is `GET /reltio/enhancedTenants`.
 
 ## What Changes
 

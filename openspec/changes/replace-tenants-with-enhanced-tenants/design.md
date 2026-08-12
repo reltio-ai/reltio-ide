@@ -25,7 +25,7 @@ Probed against `na-dev-1.cloud.reltio.com` with a user Bearer token:
 
 Two facts constrain the design. The endpoint is **GET-only**. And `showAll=true` reproduces exactly the list the extension shows today, so the tenant picker contents do not change for any existing user.
 
-One observation that does **not** support the premise: on this environment the same token received `200` from `/reltio/tenants`, not `403`. The internal-only characterization is taken from the reporter and is not reproduced by this probe. If the 403 turns out to have another cause, this change is still correct (it moves to the supported endpoint) but will not by itself resolve RP-195788.
+The probe also received `200` from the old `/reltio/tenants`, which at first looked like a counter-example. It is not. The token used belongs to a user in the internal `*.reltio.com` domain, and access to `/reltio/tenants` is gated on the **caller's user domain**, not on the environment. An internal user therefore cannot reproduce the 403 at all, whichever environment they point at. This is why the failure reaches only some users on an identical extension build, and it is the mechanism behind RP-195788.
 
 ## Goals / Non-Goals
 
@@ -77,7 +77,7 @@ Today the helper rejects a response that is not a `string[]`. The new validation
 ## Risks / Trade-offs
 
 - **`enhancedTenants` may not exist on older environments** → With no fallback (D1 scope, per decision), those environments lose tenant listing entirely. Accepted on the reporter's instruction. If it materializes, the mitigation is the previously-rejected try-new-then-old fallback.
-- **The premise is unverified** → `/reltio/tenants` returned 200, not 403, in the only environment tested. This change may not close RP-195788. Mitigation: confirm with an affected user's environment before closing the bug, and keep RP-195788 open until an external user reports success.
+- **No maintainer can reproduce the original 403** → Access to `/reltio/tenants` is gated on the caller's user domain, and internal `*.reltio.com` users always receive 200. Mitigation: sign-off on the fix requires an external user, so Tier C item 1 cannot be closed from an internal account.
 - **`showAll=true` can list unreadable tenants** → Pre-existing behavior, unchanged. The user sees a failed L3 fetch after picking, which already has a warning path in `reltio.addTenant`.
 - **Dropping `xxx-client` narrows what is exercised** → The header remains on all other calls, so this change cannot regress them. Only the tenant call's behavior changes, and it is verified.
 - **Unit tests cannot hit the network** → The test harness is offline by design (`scripts/lib/`). Tests cover URL construction and response parsing against captured fixtures, not live behavior. Live verification stays manual, Tier C.
@@ -89,7 +89,7 @@ No data migration, no persisted state change. Tenant IDs remain the on-disk key,
 ## Open Questions
 
 - Does `enhancedTenants` exist on every environment version the extension supports, including on-prem and older SaaS releases? Unresolved. Determines whether the no-fallback decision holds.
-- Is the 403 in RP-195788 actually caused by this endpoint? Unresolved, and this probe argues against it. Needs a reproduction from an affected user.
+- Does `enhancedTenants` apply the same user-domain gate as `/reltio/tenants` for external users? The probe could only exercise it from an internal account, so a 200 for an external caller is expected but not yet observed. Tier C item 1 settles it.
 
 ## Test plan
 

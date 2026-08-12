@@ -38,10 +38,10 @@
 - [x] 5.1 `npm run compile` clean.
 - [x] 5.2 `npm test` green.
 - [x] 5.3 `npm run build` clean (extension host and webview bundles).
-- [ ] 5.4 Work the Tier C manual QA table in `design.md`. Item 1, an external environment that previously returned 403, is the one that decides whether RP-195788 is actually fixed. It needs an affected user, since the maintainer's own environment returns 200 from the old endpoint.
+- [ ] 5.4 Work the Tier C manual QA table in `design.md`. Item 1 must be run by a user outside the internal `*.reltio.com` domain. Internal accounts always receive 200 from the old endpoint, so they cannot confirm the fix.
 - [x] 5.5 `npm run openspec -- validate --changes` clean.
 
 ## 6. Pull request
 
 - [ ] 6.1 Commit on `RP-195788-replace-tenants-with-enhanced-tenants`. Verify no access token appears in any diff, fixture, or commit message.
-- [ ] 6.2 Open a PR naming RP-195788 and this OpenSpec change, and record in the description that the 403 premise is unverified.
+- [ ] 6.2 Open a PR naming RP-195788 and this OpenSpec change, and record that sign-off needs an external (non-`*.reltio.com`) user because internal accounts cannot reproduce the 403.
