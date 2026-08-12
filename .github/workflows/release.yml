@@ -1,6 +1,6 @@
 name: Release VSIX
 
-# Temporary: release on demand `push: branches: [main]` once those fixes are released as one cut.
+# Temporary: release on demand
 on:
   workflow_dispatch:
 
