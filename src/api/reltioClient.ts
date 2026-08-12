@@ -1,9 +1,20 @@
 const DEFAULT_TIMEOUT_MS = 10_000;
-/** Required by Reltio API for client-identified requests (e.g. tenant list). */
+/**
+ * Sent by Reltio clients to identify themselves. Not required by
+ * `/reltio/enhancedTenants`, which returns the same records with or without it,
+ * so `listTenants` omits it via `reltioHeadersWithoutClientId`.
+ */
 const RELTIO_CLIENT_HEADER = 'xxx-client';
 
 function reltioHeaders(token?: string, extra?: Record<string, string>): Record<string, string> {
-	const headers: Record<string, string> = { [RELTIO_CLIENT_HEADER]: 'true', ...extra };
+	return { [RELTIO_CLIENT_HEADER]: 'true', ...reltioHeadersWithoutClientId(token, extra) };
+}
+
+function reltioHeadersWithoutClientId(
+	token?: string,
+	extra?: Record<string, string>,
+): Record<string, string> {
+	const headers: Record<string, string> = { ...extra };
 	if (token) {
 		headers.Authorization = `Bearer ${token}`;
 	}
@@ -62,14 +73,30 @@ export async function validateEnvironment(baseUrl: string): Promise<boolean> {
 	}
 }
 
+/** One row from `GET …/reltio/enhancedTenants`. */
+export interface TenantRecord {
+	tenantId: string;
+	tenantName: string;
+	customerName: string;
+}
+
+/**
+ * Tenants visible to the caller, as tenant IDs in the order Reltio returned them.
+ *
+ * `showAll=true` matches the list the extension has always shown; omitting it
+ * returns a strict subset. The endpoint is GET-only, POST answers HTTP 500.
+ * `tenantName` and `customerName` are dropped because the tenant picker shows
+ * the ID alone.
+ */
 export async function listTenants(baseUrl: string, token: string): Promise<string[]> {
 	const root = toHttpsBase(baseUrl);
-	const url = `${root}/reltio/tenants`;
+	const q = new URLSearchParams({ showAll: 'true' });
+	const url = `${root}/reltio/enhancedTenants?${q.toString()}`;
 	const res = await fetchWithTimeout(
 		url,
 		{
 			method: 'GET',
-			headers: reltioHeaders(token),
+			headers: reltioHeadersWithoutClientId(token),
 		},
 		DEFAULT_TIMEOUT_MS,
 	);
@@ -77,13 +104,22 @@ export async function listTenants(baseUrl: string, token: string): Promise<strin
 		throw new ReltioApiError('Unauthorized (401)', 401);
 	}
 	if (!res.ok) {
-		throw new ReltioApiError(`List tenants failed: HTTP ${res.status}`, res.status);
+		throw new ReltioApiError(`List enhanced tenants failed: HTTP ${res.status}`, res.status);
 	}
 	const data = (await res.json()) as unknown;
-	if (!Array.isArray(data) || !data.every(x => typeof x === 'string')) {
-		throw new ReltioApiError('List tenants: unexpected response shape', res.status);
+	if (!Array.isArray(data)) {
+		throw new ReltioApiError('List enhanced tenants: expected JSON array', res.status);
 	}
-	return data as string[];
+	return data.map(row => {
+		if (!row || typeof row !== 'object') {
+			throw new ReltioApiError('List enhanced tenants: invalid row shape', res.status);
+		}
+		const tenantId = (row as Record<string, unknown>).tenantId;
+		if (typeof tenantId !== 'string' || !tenantId) {
+			throw new ReltioApiError('List enhanced tenants: row missing tenantId', res.status);
+		}
+		return tenantId;
+	});
 }
 
 /** One row from `GET …/configuration/_history`. */
