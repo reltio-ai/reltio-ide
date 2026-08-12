@@ -43,5 +43,5 @@
 
 ## 6. Pull request
 
-- [ ] 6.1 Commit on `RP-195788-replace-tenants-with-enhanced-tenants`. Verify no access token appears in any diff, fixture, or commit message.
-- [ ] 6.2 Open a PR naming RP-195788 and this OpenSpec change, and record that sign-off needs an external (non-`*.reltio.com`) user because internal accounts cannot reproduce the 403.
+- [x] 6.1 Commit on `RP-195788-replace-tenants-with-enhanced-tenants`. Verify no access token appears in any diff, fixture, or commit message.
+- [x] 6.2 Open a PR naming RP-195788 and this OpenSpec change, and record that sign-off needs an external (non-`*.reltio.com`) user because internal accounts cannot reproduce the 403.
