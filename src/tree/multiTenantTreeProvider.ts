@@ -155,7 +155,13 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 
 	onL3DocumentChanged(doc: vscode.TextDocument): void {
 		const p = doc.uri.path;
-		if (p.endsWith('L3.reltio.json') || (p.includes('/history/') && p.endsWith('.reltio.json'))) {
+		const lowerP = p.toLowerCase();
+		if (
+			lowerP.endsWith('l3.reltio.json') ||
+			lowerP.endsWith('l3.json') ||
+			lowerP.endsWith('businessconfig.json') ||
+			(p.includes('/history/') && p.endsWith('.reltio.json'))
+		) {
 			this.scheduleTreeRefresh();
 		}
 	}
@@ -292,6 +298,8 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		if (element instanceof EnvironmentNode) {
 			const e = this.envInfos.find(x => x.name === element.environmentName);
 			if (!e) return [];
+			// Check if this is a git source (auto-expand tenants)
+			const isGitSource = this.tokenStore.getToken(element.environmentName) === '__reltio-git-source__';
 			return e.tenants.map(
 				t => new TenantNode(
 					element.environmentName,
@@ -300,6 +308,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 					t.hasL3 && !this.tokenStore.hasToken(element.environmentName),
 					this.tokenStore.hasToken(element.environmentName),
 					this.uxState?.perTenant.get(`${element.environmentName}/${t.tenantId}`) ?? 'T_NO_L3',
+					isGitSource,
 				),
 			);
 		}

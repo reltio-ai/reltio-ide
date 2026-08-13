@@ -19,6 +19,13 @@ export interface EnvironmentInfo {
 	tenants: TenantInfo[];
 }
 
+/** One L3 file discovered inside a git-cloned config-source repository. */
+export interface GitSource {
+	environmentName: string;
+	tenantId: string;
+	l3Uri: vscode.Uri;
+}
+
 function environmentDirName(name: string): string {
 	return `${name}${ENV_SUFFIX}`;
 }
@@ -51,6 +58,10 @@ export class EnvironmentManager {
 	}
 
 	getL3Uri(environment: string, tenantId: string): vscode.Uri {
+		const source = this.findGitSource(environment, tenantId);
+		if (source) {
+			return source.l3Uri;
+		}
 		return vscode.Uri.joinPath(this.tenantUri(environment, tenantId), 'L3.reltio.json');
 	}
 
@@ -59,6 +70,15 @@ export class EnvironmentManager {
 	}
 
 	getLayoutUri(environment: string, tenantId: string): vscode.Uri {
+		const source = this.findGitSource(environment, tenantId);
+		if (source) {
+			const l3Path = source.l3Uri.path;
+			const dir = l3Path.slice(0, l3Path.lastIndexOf('/'));
+			const layoutFilename = l3Path.endsWith('BusinessConfig.json')
+				? 'BusinessConfig.layout.json'
+				: 'L3.reltio.layout.json';
+			return source.l3Uri.with({ path: `${dir}/${layoutFilename}` });
+		}
 		return vscode.Uri.joinPath(this.tenantUri(environment, tenantId), 'L3.reltio.layout.json');
 	}
 
@@ -72,11 +92,40 @@ export class EnvironmentManager {
 		return vscode.Uri.joinPath(this.tenantUri(environment, tenantId), 'history');
 	}
 
+	/** Git-sourced L3 files, when the workspace is in git-config-source mode. */
+	private gitSources: GitSource[] = [];
+
+	private findGitSource(environment: string, tenantId: string): GitSource | undefined {
+		return this.gitSources.find(s => s.environmentName === environment && s.tenantId === tenantId);
+	}
+
+	/** Switches the manager into git-source mode: `scanEnvironments`/`getL3Uri`/`getLayoutUri` now describe discovered L3 files instead of `*.reltio.environment` folders. */
+	setGitSource(source: GitSource): void {
+		this.gitSources = [source];
+	}
+
+	/** Sets multiple git sources (for multi-L3 repos). */
+	setGitSources(sources: GitSource[]): void {
+		this.gitSources = sources;
+	}
+
+	/** Reverts to the normal `*.reltio.environment`-folder-based scan (used when the user removes the fetched config). */
+	clearGitSource(): void {
+		this.gitSources = [];
+	}
+
 	/**
-	 * Scan preferred `.reltio/` first, then legacy workspace-root dirs.
+	 * In git-source mode, report the discovered L3 files as one environment.
+	 * Otherwise scan preferred `.reltio/` first, then legacy workspace-root dirs.
 	 * If the same host exists in both places, prefer `.reltio/`.
 	 */
 	async scanEnvironments(): Promise<EnvironmentInfo[]> {
+		if (this.gitSources.length > 0) {
+			// Group all tenants under a single environment (repo name)
+			const environmentName = this.gitSources[0]?.environmentName ?? 'git-config';
+			const tenants = this.gitSources.map(s => ({ tenantId: s.tenantId, hasL3: true }));
+			return [{ name: environmentName, tenants }];
+		}
 		this.envLocations.clear();
 		const preferredRoot = vscode.Uri.joinPath(this.workspaceRoot, RELTIO_WORKSPACE_DOTDIR);
 		await this.collectEnvironmentDirs(preferredRoot);

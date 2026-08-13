@@ -24,6 +24,7 @@
   - [Install on Cursor](#install-on-cursor)
   - [Install on VS Code](#install-on-vs-code)
 - [Connect to your tenant](#connect-to-your-tenant)
+- [Connect a git repository instead](#connect-a-git-repository-instead)
 - [Open and navigate your configuration](#open-and-navigate-your-configuration)
 - [Create configuration objects](#create-configuration-objects)
 - [Visualize the ontology](#visualize-the-ontology)
@@ -76,7 +77,7 @@ Before you install Reltio IDE, make sure you have:
 
 - **VS Code** or **Cursor** installed on your machine.
 - The Reltio IDE `.vsix` file — download the latest version from the [Releases](../../releases) page of this repository.
-- A Reltio tenant and valid credentials: an **OAuth Client ID and Client secret** (with your SSO routing tenant ID), or a **bearer token**.
+- A Reltio tenant and valid credentials: an **OAuth Client ID and Client secret** (with your SSO routing tenant ID), or a **bearer token**. Not needed if you connect a git repository instead, which requires a working `git` installation on your `PATH`.
 - Permissions to read and apply L3 configuration on the tenant.
 
 ---
@@ -154,6 +155,26 @@ These steps are the same in Cursor and VS Code.
 </p>
 
 7. After authentication, select your tenant from the list. To connect later instead, select **Skip — I'll add a tenant later**.
+
+---
+
+## Connect a git repository instead
+
+If you already keep your business configuration in a git repository (GitHub, Bitbucket, GitLab, Azure DevOps, or self-hosted), you can edit it without connecting to a live tenant.
+
+1. Open an empty folder, or a folder that already contains your cloned repository.
+2. Select the **Reltio** icon in the activity bar.
+3. Select **Connect your Repository**. If the folder is already a git clone, Reltio IDE detects it and skips straight to discovery. Otherwise, enter the remote URL and it clones for you.
+4. Reltio IDE searches the repository for `BusinessConfig.json` files and lists them in the tree as one environment (named after the repository folder) with one entry per config.
+
+Authentication uses your existing system git setup and its credential helper, so no Reltio credentials are involved.
+
+Notes:
+
+- **Multi-config repositories are supported.** A repo holding many `BusinessConfig.json` files appears as a single root node with each config as a child.
+- **Adopt other filenames** with **Add Config** from a `.json` file's right-click menu in the Explorer. Automatic discovery only looks for `BusinessConfig.json`.
+- **Remove Config** drops a single config from the tree. **Remove Repository** clears the connection and deletes the folder contents.
+- Tenant-only actions (fetch, apply, configuration history) are hidden in this mode. A workspace is connected either to a tenant or to a repository, never both.
 
 ---
 

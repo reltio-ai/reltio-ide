@@ -31,6 +31,7 @@ export interface UxStateInputs {
 	hasToken: (env: string) => boolean;
 	hasOAuthClient: (env: string) => Promise<boolean>;
 	openedL3Files: Set<string>; // URIs of L3 files the user has opened at least once
+	getToken?: (env: string) => string | undefined;
 }
 
 export async function deriveUxState(inputs: UxStateInputs): Promise<UxState> {
@@ -41,9 +42,13 @@ export async function deriveUxState(inputs: UxStateInputs): Promise<UxState> {
 	for (const env of inputs.environments) {
 		const authed = inputs.hasToken(env.name);
 		const hasOAuth = await inputs.hasOAuthClient(env.name);
+		const isGitSource = inputs.getToken?.(env.name) === '__reltio-git-source__';
 
 		let eState: EState;
-		if (!authed && !hasOAuth) {
+		// Git sources are always ready (local files, no auth needed)
+		if (isGitSource) {
+			eState = 'E_READY';
+		} else if (!authed && !hasOAuth) {
 			eState = 'E_NO_AUTH';
 		} else if (!authed && hasOAuth) {
 			eState = 'E_HAS_OAUTH_NO_SESSION';
@@ -133,4 +138,13 @@ export class UxStateBus {
  */
 export function publishUxStateContext(state: UxState): Thenable<unknown> {
 	return vscode.commands.executeCommand('setContext', 'reltio.uxState', state.global);
+}
+
+export type WorkspaceSource = 'tenant' | 'git' | undefined;
+
+/** Independent of `reltio.uxState` — drives which of the two welcome-view buttons and which
+ *  tenant-connectivity menu items are visible. Set once per activation/mode-change, not
+ *  recomputed by `deriveUxState`. */
+export function publishWorkspaceSourceContext(source: WorkspaceSource): Thenable<unknown> {
+	return vscode.commands.executeCommand('setContext', 'reltio.workspaceSource', source ?? null);
 }

@@ -65,7 +65,7 @@
       },
       {
         "view": "reltioConfigTree",
-        "contents": "[Connect your Reltio Tenant](command:reltio.launchSetupWizard)\n\nNeed help? [Open the Setup Guide](command:reltio.openSetupGuide)",
+        "contents": "[Connect your Reltio Tenant](command:reltio.launchSetupWizard)\n[Connect your Repository](command:reltio.fetchConfigFromGit)\n\nNeed help? [Open the Setup Guide](command:reltio.openSetupGuide)",
         "when": "workspaceFolderCount > 0 && reltio.uxState == G_EMPTY"
       }
     ],
@@ -300,6 +300,24 @@
       {
         "command": "reltio.openSetupGuide",
         "title": "Reltio: Open Setup Guide"
+      },
+      {
+        "command": "reltio.removeGitSource",
+        "title": "Remove Repository",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "reltio.removeGitTenant",
+        "title": "Remove Config",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "reltio.fetchConfigFromGit",
+        "title": "Reltio: Connect your Repository"
+      },
+      {
+        "command": "reltio.addFileAsTenant",
+        "title": "Add Config"
       }
     ],
     "configuration": {
@@ -389,7 +407,12 @@
       "view/title": [
         {
           "command": "reltio.launchSetupWizard",
-          "when": "view == reltioConfigTree",
+          "when": "view == reltioConfigTree && reltio.workspaceSource != 'git'",
+          "group": "navigation"
+        },
+        {
+          "command": "reltio.removeGitSource",
+          "when": "view == reltioConfigTree && reltio.workspaceSource == 'git'",
           "group": "navigation"
         }
       ],
@@ -494,118 +517,135 @@
         },
         {
           "command": "reltio.configureOAuthClient",
-          "when": "viewItem == reltio.environment.unauthorized.oauthBlocked || viewItem =~ /^reltio\\.environment\\.authorized(\\.noTenants)?$/",
+          "when": "viewItem == reltio.environment.unauthorized.oauthBlocked || viewItem =~ /^reltio\\.environment\\.authorized(\\.noTenants)?$/ && reltio.workspaceSource != 'git'",
           "group": "1_auth@0"
         },
         {
           "command": "reltio.resetOAuthClient",
-          "when": "viewItem =~ /^reltio\\.environment\\..*\\.oauthReady$/",
+          "when": "viewItem =~ /^reltio\\.environment\\..*\\.oauthReady$/ && reltio.workspaceSource != 'git'",
           "group": "1_auth@0"
         },
         {
           "command": "reltio.loginWithBrowser",
-          "when": "viewItem == reltio.environment.unauthorized.oauthReady",
+          "when": "viewItem == reltio.environment.unauthorized.oauthReady && reltio.workspaceSource != 'git'",
           "group": "1_auth@1"
         },
         {
           "command": "reltio.reLoginWithBrowser",
-          "when": "viewItem =~ /^reltio\\.environment\\.authorized\\.oauthReady(\\.noTenants)?$/",
+          "when": "viewItem =~ /^reltio\\.environment\\.authorized\\.oauthReady(\\.noTenants)?$/ && reltio.workspaceSource != 'git'",
           "group": "1_auth@1"
         },
         {
           "command": "reltio.provideToken",
-          "when": "viewItem =~ /reltio\\.environment/",
+          "when": "viewItem =~ /reltio\\.environment/ && reltio.workspaceSource != 'git'",
           "group": "1_auth@2"
         },
         {
           "command": "reltio.refreshEnvironment",
-          "when": "viewItem =~ /reltio\\.environment/",
+          "when": "viewItem =~ /reltio\\.environment/ && reltio.workspaceSource != 'git'",
           "group": "2_workspace"
         },
         {
           "command": "reltio.removeEnvironment",
-          "when": "viewItem =~ /reltio\\.environment/",
+          "when": "viewItem =~ /reltio\\.environment/ && reltio.workspaceSource != 'git'",
           "group": "9_delete"
         },
         {
           "command": "reltio.addTenant",
-          "when": "viewItem =~ /^reltio\\.environment\\.authorized/",
+          "when": "viewItem =~ /^reltio\\.environment\\.authorized/ && reltio.workspaceSource != 'git'",
           "group": "3_tenant"
         },
         {
           "command": "reltio.removeTenant",
-          "when": "viewItem =~ /^reltio\\.tenant/",
+          "when": "viewItem =~ /^reltio\\.tenant/ && reltio.workspaceSource != 'git'",
           "group": "9_delete"
         },
         {
           "command": "reltio.copyTenantId",
-          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.tenant/",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.tenant/ && reltio.workspaceSource != 'git'",
           "group": "8_tenantid"
         },
         {
           "command": "reltio.fetchL3",
-          "when": "viewItem == reltio.tenant.l3",
+          "when": "viewItem == reltio.tenant.l3 && reltio.workspaceSource != 'git'",
           "group": "3_getconfig@01"
         },
         {
           "command": "reltio.fetchConfigurationHistory",
-          "when": "viewItem == reltio.tenant.l3",
+          "when": "viewItem == reltio.tenant.l3 && reltio.workspaceSource != 'git'",
           "group": "3_getconfig@02"
         },
         {
           "command": "reltio.applyL3Configuration",
-          "when": "viewItem == reltio.tenant.l3",
+          "when": "viewItem == reltio.tenant.l3 && reltio.workspaceSource != 'git'",
           "group": "4_apply"
         },
         {
           "command": "reltio.fetchMoreConfigurationHistory",
-          "when": "viewItem =~ /^reltio\\.history\\.folder/",
+          "when": "viewItem =~ /^reltio\\.history\\.folder/ && reltio.workspaceSource != 'git'",
           "group": "3_fetch"
         },
         {
           "command": "reltio.historyCompareWithCurrent",
-          "when": "viewItem =~ /^reltio\\.history\\.snapshot/",
+          "when": "viewItem =~ /^reltio\\.history\\.snapshot/ && reltio.workspaceSource != 'git'",
           "group": "navigation@3"
         },
         {
           "command": "reltio.historyCompareWithPrevious",
-          "when": "viewItem == reltio.history.snapshot.hasOlder",
+          "when": "viewItem == reltio.history.snapshot.hasOlder && reltio.workspaceSource != 'git'",
           "group": "navigation@3b"
         },
         {
           "command": "reltio.historySelectForCompare",
-          "when": "viewItem =~ /^reltio\\.history\\.snapshot/",
+          "when": "viewItem =~ /^reltio\\.history\\.snapshot/ && reltio.workspaceSource != 'git'",
           "group": "navigation@4"
         },
         {
           "command": "reltio.historyCompareSelected",
-          "when": "viewItem =~ /^reltio\\.history\\.snapshot/",
+          "when": "viewItem =~ /^reltio\\.history\\.snapshot/ && reltio.workspaceSource != 'git'",
           "group": "navigation@5"
         },
         {
           "command": "reltio.signInEnvironment",
-          "when": "viewItem == reltio.environment.unauthorized.oauthBlocked",
+          "when": "viewItem == reltio.environment.unauthorized.oauthBlocked && reltio.workspaceSource != 'git'",
           "group": "inline@1"
         },
         {
           "command": "reltio.loginWithBrowser",
-          "when": "viewItem == reltio.environment.unauthorized.oauthReady",
+          "when": "viewItem == reltio.environment.unauthorized.oauthReady && reltio.workspaceSource != 'git'",
           "group": "inline@1"
         },
         {
           "command": "reltio.addTenant",
-          "when": "viewItem =~ /\\.noTenants$/",
+          "when": "viewItem =~ /\\.noTenants$/ && reltio.workspaceSource != 'git'",
           "group": "inline@1"
         },
         {
           "command": "reltio.fetchL3",
-          "when": "viewItem == reltio.tenant",
+          "when": "viewItem == reltio.tenant && reltio.workspaceSource != 'git'",
           "group": "inline@1"
         },
         {
           "command": "reltio.openL3",
           "when": "viewItem == reltio.tenant.l3",
           "group": "inline@1"
+        },
+        {
+          "command": "reltio.removeGitSource",
+          "when": "viewItem =~ /reltio\\.environment/ && reltio.workspaceSource == 'git'",
+          "group": "9_delete"
+        },
+        {
+          "command": "reltio.removeGitTenant",
+          "when": "viewItem =~ /^reltio\\.tenant/ && reltio.workspaceSource == 'git'",
+          "group": "9_delete"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "reltio.addFileAsTenant",
+          "when": "resourceExtname == .json && reltio.workspaceSource == 'git'",
+          "group": "reltio@1"
         }
       ]
     },

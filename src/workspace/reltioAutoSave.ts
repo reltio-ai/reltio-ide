@@ -1,8 +1,15 @@
 import * as vscode from 'vscode';
 
+/** Matches `*.reltio.json` and, for git-sourced repositories, an L3 file named exactly `L3.json`. */
+function isAutoSaveTarget(fileName: string): boolean {
+	if (fileName.endsWith('.reltio.json')) return true;
+	const base = fileName.split(/[\\/]/).pop();
+	return base === 'L3.json';
+}
+
 /**
- * Saves dirty `*.reltio.json` when focus moves away so disk matches external agents
- * and extension parse/index passes (reduces conflicts from unsaved buffers).
+ * Saves dirty `*.reltio.json` (or a git-sourced `L3.json`) when focus moves away so disk matches
+ * external agents and extension parse/index passes (reduces conflicts from unsaved buffers).
  */
 export function registerReltioAutoSave(context: vscode.ExtensionContext): void {
 	let lastEditor: vscode.TextEditor | undefined = vscode.window.activeTextEditor;
@@ -18,7 +25,7 @@ export function registerReltioAutoSave(context: vscode.ExtensionContext): void {
 			lastEditor = editor ?? undefined;
 			if (
 				prev?.document &&
-				prev.document.fileName.endsWith('.reltio.json') &&
+				isAutoSaveTarget(prev.document.fileName) &&
 				prev.document.isDirty
 			) {
 				void prev.document.save();
@@ -33,7 +40,7 @@ export function registerReltioAutoSave(context: vscode.ExtensionContext): void {
 				return;
 			}
 			for (const doc of vscode.workspace.textDocuments) {
-				if (doc.fileName.endsWith('.reltio.json') && doc.isDirty) {
+				if (isAutoSaveTarget(doc.fileName) && doc.isDirty) {
 					void doc.save();
 				}
 			}

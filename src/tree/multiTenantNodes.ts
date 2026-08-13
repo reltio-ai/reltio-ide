@@ -69,12 +69,13 @@ export class TenantNode extends vscode.TreeItem {
 		readonly isStaleLocal: boolean,
 		readonly isEnvironmentAuthorized: boolean,
 		readonly tState: TState = 'T_NO_L3',
+		readonly autoExpand: boolean = false,
 	) {
 		const label = tenantId;
 		super(
 			label,
 			hasL3
-				? vscode.TreeItemCollapsibleState.Collapsed
+				? (autoExpand ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed)
 				: vscode.TreeItemCollapsibleState.None,
 		);
 		this.contextValue = hasL3 ? 'reltio.tenant.l3' : 'reltio.tenant';
