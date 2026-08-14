@@ -352,8 +352,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		if (!environmentManager) return;
 		if (workspaceSource !== 'git') {
 			const currentEnvs = await environmentManager.scanEnvironments();
-			if (currentEnvs.length > 0 && workspaceSource !== 'tenant') {
-				setWorkspaceSource('tenant');
+			if (currentEnvs.length > 0) {
+				if (workspaceSource !== 'tenant') {
+					setWorkspaceSource('tenant');
+				}
+			} else if (workspaceSource === 'tenant') {
+				// The environments are gone (user deleted them). Without this the flag stays
+				// latched at 'tenant' for the rest of the session and blocks Connect your Repository.
+				setWorkspaceSource(undefined);
 			}
 		}
 		if (isClassic) {
@@ -2178,10 +2184,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				return;
 			}
 			if (workspaceSource === 'tenant') {
-				void vscode.window.showErrorMessage(
-					'This workspace already has a connected Reltio tenant. Open a different, empty folder to connect a repository instead.',
-				);
-				return;
+				// Re-check disk rather than trusting the cached flag: the user may have deleted the
+				// environment folders since activation, and file deletions do not refresh it.
+				const currentEnvs = await environmentManager.scanEnvironments();
+				if (currentEnvs.length > 0) {
+					void vscode.window.showErrorMessage(
+						'This workspace already has a connected Reltio tenant. Open a different, empty folder to connect a repository instead.',
+					);
+					return;
+				}
+				setWorkspaceSource(undefined);
 			}
 			const root = folder.uri;
 			const alreadyTracked = await isGitRepoWithRemote(root);
