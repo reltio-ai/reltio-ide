@@ -1,10 +1,39 @@
 const DEFAULT_TIMEOUT_MS = 10_000;
 /**
- * Sent by Reltio clients to identify themselves. Not required by
- * `/reltio/enhancedTenants`, which returns the same records with or without it,
- * so `listTenants` omits it via `reltioHeadersWithoutClientId`.
+ * A genuine Reltio platform header, not a placeholder name: it routes a request
+ * to the UI node (`true`) vs. the data-load node (`false`) in Reltio's balancer.
+ * Verified empirically against a live tenant — `true` vs. omitted/`false` changes
+ * which records a listing endpoint returns, not just their count. Kept on every
+ * call below except `/reltio/enhancedTenants`, which `listTenants` proved does not
+ * need it (see `reltioHeadersWithoutClientId`); do not rename the wire value.
  */
 const RELTIO_CLIENT_HEADER = 'xxx-client';
+
+/** Suffixes `toHttpsBase()` trusts. Extend via `setTrustedHostSuffixes()`. */
+let trustedHostSuffixes: string[] = ['reltio.com'];
+
+/**
+ * Extends (replaces) the host allowlist enforced by `toHttpsBase()`. Called from
+ * `extension.ts` with the `reltio.trustedHostSuffixes` setting so this module can
+ * stay free of a `vscode` import and remain testable against a stubbed `fetch`.
+ */
+export function setTrustedHostSuffixes(suffixes: readonly string[]): void {
+	const cleaned = suffixes.map(s => s.trim().toLowerCase()).filter(Boolean);
+	trustedHostSuffixes = cleaned.length > 0 ? cleaned : ['reltio.com'];
+}
+
+function isTrustedHost(hostname: string): boolean {
+	const lower = hostname.toLowerCase();
+	return trustedHostSuffixes.some(suffix => lower === suffix || lower.endsWith(`.${suffix}`));
+}
+
+/** Thrown by `toHttpsBase()` for a host outside the allowlist, or an unparseable base URL. */
+export class UntrustedHostError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'UntrustedHostError';
+	}
+}
 
 function reltioHeaders(token?: string, extra?: Record<string, string>): Record<string, string> {
 	return { [RELTIO_CLIENT_HEADER]: 'true', ...reltioHeadersWithoutClientId(token, extra) };
@@ -31,12 +60,33 @@ export class ReltioApiError extends Error {
 	}
 }
 
+/**
+ * Resolves an environment's stored host/URL into a base URL every Reltio API
+ * call below is built from. Single enforcement point (RP-195041): forces an
+ * explicit `http://` scheme to `https://` rather than preserving it, and rejects
+ * any host outside the allowlist — before the caller attaches a bearer token.
+ */
 function toHttpsBase(baseUrl: string): string {
 	const trimmed = baseUrl.trim().replace(/^\/+/, '');
-	if (/^https?:\/\//i.test(trimmed)) {
-		return trimmed.replace(/\/+$/, '');
+	const withScheme = /^http:\/\//i.test(trimmed)
+		? trimmed.replace(/^http:\/\//i, 'https://')
+		: /^https:\/\//i.test(trimmed)
+			? trimmed
+			: `https://${trimmed}`;
+	const normalized = withScheme.replace(/\/+$/, '');
+
+	let hostname: string;
+	try {
+		hostname = new URL(normalized).hostname;
+	} catch {
+		throw new UntrustedHostError(`Invalid Reltio environment URL: "${baseUrl}".`);
 	}
-	return `https://${trimmed.replace(/\/+$/, '')}`;
+	if (!hostname || !isTrustedHost(hostname)) {
+		throw new UntrustedHostError(
+			`Refusing to contact untrusted host "${hostname}". If this is a sanctioned Reltio environment, add it to the "reltio.trustedHostSuffixes" setting.`,
+		);
+	}
+	return normalized;
 }
 
 async function fetchWithTimeout(
@@ -58,10 +108,16 @@ async function fetchWithTimeout(
 	}
 }
 
+/**
+ * Never throws — callers (setup wizard, `reltio.addEnvironment`) rely on a plain
+ * boolean to end a busy/progress state. `toHttpsBase()` runs inside the same
+ * try/catch as the fetch so an untrusted or malformed host resolves to `false`,
+ * the same outcome as an unreachable one, rather than an unhandled rejection.
+ */
 export async function validateEnvironment(baseUrl: string): Promise<boolean> {
-	const root = toHttpsBase(baseUrl);
-	const url = `${root}/reltio/status`;
 	try {
+		const root = toHttpsBase(baseUrl);
+		const url = `${root}/reltio/status`;
 		const res = await fetchWithTimeout(
 			url,
 			{ method: 'GET', headers: reltioHeaders() },
@@ -340,6 +396,13 @@ function tryParseReltioConfigurationError(
 	}
 }
 
+/**
+ * Comfortably larger than any real XSD/validation error body observed, while
+ * still bounding a pathological or malicious server response from flooding the
+ * VS Code error dialog.
+ */
+const MAX_ERROR_BODY_CHARS = 12_000;
+
 function formatPutConfigurationFailureMessage(httpStatus: number, bodyText: string): string {
 	const reltio = tryParseReltioConfigurationError(bodyText);
 	if (reltio) {
@@ -367,7 +430,9 @@ function formatPutConfigurationFailureMessage(httpStatus: number, bodyText: stri
 	if (!trimmed) {
 		return `Put configuration failed (HTTP ${httpStatus}).`;
 	}
-	return trimmed.length > 12000 ? `${trimmed.slice(0, 12000)}…` : trimmed;
+	return trimmed.length > MAX_ERROR_BODY_CHARS
+		? `${trimmed.slice(0, MAX_ERROR_BODY_CHARS)}…`
+		: trimmed;
 }
 
 export async function putL3Configuration(

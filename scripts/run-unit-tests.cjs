@@ -20,6 +20,7 @@ const SCRIPTS = [
 	'test-copy-tenant-id-to-clipboard.cjs',
 	'test-editor-navigation.cjs',
 	'test-extension-packaging.cjs',
+	'test-harden-reltio-client-base-url.cjs',
 	'test-hide-reference-attribute-for-relation-types.cjs',
 	'test-insert-interaction-type.cjs',
 	'test-multi-tenant-tree-view.cjs',
