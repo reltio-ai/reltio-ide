@@ -114,6 +114,31 @@ function tooltipForTState(tenantId: string, state: TState): string {
 	}
 }
 
+/**
+ * A directory row inside a git-sourced repository tree, mirroring the repository's own
+ * folder layout (`repo / DP / dp_lif`). Purely structural: it groups config rows and
+ * carries no commands or context-menu actions of its own.
+ */
+export class GitFolderNode extends vscode.TreeItem {
+	constructor(
+		readonly environmentName: string,
+		/** Full path from the environment row down to and including this folder. */
+		readonly folderPath: string[],
+		expanded: boolean,
+	) {
+		super(
+			folderPath[folderPath.length - 1] ?? '',
+			expanded
+				? vscode.TreeItemCollapsibleState.Expanded
+				: vscode.TreeItemCollapsibleState.Collapsed,
+		);
+		this.contextValue = 'reltio.gitFolder';
+		this.iconPath = vscode.ThemeIcon.Folder;
+		this.tooltip = folderPath.join('/');
+		this.id = `gitFolder:${environmentName}/${folderPath.join('/')}`;
+	}
+}
+
 export class HistoryFolderNode extends vscode.TreeItem {
 	constructor(
 		readonly environmentName: string,

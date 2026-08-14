@@ -23,6 +23,8 @@ export interface EnvironmentInfo {
 export interface GitSource {
 	environmentName: string;
 	tenantId: string;
+	/** Folder rows between the environment and this config, outermost first. Empty means it sits directly under the repository row. */
+	folders: string[];
 	l3Uri: vscode.Uri;
 }
 
@@ -107,6 +109,11 @@ export class EnvironmentManager {
 	/** Sets multiple git sources (for multi-L3 repos). */
 	setGitSources(sources: GitSource[]): void {
 		this.gitSources = sources;
+	}
+
+	/** Git sources currently in effect, for callers that need the folder hierarchy (the tree). */
+	getGitSources(): readonly GitSource[] {
+		return this.gitSources;
 	}
 
 	/** Reverts to the normal `*.reltio.environment`-folder-based scan (used when the user removes the fetched config). */

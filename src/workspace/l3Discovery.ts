@@ -47,20 +47,19 @@ export async function isParsableL3File(uri: vscode.Uri): Promise<boolean> {
 	}
 }
 
-/**
- * Derives naming for a discovered L3 file in a git repo.
- * - environmentName: Repository folder name (single root for all configs)
- * - tenantId: Folder path or repo name at root, with filename disambiguation on conflicts
- */
-export function deriveTenantNaming(
-	root: vscode.Uri,
-	l3Uri: vscode.Uri,
-	allL3Uris: vscode.Uri[],
-): { environmentName: string; tenantId: string } {
-	const environmentName = root.path.split('/').filter(Boolean).pop() ?? 'git-config';
-	const rootPath = root.path.replace(/\/+$/, '');
+/** Naming and tree placement for one discovered L3 file. */
+export interface TenantNaming {
+	/** Repository folder name — the single environment row. */
+	environmentName: string;
+	/** Stable identity used by the marker file and `EnvironmentManager` lookups. */
+	tenantId: string;
+	/** Folder rows between the environment and this config, outermost first. */
+	folders: string[];
+}
 
-	// Get relative path
+/** Path of `l3Uri` relative to `root`, split into segments. Windows drive letters compare case-insensitively. */
+function relativeParts(root: vscode.Uri, l3Uri: vscode.Uri): string[] {
+	const rootPath = root.path.replace(/\/+$/, '');
 	let relative: string;
 	if (process.platform === 'win32') {
 		const startsWithRoot = l3Uri.path.toLowerCase().startsWith(rootPath.toLowerCase());
@@ -68,35 +67,62 @@ export function deriveTenantNaming(
 	} else {
 		relative = l3Uri.path.startsWith(rootPath) ? l3Uri.path.slice(rootPath.length) : l3Uri.path;
 	}
+	return relative.split('/').filter(Boolean);
+}
 
-	const relParts = relative.split('/').filter(Boolean);
-	const filename = relParts[relParts.length - 1];
-	const folders = relParts.slice(0, -1);
+/**
+ * Derives naming for every discovered L3 file at once, so identities can be made unique.
+ *
+ * The tree mirrors the repository layout: `repo / DP / dp_lif`. A folder holding exactly one
+ * config collapses onto that config's row, so the deepest folder name *is* the config row.
+ * A folder holding several configs keeps its own row and gains one child row per filename.
+ *
+ * `tenantId` is the row's own name. Because it is the marker-file key, duplicates across
+ * different folders are qualified with their folder path so lookups stay unambiguous.
+ */
+export function deriveTenantNamings(root: vscode.Uri, allL3Uris: vscode.Uri[]): TenantNaming[] {
+	const environmentName = root.path.split('/').filter(Boolean).pop() ?? 'git-config';
 
-	// Base name: folder path or repo name if at root
-	const baseName = folders.length > 0 ? folders.join('.') : environmentName;
+	const byFolder = new Map<string, number>();
+	for (const uri of allL3Uris) {
+		const key = relativeParts(root, uri).slice(0, -1).join('/');
+		byFolder.set(key, (byFolder.get(key) ?? 0) + 1);
+	}
 
-	// Check for conflicts (multiple files in same folder)
-	const conflictsInSameFolder = allL3Uris.filter(otherUri => {
-		if (otherUri.path === l3Uri.path) return false;
-		const otherRootPath = rootPath.replace(/\/+$/, '');
-		let otherRelative: string;
-		if (process.platform === 'win32') {
-			const startsWithRoot = otherUri.path.toLowerCase().startsWith(otherRootPath.toLowerCase());
-			otherRelative = startsWithRoot ? otherUri.path.slice(otherRootPath.length) : otherUri.path;
-		} else {
-			otherRelative = otherUri.path.startsWith(otherRootPath)
-				? otherUri.path.slice(otherRootPath.length)
-				: otherUri.path;
+	const draft = allL3Uris.map(uri => {
+		const parts = relativeParts(root, uri);
+		const filename = parts[parts.length - 1];
+		const folders = parts.slice(0, -1);
+		const sharesFolder = (byFolder.get(folders.join('/')) ?? 0) > 1;
+
+		if (sharesFolder) {
+			// Keep the folder as its own row; the file name distinguishes the siblings.
+			return { environmentName, tenantId: filename, folders };
 		}
-		const otherParts = otherRelative.split('/').filter(Boolean);
-		const otherFolders = otherParts.slice(0, -1);
-		// Same folder if folder paths match
-		return otherFolders.join('/') === folders.join('/');
+		if (folders.length === 0) {
+			// A config at the repository root has no folder to borrow a name from.
+			return { environmentName, tenantId: environmentName, folders: [] };
+		}
+		return { environmentName, tenantId: folders[folders.length - 1], folders: folders.slice(0, -1) };
 	});
 
-	// Add filename in parentheses if there are conflicts
-	const tenantId = conflictsInSameFolder.length > 0 ? `${baseName} (${filename})` : baseName;
+	// Qualify only genuine clashes, so the common case keeps the short leaf name.
+	const counts = new Map<string, number>();
+	for (const d of draft) counts.set(d.tenantId, (counts.get(d.tenantId) ?? 0) + 1);
+	return draft.map((d, i) => {
+		if ((counts.get(d.tenantId) ?? 0) < 2) return d;
+		const qualifier = relativeParts(root, allL3Uris[i]).slice(0, -1).join('/');
+		return { ...d, tenantId: qualifier ? `${d.tenantId} (${qualifier})` : d.tenantId };
+	});
+}
 
-	return { environmentName, tenantId };
+/** Naming for a single file. Prefer `deriveTenantNamings` when handling a whole repository. */
+export function deriveTenantNaming(
+	root: vscode.Uri,
+	l3Uri: vscode.Uri,
+	allL3Uris: vscode.Uri[],
+): TenantNaming {
+	const all = allL3Uris.some(u => u.path === l3Uri.path) ? allL3Uris : [...allL3Uris, l3Uri];
+	const index = all.findIndex(u => u.path === l3Uri.path);
+	return deriveTenantNamings(root, all)[index];
 }

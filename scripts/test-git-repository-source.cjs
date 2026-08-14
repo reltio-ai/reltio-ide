@@ -16,7 +16,12 @@ const assert = require('assert');
 const { importDist } = require('./lib/import-dist.cjs');
 const vscode = require('./lib/vscode-stub.cjs');
 
-const { deriveTenantNaming, discoverL3Files, isParsableL3File } = importDist('workspace/l3Discovery');
+const {
+	deriveTenantNaming,
+	deriveTenantNamings,
+	discoverL3Files,
+	isParsableL3File,
+} = importDist('workspace/l3Discovery');
 const { isFolderEmpty, isPathContainedIn } = importDist('workspace/gitConfigSource');
 const { readGitSourceMarker, writeGitSourceMarker } = importDist('workspace/gitSourceMarker');
 const { EnvironmentManager } = importDist('workspace/environmentManager');
@@ -27,27 +32,41 @@ const { EnvironmentManager } = importDist('workspace/environmentManager');
 	{
 		const root = vscode.Uri.file('/repo/my-config-repo');
 
-		// Repo folder is the single environment; an L3 at the repo root takes the repo name.
-		const rootL3 = vscode.Uri.joinPath(root, 'L3.reltio.json');
+		// A config at the repository root has no folder to borrow a name from.
+		const rootL3 = vscode.Uri.joinPath(root, 'BusinessConfig.json');
 		const atRoot = deriveTenantNaming(root, rootL3, [rootL3]);
 		assert.strictEqual(atRoot.environmentName, 'my-config-repo');
 		assert.strictEqual(atRoot.tenantId, 'my-config-repo');
+		assert.deepStrictEqual(atRoot.folders, []);
 
-		// A nested L3 is named after its folder path.
-		const nestedL3 = vscode.Uri.joinPath(root, 'tenants', 'acme', 'L3.json');
-		const nested = deriveTenantNaming(root, nestedL3, [nestedL3]);
-		assert.strictEqual(nested.environmentName, 'my-config-repo');
-		assert.strictEqual(nested.tenantId, 'tenants.acme');
+		// Nested: the deepest folder names the config row, the ones above become folder rows.
+		const nested = vscode.Uri.joinPath(root, 'DP', 'dp_lif', 'BusinessConfig.json');
+		const n = deriveTenantNaming(root, nested, [nested]);
+		assert.strictEqual(n.tenantId, 'dp_lif');
+		assert.deepStrictEqual(n.folders, ['DP'], 'repo -> DP -> dp_lif');
 
-		// Two L3 files in the same folder are disambiguated by filename.
-		const siblingA = vscode.Uri.joinPath(root, 'tenants', 'acme', 'L3.json');
-		const siblingB = vscode.Uri.joinPath(root, 'tenants', 'acme', 'BusinessConfig.json');
-		const all = [siblingA, siblingB];
-		assert.strictEqual(deriveTenantNaming(root, siblingA, all).tenantId, 'tenants.acme (L3.json)');
-		assert.strictEqual(
-			deriveTenantNaming(root, siblingB, all).tenantId,
-			'tenants.acme (BusinessConfig.json)',
-		);
+		// Deeper nesting keeps every intermediate folder.
+		const deep = vscode.Uri.joinPath(root, 'a', 'b', 'c', 'BusinessConfig.json');
+		const d = deriveTenantNaming(root, deep, [deep]);
+		assert.strictEqual(d.tenantId, 'c');
+		assert.deepStrictEqual(d.folders, ['a', 'b']);
+
+		// Two configs in one folder: the folder keeps its own row and files become the leaves.
+		const sibA = vscode.Uri.joinPath(root, 'DP', 'dp_lif', 'BusinessConfig.json');
+		const sibB = vscode.Uri.joinPath(root, 'DP', 'dp_lif', 'L3.json');
+		const both = deriveTenantNamings(root, [sibA, sibB]);
+		assert.deepStrictEqual(both.map(x => x.tenantId), ['BusinessConfig.json', 'L3.json']);
+		assert.deepStrictEqual(both[0].folders, ['DP', 'dp_lif']);
+		assert.deepStrictEqual(both[1].folders, ['DP', 'dp_lif']);
+
+		// tenantId is the marker key, so identical leaf names in different folders must stay
+		// distinguishable — qualify the clash, leave everything else short.
+		const clashA = vscode.Uri.joinPath(root, 'DP', 'shared', 'BusinessConfig.json');
+		const clashB = vscode.Uri.joinPath(root, 'MDM', 'shared', 'BusinessConfig.json');
+		const lonely = vscode.Uri.joinPath(root, 'other', 'unique', 'BusinessConfig.json');
+		const ids = deriveTenantNamings(root, [clashA, clashB, lonely]).map(x => x.tenantId);
+		assert.deepStrictEqual(ids, ['shared (DP/shared)', 'shared (MDM/shared)', 'unique']);
+		assert.strictEqual(new Set(ids).size, ids.length, 'tenantIds must be unique');
 	}
 
 	// --- discoverL3Files: depth limit + dotfolder skip ----------------------

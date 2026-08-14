@@ -5,7 +5,13 @@ import { TokenStore } from '../api/tokenStore';
 import { countEntities } from '../api/reltioClient';
 import type { OAuthCredentialsStore } from '../api/oauthCredentialsStore';
 import { computeBrowserLoginEligibility } from '../api/oauthCredentialsResolve';
-import { EnvironmentNode, TenantNode, HistoryFolderNode, HistorySnapshotNode } from './multiTenantNodes';
+import {
+	EnvironmentNode,
+	TenantNode,
+	GitFolderNode,
+	HistoryFolderNode,
+	HistorySnapshotNode,
+} from './multiTenantNodes';
 import type { EState, TState, UxState } from '../ux/uxState';
 import { ConfigTreeItem } from './treeNodes';
 import {
@@ -20,6 +26,7 @@ import { formatHistoryTreeLabel, listLocalHistorySnapshots } from '../workspace/
 export type MultiTenantTreeElement =
 	| EnvironmentNode
 	| TenantNode
+	| GitFolderNode
 	| HistoryFolderNode
 	| HistorySnapshotNode
 	| ConfigTreeItem;
@@ -202,7 +209,24 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 
 	getParent(element: MultiTenantTreeElement): vscode.ProviderResult<MultiTenantTreeElement> {
 		if (element instanceof EnvironmentNode) return undefined;
+		if (element instanceof GitFolderNode) {
+			const parentPath = element.folderPath.slice(0, -1);
+			if (parentPath.length === 0) {
+				return this.environmentNode(
+					element.environmentName,
+					this.tokenStore.hasToken(element.environmentName),
+				);
+			}
+			return new GitFolderNode(element.environmentName, parentPath, true);
+		}
 		if (element instanceof TenantNode) {
+			// A git-sourced config nested in folders hangs off its folder row, not the environment.
+			const source = this.environmentManager
+				?.getGitSources()
+				.find(g => g.environmentName === element.environmentName && g.tenantId === element.tenantId);
+			if (source && source.folders.length > 0) {
+				return new GitFolderNode(element.environmentName, source.folders, true);
+			}
 			return this.environmentNode(
 				element.environmentName,
 				this.tokenStore.hasToken(element.environmentName),
@@ -300,6 +324,9 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			if (!e) return [];
 			// Check if this is a git source (auto-expand tenants)
 			const isGitSource = this.tokenStore.getToken(element.environmentName) === '__reltio-git-source__';
+			if (isGitSource) {
+				return this.gitChildren(element.environmentName, []);
+			}
 			return e.tenants.map(
 				t => new TenantNode(
 					element.environmentName,
@@ -311,6 +338,9 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 					isGitSource,
 				),
 			);
+		}
+		if (element instanceof GitFolderNode) {
+			return this.gitChildren(element.environmentName, element.folderPath);
 		}
 		if (element instanceof TenantNode) {
 			const items: MultiTenantTreeElement[] = [];
@@ -354,6 +384,50 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			return children;
 		}
 		return [];
+	}
+
+	/**
+	 * Rows directly beneath `folderPath` in a git-sourced repository: nested folders first,
+	 * then the configs that live at this level. Mirrors the repository's own directory layout.
+	 */
+	private gitChildren(environmentName: string, folderPath: string[]): MultiTenantTreeElement[] {
+		const sources = this.environmentManager?.getGitSources() ?? [];
+		const atThisLevel = sources.filter(
+			s =>
+				s.environmentName === environmentName &&
+				s.folders.length >= folderPath.length &&
+				folderPath.every((seg, i) => s.folders[i] === seg),
+		);
+
+		const folderNames: string[] = [];
+		for (const s of atThisLevel) {
+			const next = s.folders[folderPath.length];
+			if (next !== undefined && !folderNames.includes(next)) {
+				folderNames.push(next);
+			}
+		}
+		folderNames.sort((a, b) => a.localeCompare(b));
+
+		const folders = folderNames.map(
+			name => new GitFolderNode(environmentName, [...folderPath, name], true),
+		);
+
+		const configs = atThisLevel
+			.filter(s => s.folders.length === folderPath.length)
+			.sort((a, b) => a.tenantId.localeCompare(b.tenantId))
+			.map(
+				s => new TenantNode(
+					environmentName,
+					s.tenantId,
+					true,
+					false,
+					this.tokenStore.hasToken(environmentName),
+					this.uxState?.perTenant.get(`${environmentName}/${s.tenantId}`) ?? 'T_READY',
+					true,
+				),
+			);
+
+		return [...folders, ...configs];
 	}
 
 	private async decorateEntityBrowserCount(item: ConfigTreeItem): Promise<void> {

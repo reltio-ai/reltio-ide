@@ -28,7 +28,7 @@ import { ReltioReferenceProvider } from './navigation/referenceProvider';
 import { DiagnosticsManager } from './navigation/diagnosticsManager';
 import { ReltioUriCompletionProvider } from './navigation/uriCompletionProvider';
 import { OntologyPanelManager } from './ontology/ontologyPanel';
-import { EnvironmentManager } from './workspace/environmentManager';
+import { EnvironmentManager, type GitSource } from './workspace/environmentManager';
 import {
 	applyDefaultEnvironments,
 	indexTokenFilesByCanonicalPath,
@@ -96,7 +96,7 @@ import {
 	writeMultiGitSourceMarker,
 	type MultiGitSourceMarker,
 } from './workspace/gitSourceMarker';
-import { discoverL3Files, deriveTenantNaming, isParsableL3File } from './workspace/l3Discovery';
+import { discoverL3Files, deriveTenantNamings, isParsableL3File } from './workspace/l3Discovery';
 
 const DEBOUNCE_MS = 300;
 const RELTIO_SELECTOR: vscode.DocumentSelector = [
@@ -255,6 +255,15 @@ function promptForEntityFilter(title: string): Promise<string | undefined> {
 	});
 }
 
+/**
+ * Names every discovered config in one pass so folder rows, leaf names, and the
+ * uniqueness qualifiers stay consistent no matter which flow produced the list.
+ */
+function buildGitSources(root: vscode.Uri, l3Uris: vscode.Uri[]): GitSource[] {
+	const namings = deriveTenantNamings(root, l3Uris);
+	return l3Uris.map((l3Uri, i) => ({ ...namings[i], l3Uri }));
+}
+
 async function tryRestoreGitSource(
 	environmentManager: EnvironmentManager,
 	tokenStore: TokenStore,
@@ -264,7 +273,7 @@ async function tryRestoreGitSource(
 	if (!multiMarker || multiMarker.sources.length === 0) return false;
 	if (!(await isGitRepo(workspaceRoot))) return false;
 
-	const validSources: Array<{ environmentName: string; tenantId: string; l3Uri: vscode.Uri }> = [];
+	const validUris: vscode.Uri[] = [];
 	for (const marker of multiMarker.sources) {
 		const l3Uri = vscode.Uri.joinPath(workspaceRoot, marker.l3RelativePath);
 		if (!isPathContainedIn(workspaceRoot, l3Uri)) continue;
@@ -274,13 +283,12 @@ async function tryRestoreGitSource(
 			continue;
 		}
 		if (!(await isParsableL3File(l3Uri))) continue;
-		validSources.push({
-			environmentName: marker.environmentName,
-			tenantId: marker.tenantId,
-			l3Uri,
-		});
+		validUris.push(l3Uri);
 	}
 
+	// Re-derive rather than trusting the marker's stored ids: a dropped or added file changes
+	// which names are unique, and markers written by older builds hold dotted ids.
+	const validSources = buildGitSources(workspaceRoot, validUris);
 	if (validSources.length === 0) return false;
 	environmentManager.setGitSources(validSources);
 	// Set token once for the environment (not per tenant)
@@ -2311,21 +2319,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				return;
 			}
 
-			// Create sources for all valid candidates
-			const sources = validCandidates.map((l3Uri) => {
-				const { environmentName, tenantId } = deriveTenantNaming(root, l3Uri, validCandidates);
-				return {
-					l3RelativePath: vscode.workspace.asRelativePath(l3Uri, false),
-					environmentName,
-					tenantId,
-				};
-			});
-
-			await writeMultiGitSourceMarker(root, { sources });
-
-			const gitSources = validCandidates.map((l3Uri) => {
-				const { environmentName, tenantId } = deriveTenantNaming(root, l3Uri, validCandidates);
-				return { environmentName, tenantId, l3Uri };
+			const gitSources = buildGitSources(root, validCandidates);
+			await writeMultiGitSourceMarker(root, {
+				sources: gitSources.map(g => ({
+					l3RelativePath: vscode.workspace.asRelativePath(g.l3Uri, false),
+					environmentName: g.environmentName,
+					tenantId: g.tenantId,
+				})),
 			});
 
 			// Set token only once per environment (not per tenant)
@@ -2431,10 +2431,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				await writeMultiGitSourceMarker(folder.uri, { sources: remainingSources });
 
 				// Rebuild git sources
-				const gitSources = remainingSources.map(s => {
-					const l3Uri = vscode.Uri.joinPath(folder.uri, s.l3RelativePath);
-					return { environmentName: s.environmentName, tenantId: s.tenantId, l3Uri };
-				});
+				const gitSources = buildGitSources(
+					folder.uri,
+					remainingSources.map(s => vscode.Uri.joinPath(folder.uri, s.l3RelativePath)),
+				);
 				environmentManager.setGitSources(gitSources);
 				tokenStore.clearToken(node.environmentName);
 			}
@@ -2487,33 +2487,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			const existingUris = existingSources.map(s => vscode.Uri.joinPath(root, s.l3RelativePath));
 			const allL3Uris = [...existingUris, uri];
 
-			// Derive naming with conflict detection
-			const { environmentName, tenantId } = deriveTenantNaming(root, uri, allL3Uris);
-
-			// Re-derive naming for all existing sources (in case new file creates conflicts)
-			const updatedSources = existingSources.map(s => {
-				const srcUri = vscode.Uri.joinPath(root, s.l3RelativePath);
-				const { environmentName: env, tenantId: tid } = deriveTenantNaming(root, srcUri, allL3Uris);
-				return {
-					l3RelativePath: s.l3RelativePath,
-					environmentName: env,
-					tenantId: tid,
-				};
-			});
-
-			// Add new source
-			updatedSources.push({
-				l3RelativePath: relPath,
-				environmentName,
-				tenantId,
-			});
-
-			await writeMultiGitSourceMarker(root, { sources: updatedSources });
-
-			// Rebuild git sources
-			const gitSources = updatedSources.map(s => {
-				const srcUri = vscode.Uri.joinPath(root, s.l3RelativePath);
-				return { environmentName: s.environmentName, tenantId: s.tenantId, l3Uri: srcUri };
+			// Adding a file can change which names are unique, so re-derive the whole set.
+			const gitSources = buildGitSources(root, allL3Uris);
+			await writeMultiGitSourceMarker(root, {
+				sources: gitSources.map(g => ({
+					l3RelativePath: vscode.workspace.asRelativePath(g.l3Uri, false),
+					environmentName: g.environmentName,
+					tenantId: g.tenantId,
+				})),
 			});
 			environmentManager.setGitSources(gitSources);
 			if (gitSources.length > 0) {
@@ -2524,7 +2505,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			treeProvider.invalidate();
 			uxBus.fire();
 
-			void vscode.window.showInformationMessage(`Added "${relPath}" as "${tenantId}".`);
+			const added = gitSources.find(g => g.l3Uri.path === uri.path);
+			void vscode.window.showInformationMessage(`Added "${relPath}" as "${added?.tenantId ?? relPath}".`);
 		}),
 	);
 
