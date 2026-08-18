@@ -2,7 +2,7 @@
 'use strict';
 /**
  * OpenSpec change: harden-reltio-client-base-url
- * Tier A: toHttpsBase()'s host allowlist and forced-HTTPS behavior (RP-195041),
+ * Tier A: toHttpsBase()'s host allowlist and forced-HTTPS behavior,
  *         exercised through every exported call helper, plus the
  *         setTrustedHostSuffixes() escape hatch.
  * Tier B: formatPutConfigurationFailureMessage() truncation is unchanged.

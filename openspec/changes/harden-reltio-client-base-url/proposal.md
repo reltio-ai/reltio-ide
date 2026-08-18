@@ -1,6 +1,6 @@
 ## Why
 
-`toHttpsBase()` in `src/api/reltioClient.ts` turns an environment's stored host string into the base URL every Reltio API call is built from. It has no host allowlist, so a workspace folder named e.g. `evil.com.reltio.environment/` is trusted exactly like a real `*.reltio.com` environment: once the user authenticates, their bearer token is attached and sent to that host. Separately, the same function leaves an explicit `http://` scheme untouched instead of upgrading it to `https://`, so a misconfigured or attacker-supplied `http://` base URL would carry the bearer token and config payloads in plaintext. Both are flagged in the security review (RP-195041).
+`toHttpsBase()` in `src/api/reltioClient.ts` turns an environment's stored host string into the base URL every Reltio API call is built from. It has no host allowlist, so a workspace folder named e.g. `evil.com.reltio.environment/` is trusted exactly like a real `*.reltio.com` environment: once the user authenticates, their bearer token is attached and sent to that host. Separately, the same function leaves an explicit `http://` scheme untouched instead of upgrading it to `https://`, so a misconfigured or attacker-supplied `http://` base URL would carry the bearer token and config payloads in plaintext. Both were flagged in an internal security review.
 
 ## What Changes
 

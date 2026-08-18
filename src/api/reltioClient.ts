@@ -62,9 +62,9 @@ export class ReltioApiError extends Error {
 
 /**
  * Resolves an environment's stored host/URL into a base URL every Reltio API
- * call below is built from. Single enforcement point (RP-195041): forces an
- * explicit `http://` scheme to `https://` rather than preserving it, and rejects
- * any host outside the allowlist — before the caller attaches a bearer token.
+ * call below is built from. Single enforcement point: forces an explicit
+ * `http://` scheme to `https://` rather than preserving it, and rejects any
+ * host outside the allowlist — before the caller attaches a bearer token.
  */
 function toHttpsBase(baseUrl: string): string {
 	const trimmed = baseUrl.trim().replace(/^\/+/, '');

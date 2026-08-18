@@ -229,7 +229,7 @@ function promptForEntityFilter(title: string): Promise<string | undefined> {
 	});
 }
 
-/** Reads `reltio.trustedHostSuffixes` and applies it to `reltioClient`'s host allowlist (RP-195041). */
+/** Reads `reltio.trustedHostSuffixes` and applies it to `reltioClient`'s host allowlist. */
 function applyTrustedHostSuffixes(): void {
 	const suffixes = vscode.workspace
 		.getConfiguration('reltio')

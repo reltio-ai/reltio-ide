@@ -37,4 +37,4 @@
 ## 6. Pull request
 
 - [x] 6.1 Commit on `RP-195041-harden-reltio-client-base-url`. Verify no access token appears in any diff, fixture, or commit message.
-- [ ] 6.2 Open a PR naming RP-195041 and this OpenSpec change.
+- [ ] 6.2 Open a PR referencing this OpenSpec change.
