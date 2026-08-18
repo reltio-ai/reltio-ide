@@ -25,6 +25,7 @@ const SCRIPTS = [
 	'test-multi-tenant-tree-view.cjs',
 	'test-no-create-wizards.cjs',
 	'test-ontology-view.cjs',
+	'test-ontology-webview-hardening.cjs',
 	'test-replace-tenants-with-enhanced-tenants.cjs',
 	'test-schema-alignment-with-live-l3.cjs',
 	'test-setup-ux-redesign.cjs',
