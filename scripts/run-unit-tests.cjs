@@ -18,6 +18,7 @@ const SCRIPTS = [
 	'test-configuration-history-review.cjs',
 	'test-context-menu-reorganization.cjs',
 	'test-copy-tenant-id-to-clipboard.cjs',
+	'test-csp-nonce-hardening.cjs',
 	'test-editor-navigation.cjs',
 	'test-extension-packaging.cjs',
 	'test-hide-reference-attribute-for-relation-types.cjs',

@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as crypto from 'crypto';
 import { parseDocument } from '../parser/configParser';
 import { buildGraphModel, type GraphModel } from './modelToGraph';
 import { computeLayout } from './elkLayout';
@@ -164,13 +165,9 @@ function fileName(uri: vscode.Uri): string {
 	return parts[parts.length - 1];
 }
 
+/** Same CSPRNG pattern as the OAuth `state` parameter in `src/api/oauthLogin.ts`. */
 function getNonce(): string {
-	let text = '';
-	const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-	for (let i = 0; i < 32; i++) {
-		text += chars.charAt(Math.floor(Math.random() * chars.length));
-	}
-	return text;
+	return crypto.randomBytes(16).toString('hex');
 }
 
 function postGraph(panel: vscode.WebviewPanel, graph: GraphModel): void {
