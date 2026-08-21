@@ -1,6 +1,15 @@
 /** Max hops when resolving `useTokenFrom` chains (cycle-safe). */
 const MAX_ALIAS_DEPTH = 10;
 
+/**
+ * Sentinel token held for a git-sourced repository's environment. It stands in for a real Bearer
+ * token so the tree and UX state machine treat the environment as authorized without any Reltio
+ * call, and is the flag that switches both into git mode. Every writer and reader must use this
+ * constant: a repository's configurations all share one environment name, so a single stray
+ * clear/compare drops the whole repository back to flat tenant mode.
+ */
+export const GIT_SOURCE_TOKEN = '__reltio-git-source__';
+
 export interface OAuthSession {
 	accessToken: string;
 	refreshToken: string;

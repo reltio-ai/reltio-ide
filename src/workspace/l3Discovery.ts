@@ -47,12 +47,47 @@ export async function isParsableL3File(uri: vscode.Uri): Promise<boolean> {
 	}
 }
 
+/** Top-level sections a file must carry to be adopted as a business configuration. */
+const REQUIRED_SECTIONS = ['sources', 'entityTypes'] as const;
+
+/**
+ * Gate for `reltio.addFileAsTenant`. A config repository holds plenty of JSON that is not a business
+ * configuration (`Permissions.json` is a top-level array, `Lookups.json` is `{}`), and adopting one of
+ * those yields a tree row that cannot be browsed or edited.
+ *
+ * True when the file is a JSON object whose top-level `uri` is `configuration` and which carries every
+ * section in `REQUIRED_SECTIONS`. Deliberately a shallow shape check, not validation against
+ * `schemas/reltio-metadata.schema.json`: that schema sets `additionalProperties: false`, so drift
+ * between it and live L3 would start rejecting legitimate configs.
+ */
+export async function isBusinessConfigFile(uri: vscode.Uri): Promise<boolean> {
+	let parsed: unknown;
+	try {
+		const bytes = await vscode.workspace.fs.readFile(uri);
+		parsed = JSON.parse(new TextDecoder().decode(bytes));
+	} catch {
+		return false;
+	}
+
+	if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+
+	const model = parsed as Record<string, unknown>;
+	if (model.uri !== 'configuration') return false;
+
+	return REQUIRED_SECTIONS.every(section => Array.isArray(model[section]));
+}
+
 /** Naming and tree placement for one discovered L3 file. */
 export interface TenantNaming {
 	/** Repository folder name — the single environment row. */
 	environmentName: string;
-	/** Stable identity used by the marker file and `EnvironmentManager` lookups. */
+	/** Stable identity used by the marker file and `EnvironmentManager` lookups. Qualified on collision. */
 	tenantId: string;
+	/**
+	 * The row's label in the tree. Always the plain leaf name, never qualified: the row already
+	 * sits under its folder rows, so repeating the path in the label would be redundant noise.
+	 */
+	label: string;
 	/** Folder rows between the environment and this config, outermost first. */
 	folders: string[];
 }
@@ -76,9 +111,12 @@ function relativeParts(root: vscode.Uri, l3Uri: vscode.Uri): string[] {
  * The tree mirrors the repository layout: `repo / DP / dp_lif`. A folder holding exactly one
  * config collapses onto that config's row, so the deepest folder name *is* the config row.
  * A folder holding several configs keeps its own row and gains one child row per filename.
+ * A config at the repository root is named after its file, since the repository row is
+ * already shown above it.
  *
  * `tenantId` is the row's own name. Because it is the marker-file key, duplicates across
- * different folders are qualified with their folder path so lookups stay unambiguous.
+ * different folders are qualified with their folder path so lookups stay unambiguous. That
+ * qualifier is identity only: `label` keeps the plain name for display.
  */
 export function deriveTenantNamings(root: vscode.Uri, allL3Uris: vscode.Uri[]): TenantNaming[] {
 	const environmentName = root.path.split('/').filter(Boolean).pop() ?? 'git-config';
@@ -95,18 +133,20 @@ export function deriveTenantNamings(root: vscode.Uri, allL3Uris: vscode.Uri[]): 
 		const folders = parts.slice(0, -1);
 		const sharesFolder = (byFolder.get(folders.join('/')) ?? 0) > 1;
 
-		if (sharesFolder) {
-			// Keep the folder as its own row; the file name distinguishes the siblings.
-			return { environmentName, tenantId: filename, folders };
+		// The filename names the row whenever no folder can name it: either the config shares
+		// its folder with siblings (so the folder keeps its own row), or it sits at the
+		// repository root. Borrowing the repository name at the root would duplicate the
+		// environment row above it, and the row would rename itself the moment a second
+		// root config appeared. The filename reads the same in both cases.
+		if (sharesFolder || folders.length === 0) {
+			return { environmentName, tenantId: filename, label: filename, folders };
 		}
-		if (folders.length === 0) {
-			// A config at the repository root has no folder to borrow a name from.
-			return { environmentName, tenantId: environmentName, folders: [] };
-		}
-		return { environmentName, tenantId: folders[folders.length - 1], folders: folders.slice(0, -1) };
+		const leaf = folders[folders.length - 1];
+		return { environmentName, tenantId: leaf, label: leaf, folders: folders.slice(0, -1) };
 	});
 
-	// Qualify only genuine clashes, so the common case keeps the short leaf name.
+	// Qualify only genuine clashes, so the common case keeps the short leaf name. `label` is
+	// deliberately left alone: the qualifier exists to keep lookups unambiguous, not to be read.
 	const counts = new Map<string, number>();
 	for (const d of draft) counts.set(d.tenantId, (counts.get(d.tenantId) ?? 0) + 1);
 	return draft.map((d, i) => {

@@ -23,9 +23,11 @@ Git-sourced configs are discovered by `discoverL3Files` and named by `deriveTena
 
 **D1. `tenantId` becomes the leaf name, qualified only on collision.**
 
-Chosen by the requester over display-only nesting. A folder holding one config lends its name to that config's row; a config at the repository root takes the repository name.
+Chosen by the requester over display-only nesting. A folder holding one config lends its name to that config's row; a config at the repository root is named after its file (see Bugfix Round 1 in `tasks.md`, which corrected an earlier rule that borrowed the repository name).
 
 The risk this carries is real: leaf names are not naturally unique. Two folders named `shared` under different parents both yield `shared`, and in the multi-file case several folders each yield `BusinessConfig.json`. Because `findGitSource` matches on `tenantId` and returns the first hit, a duplicate would open the wrong file. So duplicates, and only duplicates, are qualified with their folder path: `shared (DP/shared)`. Unique names stay short, which is the point of the change.
+
+That qualifier is an identity mechanism, not a label. Bugfix Round 2 split the two: `TenantNaming.label` carries the plain leaf name for the row, while `tenantId` keeps the qualifier for lookups, `TreeItem.id`, and the tooltip. A row is already nested under its folder rows, so echoing the path in the label was redundant.
 
 *Alternative considered:* display-only nesting, keeping the dotted `tenantId` as a hidden identity. Rejected by the requester. It would have avoided the uniqueness problem entirely.
 
@@ -66,7 +68,8 @@ None required. Marker files are re-derived on load. Rollback is reverting the co
 
 | # | Assertion |
 |---|---|
-| 1 | A config at the repository root takes the repository name and has no folder rows |
+| 1 | A config at the repository root is named after its file, has no folder rows, and does not repeat the environment row's label |
+| 1b | Adopting a second root config leaves the first one's identifier unchanged |
 | 2 | `DP/dp_lif/BusinessConfig.json` yields `tenantId` `dp_lif` with folders `['DP']` |
 | 3 | Deeper nesting keeps every intermediate folder |
 | 4 | Two configs in one folder keep the folder row and are named by filename |

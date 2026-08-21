@@ -5,7 +5,7 @@ A git-sourced repository whose configs sit in nested folders renders each one as
 ## What Changes
 
 - The git-sourced tree grows folder rows between the environment row and the config rows, one per directory level, mirroring the repository layout.
-- Config rows are named after their own folder rather than the full dotted path. A config at the repository root keeps the repository name.
+- Config rows are named after their own folder rather than the full dotted path. A config at the repository root is named after its file, since the repository row already carries the repository name.
 - A folder holding several configs keeps its own row and gains one child row per filename, replacing today's `name (filename)` parenthetical.
 - **BREAKING** (persisted state): `tenantId` changes from the dotted path to the leaf name. It is the key in `.reltio-config-source.json` and in `EnvironmentManager` lookups, so ids in existing marker files no longer match. Markers are re-derived from their stored `l3RelativePath` on load, so previously connected repositories keep working without user action.
 - Leaf names that would collide across different folders are qualified with their folder path, since `tenantId` must stay unique for lookups to resolve.

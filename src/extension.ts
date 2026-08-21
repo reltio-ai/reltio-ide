@@ -36,7 +36,7 @@ import {
 	reloadTokenFileIntoStore,
 	summarizeApplyResult,
 } from './workspace/applyDefaultEnvironments';
-import { TokenStore } from './api/tokenStore';
+import { TokenStore, GIT_SOURCE_TOKEN } from './api/tokenStore';
 import { SessionStore } from './api/sessionStore';
 import { OAuthCredentialsStore } from './api/oauthCredentialsStore';
 import {
@@ -96,7 +96,12 @@ import {
 	writeMultiGitSourceMarker,
 	type MultiGitSourceMarker,
 } from './workspace/gitSourceMarker';
-import { discoverL3Files, deriveTenantNamings, isParsableL3File } from './workspace/l3Discovery';
+import {
+	discoverL3Files,
+	deriveTenantNamings,
+	isParsableL3File,
+	isBusinessConfigFile,
+} from './workspace/l3Discovery';
 
 const DEBOUNCE_MS = 300;
 const RELTIO_SELECTOR: vscode.DocumentSelector = [
@@ -293,7 +298,7 @@ async function tryRestoreGitSource(
 	environmentManager.setGitSources(validSources);
 	// Set token once for the environment (not per tenant)
 	if (validSources.length > 0) {
-		tokenStore.setToken(validSources[0].environmentName, '__reltio-git-source__');
+		tokenStore.setToken(validSources[0].environmentName, GIT_SOURCE_TOKEN);
 	}
 	return true;
 }
@@ -2330,7 +2335,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 			// Set token only once per environment (not per tenant)
 			if (gitSources.length > 0) {
-				tokenStore.setToken(gitSources[0].environmentName, '__reltio-git-source__');
+				tokenStore.setToken(gitSources[0].environmentName, GIT_SOURCE_TOKEN);
 			}
 
 			environmentManager.setGitSources(gitSources);
@@ -2397,8 +2402,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}),
 		vscode.commands.registerCommand('reltio.removeGitTenant', async (node?: TenantNode) => {
 			if (!folder || !environmentManager || !node || workspaceSource !== 'git') return;
+			// Prompt and report with the row's own label. `tenantId` may carry a collision qualifier
+			// the user never saw, so echoing it back would name a config that is not on screen.
+			const shown = node.displayLabel ?? node.tenantId;
 			const pick = await vscode.window.showWarningMessage(
-				`Remove tenant "${node.tenantId}"? This cannot be undone.`,
+				`Remove configuration "${shown}"? This cannot be undone.`,
 				{ modal: true },
 				'Remove',
 			);
@@ -2436,12 +2444,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					remainingSources.map(s => vscode.Uri.joinPath(folder.uri, s.l3RelativePath)),
 				);
 				environmentManager.setGitSources(gitSources);
-				tokenStore.clearToken(node.environmentName);
+				// Every source in a repository shares one environment name (see the filter above), so
+				// clearing the token here would revoke git mode for the configs that remain: the tree
+				// would fall back to the flat tenant-mode branch and the environment would ask the user
+				// to sign in. Re-assert it instead, matching connect, restore, and Add Config.
+				tokenStore.setToken(gitSources[0].environmentName, GIT_SOURCE_TOKEN);
 			}
 
 			treeProvider.invalidate();
 			uxBus.fire();
-			void vscode.window.showInformationMessage(`Tenant "${node.environmentName}" removed.`);
+			void vscode.window.showInformationMessage(`Removed "${shown}".`);
 		}),
 		vscode.commands.registerCommand('reltio.addFileAsTenant', async (uri: vscode.Uri) => {
 			if (!environmentManager || !uri) return;
@@ -2464,10 +2476,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				return;
 			}
 
-			// Verify it's valid JSON
-			if (!(await isParsableL3File(uri))) {
+			// Only a real business configuration may be adopted: a repository is full of other JSON
+			// (permissions, lookups, cleanse config) that would produce an unusable tree row.
+			if (!(await isBusinessConfigFile(uri))) {
 				void vscode.window.showErrorMessage(
-					`"${vscode.workspace.asRelativePath(uri, false)}" is not valid JSON and can't be used as a tenant configuration.`,
+					`"${vscode.workspace.asRelativePath(uri, false)}" is not a valid Reltio business configuration`,
 				);
 				return;
 			}
@@ -2498,7 +2511,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			});
 			environmentManager.setGitSources(gitSources);
 			if (gitSources.length > 0) {
-				tokenStore.setToken(gitSources[0].environmentName, '__reltio-git-source__');
+				tokenStore.setToken(gitSources[0].environmentName, GIT_SOURCE_TOKEN);
 			}
 
 			setWorkspaceSource('git');

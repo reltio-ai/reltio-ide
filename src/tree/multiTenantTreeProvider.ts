@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { parseDocument, type ParsedDocument } from '../parser/configParser';
 import { EnvironmentManager, type TenantInfo } from '../workspace/environmentManager';
-import { TokenStore } from '../api/tokenStore';
+import { TokenStore, GIT_SOURCE_TOKEN } from '../api/tokenStore';
 import { countEntities } from '../api/reltioClient';
 import type { OAuthCredentialsStore } from '../api/oauthCredentialsStore';
 import { computeBrowserLoginEligibility } from '../api/oauthCredentialsResolve';
@@ -241,6 +241,8 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 				(ti?.hasL3 ?? false) && !this.tokenStore.hasToken(element.environmentName),
 				this.tokenStore.hasToken(element.environmentName),
 				this.uxState?.perTenant.get(`${element.environmentName}/${element.tenantId}`) ?? 'T_NO_L3',
+				false,
+				this.gitLabelFor(element.environmentName, element.tenantId),
 			);
 		}
 		if (element instanceof HistorySnapshotNode) {
@@ -290,12 +292,21 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			(ti?.hasL3 ?? false) && !this.tokenStore.hasToken(loc.environmentName),
 			this.tokenStore.hasToken(loc.environmentName),
 			this.uxState?.perTenant.get(`${loc.environmentName}/${loc.tenantId}`) ?? 'T_NO_L3',
+			false,
+			this.gitLabelFor(loc.environmentName, loc.tenantId),
 		);
 	}
 
 	private findTenantInfo(env: string, tid: string): TenantInfo | undefined {
 		const e = this.envInfos.find(x => x.name === env);
 		return e?.tenants.find(t => t.tenantId === tid);
+	}
+
+	/** Git mode only: the plain leaf label for a row, so `getParent` matches what `getChildren` rendered. */
+	private gitLabelFor(env: string, tenantId: string): string | undefined {
+		return this.environmentManager
+			?.getGitSources()
+			.find(g => g.environmentName === env && g.tenantId === tenantId)?.label;
 	}
 
 	private async shouldShowHistoryFolder(environmentName: string, tenantId: string): Promise<boolean> {
@@ -323,7 +334,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			const e = this.envInfos.find(x => x.name === element.environmentName);
 			if (!e) return [];
 			// Check if this is a git source (auto-expand tenants)
-			const isGitSource = this.tokenStore.getToken(element.environmentName) === '__reltio-git-source__';
+			const isGitSource = this.tokenStore.getToken(element.environmentName) === GIT_SOURCE_TOKEN;
 			if (isGitSource) {
 				return this.gitChildren(element.environmentName, []);
 			}
@@ -414,7 +425,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 
 		const configs = atThisLevel
 			.filter(s => s.folders.length === folderPath.length)
-			.sort((a, b) => a.tenantId.localeCompare(b.tenantId))
+			.sort((a, b) => (a.label ?? a.tenantId).localeCompare(b.label ?? b.tenantId))
 			.map(
 				s => new TenantNode(
 					environmentName,
@@ -424,6 +435,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 					this.tokenStore.hasToken(environmentName),
 					this.uxState?.perTenant.get(`${environmentName}/${s.tenantId}`) ?? 'T_READY',
 					true,
+					s.label,
 				),
 			);
 

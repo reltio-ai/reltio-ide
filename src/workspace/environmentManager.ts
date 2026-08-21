@@ -23,6 +23,8 @@ export interface EnvironmentInfo {
 export interface GitSource {
 	environmentName: string;
 	tenantId: string;
+	/** Plain leaf name for the tree row. Unlike `tenantId` it is never collision-qualified. */
+	label?: string;
 	/** Folder rows between the environment and this config, outermost first. Empty means it sits directly under the repository row. */
 	folders: string[];
 	l3Uri: vscode.Uri;

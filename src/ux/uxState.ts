@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import type { EnvironmentInfo } from '../workspace/environmentManager';
-import type { TokenStore } from '../api/tokenStore';
+import { GIT_SOURCE_TOKEN, type TokenStore } from '../api/tokenStore';
 import type { OAuthCredentialsStore } from '../api/oauthCredentialsStore';
 
 export type GState =
@@ -42,7 +42,7 @@ export async function deriveUxState(inputs: UxStateInputs): Promise<UxState> {
 	for (const env of inputs.environments) {
 		const authed = inputs.hasToken(env.name);
 		const hasOAuth = await inputs.hasOAuthClient(env.name);
-		const isGitSource = inputs.getToken?.(env.name) === '__reltio-git-source__';
+		const isGitSource = inputs.getToken?.(env.name) === GIT_SOURCE_TOKEN;
 
 		let eState: EState;
 		// Git sources are always ready (local files, no auth needed)

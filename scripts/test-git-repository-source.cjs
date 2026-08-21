@@ -21,10 +21,15 @@ const {
 	deriveTenantNamings,
 	discoverL3Files,
 	isParsableL3File,
+	isBusinessConfigFile,
 } = importDist('workspace/l3Discovery');
 const { isFolderEmpty, isPathContainedIn } = importDist('workspace/gitConfigSource');
+const { TenantNode } = importDist('tree/multiTenantNodes');
 const { readGitSourceMarker, writeGitSourceMarker } = importDist('workspace/gitSourceMarker');
 const { EnvironmentManager } = importDist('workspace/environmentManager');
+const { TokenStore, GIT_SOURCE_TOKEN } = importDist('api/tokenStore');
+const { MultiTenantTreeProvider } = importDist('tree/multiTenantTreeProvider');
+const { GitFolderNode, EnvironmentNode } = importDist('tree/multiTenantNodes');
 
 (async () => {
 	// --- deriveTenantNaming -------------------------------------------------
@@ -32,12 +37,28 @@ const { EnvironmentManager } = importDist('workspace/environmentManager');
 	{
 		const root = vscode.Uri.file('/repo/my-config-repo');
 
-		// A config at the repository root has no folder to borrow a name from.
+		// A config at the repository root is named after its file. Borrowing the repository
+		// name would duplicate the environment row directly above it.
 		const rootL3 = vscode.Uri.joinPath(root, 'BusinessConfig.json');
 		const atRoot = deriveTenantNaming(root, rootL3, [rootL3]);
 		assert.strictEqual(atRoot.environmentName, 'my-config-repo');
-		assert.strictEqual(atRoot.tenantId, 'my-config-repo');
+		assert.strictEqual(atRoot.tenantId, 'BusinessConfig.json');
+		assert.notStrictEqual(atRoot.tenantId, atRoot.environmentName, 'must not duplicate the environment row label');
 		assert.deepStrictEqual(atRoot.folders, []);
+
+		// Adopting a second root config must not rename the first one. Previously the lone
+		// root config took the repository name and switched to its filename once a sibling
+		// appeared, so the row silently renamed itself under the user.
+		const rootSibling = vscode.Uri.joinPath(root, 'L3.json');
+		const rootPair = deriveTenantNamings(root, [rootL3, rootSibling]);
+		assert.deepStrictEqual(rootPair.map(x => x.tenantId), ['BusinessConfig.json', 'L3.json']);
+		assert.deepStrictEqual(rootPair[0].folders, [], 'root configs hang directly off the environment row');
+		assert.deepStrictEqual(rootPair[1].folders, []);
+		assert.strictEqual(
+			rootPair[0].tenantId,
+			atRoot.tenantId,
+			'a root config keeps its identity when a sibling is adopted',
+		);
 
 		// Nested: the deepest folder names the config row, the ones above become folder rows.
 		const nested = vscode.Uri.joinPath(root, 'DP', 'dp_lif', 'BusinessConfig.json');
@@ -64,9 +85,55 @@ const { EnvironmentManager } = importDist('workspace/environmentManager');
 		const clashA = vscode.Uri.joinPath(root, 'DP', 'shared', 'BusinessConfig.json');
 		const clashB = vscode.Uri.joinPath(root, 'MDM', 'shared', 'BusinessConfig.json');
 		const lonely = vscode.Uri.joinPath(root, 'other', 'unique', 'BusinessConfig.json');
-		const ids = deriveTenantNamings(root, [clashA, clashB, lonely]).map(x => x.tenantId);
+		const clashes = deriveTenantNamings(root, [clashA, clashB, lonely]);
+		const ids = clashes.map(x => x.tenantId);
 		assert.deepStrictEqual(ids, ['shared (DP/shared)', 'shared (MDM/shared)', 'unique']);
 		assert.strictEqual(new Set(ids).size, ids.length, 'tenantIds must be unique');
+
+		// The qualifier is identity only. The tree already nests the row under its folder rows,
+		// so echoing the path in the label just adds noise: `shared`, not `shared (DP/shared)`.
+		assert.deepStrictEqual(clashes.map(x => x.label), ['shared', 'shared', 'unique']);
+
+		// Same rule for filename leaves that collide across folders: the root pair and the
+		// Account360 pair share both filenames, so ids are qualified but labels stay plain.
+		const nestedPair = deriveTenantNamings(root, [
+			rootL3,
+			rootSibling,
+			vscode.Uri.joinPath(root, 'Account360', 'BusinessConfig.json'),
+			vscode.Uri.joinPath(root, 'Account360', 'L3.json'),
+		]);
+		assert.deepStrictEqual(
+			nestedPair.map(x => x.label),
+			['BusinessConfig.json', 'L3.json', 'BusinessConfig.json', 'L3.json'],
+			'labels never carry the collision qualifier',
+		);
+		assert.deepStrictEqual(nestedPair.map(x => x.tenantId), [
+			'BusinessConfig.json',
+			'L3.json',
+			'BusinessConfig.json (Account360)',
+			'L3.json (Account360)',
+		]);
+		assert.strictEqual(
+			new Set(nestedPair.map(x => x.tenantId)).size,
+			4,
+			'tenantIds stay unique even though labels repeat',
+		);
+		assert.deepStrictEqual(nestedPair[2].folders, ['Account360'], 'the folder row disambiguates visually');
+
+		// The row actually renders the label, while identity keys stay on the qualified id.
+		const qualified = nestedPair[2];
+		const node = new TenantNode('my-config-repo', qualified.tenantId, true, false, true, 'T_READY', true, qualified.label);
+		assert.strictEqual(node.label, 'BusinessConfig.json', 'the tree shows the plain label');
+		assert.strictEqual(
+			node.id,
+			'tenant:my-config-repo/BusinessConfig.json (Account360)',
+			'the node id keeps the unique tenantId so reveal and lookups stay unambiguous',
+		);
+		assert.ok(String(node.tooltip).includes('(Account360)'), 'the qualifier stays reachable on hover');
+
+		// Tenant mode passes no label, so the id doubles as the label exactly as before.
+		const tenantModeNode = new TenantNode('dev-env', 'my-tenant', true, false, true, 'T_READY');
+		assert.strictEqual(tenantModeNode.label, 'my-tenant');
 	}
 
 	// --- discoverL3Files: depth limit + dotfolder skip ----------------------
@@ -171,6 +238,11 @@ const { EnvironmentManager } = importDist('workspace/environmentManager');
 		vscode.workspace.fs.readFile = async () => Buffer.from('{"entityTypes": []}');
 		assert.strictEqual(await isParsableL3File(vscode.Uri.file('/valid.json')), true);
 
+		// This stays a plain parse check. The business-configuration gate applies to Add Config
+		// only, so auto-discovery and restore must not start rejecting what they accepted before.
+		vscode.workspace.fs.readFile = async () => Buffer.from('{}');
+		assert.strictEqual(await isParsableL3File(vscode.Uri.file('/empty-object.json')), true);
+
 		vscode.workspace.fs.readFile = async () => Buffer.from('{\n  // a comment\n  "entityTypes": [],\n}');
 		assert.strictEqual(
 			await isParsableL3File(vscode.Uri.file('/jsonc-with-comment.json')),
@@ -183,6 +255,63 @@ const { EnvironmentManager } = importDist('workspace/environmentManager');
 
 		vscode.workspace.fs.readFile = async () => { throw new Error('ENOENT'); };
 		assert.strictEqual(await isParsableL3File(vscode.Uri.file('/missing.json')), false);
+
+		vscode.workspace.fs.readFile = originalReadFile;
+	}
+
+	// --- isBusinessConfigFile: the Add Config gate ---------------------------
+
+	{
+		const originalReadFile = vscode.workspace.fs.readFile;
+		const asFile = value => {
+			vscode.workspace.fs.readFile = async () => Buffer.from(
+				typeof value === 'string' ? value : JSON.stringify(value),
+			);
+			return isBusinessConfigFile(vscode.Uri.file('/repo/candidate.json'));
+		};
+
+		const valid = {
+			uri: 'configuration',
+			sources: [{ uri: 'configuration/sources/Reltio' }],
+			entityTypes: [{ uri: 'configuration/entityTypes/Individual' }],
+		};
+		const accepted = [
+			valid,
+			// Empty sections still count as present: an L3 may legitimately declare a section it
+			// has not populated yet, and this gate is a shape check, not schema validation.
+			{ uri: 'configuration', sources: [], entityTypes: [] },
+			// Extra sections and metadata are fine.
+			{ ...valid, label: 'Tenant', attributeTypes: [], relationTypes: [] },
+		];
+		for (const body of accepted) {
+			assert.strictEqual(await asFile(body), true, `expected acceptance for ${JSON.stringify(body)}`);
+		}
+
+		const rejected = [
+			'not json at all {{{',
+			// Permissions.json in a real repo: a top-level array whose rows carry configuration URIs.
+			[{ uri: 'configuration/relationTypes', permissions: [] }],
+			// Lookups.json in a real repo.
+			{},
+			null,
+			'"configuration"',
+			// The right sections but the wrong root uri.
+			{ uri: 'configuration/entityTypes/Individual', sources: [], entityTypes: [] },
+			{ sources: [], entityTypes: [] },
+			// Root uri present, sections missing or the wrong type.
+			{ uri: 'configuration' },
+			{ uri: 'configuration', entityTypes: [] },
+			{ uri: 'configuration', sources: [] },
+			{ uri: 'configuration', sources: {}, entityTypes: [] },
+			{ uri: 'configuration', sources: [], entityTypes: 'Individual' },
+		];
+		for (const body of rejected) {
+			assert.strictEqual(await asFile(body), false, `expected rejection for ${JSON.stringify(body)}`);
+		}
+
+		// An unreadable file is refused rather than thrown out of the command.
+		vscode.workspace.fs.readFile = async () => { throw new Error('EACCES'); };
+		assert.strictEqual(await isBusinessConfigFile(vscode.Uri.file('/repo/gone.json')), false);
 
 		vscode.workspace.fs.readFile = originalReadFile;
 	}
@@ -259,6 +388,88 @@ const { EnvironmentManager } = importDist('workspace/environmentManager');
 
 		mgr.clearGitSource();
 		assert.deepStrictEqual(await mgr.scanEnvironments(), []);
+
+		vscode.workspace.fs.readDirectory = originalReadDirectory;
+	}
+
+	// --- Removing one config must not revoke git mode for the rest -----------
+
+	{
+		const originalReadDirectory = vscode.workspace.fs.readDirectory;
+		vscode.workspace.fs.readDirectory = async () => [];
+
+		const root = vscode.Uri.file('/repo/my-config-repo');
+		const rootConfig = vscode.Uri.joinPath(root, 'L3.json');
+		const nestedConfig = vscode.Uri.joinPath(root, 'DP', 'dp_lif', 'BusinessConfig.json');
+
+		const mgr = new EnvironmentManager(root);
+		const tokenStore = new TokenStore();
+		const memento = { get: () => undefined, update: async () => undefined };
+		const provider = new MultiTenantTreeProvider(mgr, tokenStore, memento, null);
+
+		const sourcesFor = uris =>
+			deriveTenantNamings(root, uris).map((n, i) => ({ ...n, l3Uri: uris[i] }));
+
+		mgr.setGitSources(sourcesFor([rootConfig, nestedConfig]));
+		tokenStore.setToken('my-config-repo', GIT_SOURCE_TOKEN);
+
+		// The root call is what populates the provider's environment cache, so it has to run first.
+		const envRows = await provider.getChildren();
+		assert.strictEqual(envRows.length, 1);
+		assert.ok(envRows[0] instanceof EnvironmentNode);
+		assert.strictEqual(envRows[0].environmentName, 'my-config-repo');
+
+		const rows = await provider.getChildren(envRows[0]);
+		assert.deepStrictEqual(
+			rows.map(r => [r.constructor.name, String(r.label)]),
+			[['GitFolderNode', 'DP'], ['TenantNode', 'L3.json']],
+			'git mode puts folder rows above the configs that sit at this level',
+		);
+
+		// Removing the root config leaves one source behind. Every source in a repository shares
+		// one environment name, so the removal must not clear that environment's token: doing so
+		// dropped the whole repository into flat tenant mode, losing the folder rows and asking
+		// the user to sign in to a repository that needs no authentication.
+		mgr.setGitSources(sourcesFor([nestedConfig]));
+		tokenStore.setToken('my-config-repo', GIT_SOURCE_TOKEN);
+
+		const afterRemoval = await provider.getChildren(envRows[0]);
+		assert.strictEqual(afterRemoval.length, 1);
+		assert.ok(afterRemoval[0] instanceof GitFolderNode, 'the surviving config keeps its folder row');
+		assert.strictEqual(String(afterRemoval[0].label), 'DP');
+
+		const leaf = await provider.getChildren(afterRemoval[0]);
+		assert.deepStrictEqual(
+			leaf.map(r => [r.constructor.name, String(r.label)]),
+			[['TenantNode', 'dp_lif']],
+			'a folder holding one config collapses onto that config row',
+		);
+		assert.strictEqual(
+			leaf[0].isEnvironmentAuthorized,
+			true,
+			'the sentinel token keeps the row authorized',
+		);
+		assert.strictEqual(leaf[0].isStaleLocal, false);
+		assert.ok(
+			!String(leaf[0].description ?? '').includes('local'),
+			'and it keeps the "(local)" suffix off a row whose file is the source of truth',
+		);
+
+		// The bug itself: without the token the same state renders flat and unauthorized.
+		tokenStore.clearToken('my-config-repo');
+		const collapsed = await provider.getChildren(envRows[0]);
+		assert.ok(
+			!collapsed.some(r => r instanceof GitFolderNode),
+			'clearing the token is what collapsed the tree, so this guards the path that used to do it',
+		);
+		assert.ok(
+			collapsed.every(r => r.isEnvironmentAuthorized === false),
+			'and it is why the environment started asking the user to sign in',
+		);
+		assert.ok(
+			collapsed.some(r => String(r.description ?? '').includes('local')),
+			'and why the rows picked up a "(local)" suffix',
+		);
 
 		vscode.workspace.fs.readDirectory = originalReadDirectory;
 	}

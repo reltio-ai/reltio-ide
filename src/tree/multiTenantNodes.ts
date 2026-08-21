@@ -70,8 +70,10 @@ export class TenantNode extends vscode.TreeItem {
 		readonly isEnvironmentAuthorized: boolean,
 		readonly tState: TState = 'T_NO_L3',
 		readonly autoExpand: boolean = false,
+		/** Git mode only: the plain leaf name, so a collision-qualified `tenantId` stays out of the label. */
+		readonly displayLabel?: string,
 	) {
-		const label = tenantId;
+		const label = displayLabel ?? tenantId;
 		super(
 			label,
 			hasL3
