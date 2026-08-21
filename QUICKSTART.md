@@ -1,4 +1,4 @@
-# Quickstart — How to Use the Reltio Metadata Editor
+# Quickstart — How to Use Reltio IDE
 
 This guide gets you from zero to editing a Reltio tenant configuration in VS Code or Cursor.
 
@@ -17,7 +17,7 @@ This guide gets you from zero to editing a Reltio tenant configuration in VS Cod
 
 ### From a pre-built VSIX
 
-1. Obtain the `.vsix` file from your team (or build it — see below).
+1. Obtain the `.vsix` file from the releases list (or build it — see below).
 2. Open VS Code/Cursor → Extensions sidebar (`Ctrl+Shift+X`) → `...` menu → **Install from VSIX…**
 3. Select the file and reload when prompted.
 
