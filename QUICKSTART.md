@@ -9,6 +9,7 @@ This guide gets you from zero to editing a Reltio tenant configuration in VS Cod
 - **VS Code** (1.85+) or **Cursor**
 - **Node.js 18+** and **npm** (only if building from source)
 - A Reltio environment host and a valid **Bearer token**
+- Or, to edit a configuration straight from version control, a working `git` installation on your `PATH` and no Reltio credentials at all (see [Connect a Git Repository](#alternative-to-steps-3-5-connect-a-git-repository))
 
 ---
 
@@ -75,6 +76,41 @@ Click the **Reltio** icon in the Activity Bar (left sidebar). This is your contr
 1. Right-click the tenant → **Fetch Configuration**.
 2. The extension downloads the tenant metadata and saves it as `L3.reltio.json` inside the tenant folder.
 3. A `L3.remote-baseline.reltio.json` is also saved alongside it — used later to detect server-side drift before you apply changes.
+
+---
+
+## Alternative to Steps 3-5: Connect a Git Repository
+
+If your business configuration already lives in a git repository (GitHub, Bitbucket, GitLab, Azure DevOps, or self-hosted), you can edit it without connecting to a live tenant. No Reltio host, token, or OAuth credentials are needed.
+
+1. Open an empty folder, or a folder that already holds your clone.
+2. In the Reltio sidebar, click **Connect your Repository**.
+3. If the folder is already a clone, the extension detects it and skips ahead. Otherwise, enter the remote URL and it clones for you.
+4. The extension finds the `BusinessConfig.json` files in the repository and lists them in the tree.
+
+Authentication uses your existing system git installation and its credential helper, so whatever already works for `git clone` on your machine works here.
+
+**The tree mirrors your repository's folder layout:**
+
+```
+▼ reltio-config                      ← the repository
+  ▼ DP
+      dp_lif                         ← DP/dp_lif/BusinessConfig.json
+      dp_ret                         ← DP/dp_ret/BusinessConfig.json
+    BusinessConfig.json              ← at the repository root
+```
+
+A folder holding a single config collapses onto that config's row. A folder holding several keeps its own row, with one row per file beneath it.
+
+**Managing configs:**
+
+| Action | Where | What it does |
+|---|---|---|
+| Add Config | Right-click a `.json` file in the Explorer | Adopts a config that discovery missed, such as `L3.json`. Business configurations only; anything else is refused with an error. |
+| Remove Config | Right-click a config row | Drops that one config. The rest of the repository stays connected. |
+| Remove Repository | Environment row, or the view title | Clears the connection and deletes the folder contents. |
+
+Everything from Step 6 onward (editing, validation, navigation, the ontology preview) works the same way here. Tenant-only actions such as fetch, apply, and configuration history are hidden, since there is no tenant to talk to. A workspace connects either to a tenant or to a repository, never both.
 
 ---
 
@@ -244,3 +280,5 @@ workspace/
 ```
 
 Legacy workspaces may still have `{host}.reltio.environment/` at the workspace root; the extension continues to discover those. New environments are created under `.reltio/`.
+
+If you connected a git repository instead, none of this applies: your config files stay exactly where the repository puts them, and you edit them in place. The extension only adds a small tracking file at the repository root, which it also adds to `.gitignore` for you.

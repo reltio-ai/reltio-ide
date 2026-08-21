@@ -171,9 +171,9 @@ Authentication uses your existing system git setup and its credential helper, so
 
 Notes:
 
-- **Multi-config repositories are supported.** A repo holding many `BusinessConfig.json` files appears as a single root node, and the rows beneath it follow the repository's own folder structure. A config at `DP/dp_lif/BusinessConfig.json` shows as **repo → DP → dp_lif**. If one folder holds several configs, that folder keeps its own row and each file appears beneath it.
-- **Adopt other filenames** with **Add Config** from a `.json` file's right-click menu in the Explorer. Automatic discovery only looks for `BusinessConfig.json`.
-- **Remove Config** drops a single config from the tree. **Remove Repository** clears the connection and deletes the folder contents.
+- **Multi-config repositories are supported.** A repo holding many `BusinessConfig.json` files appears as a single root node, and the rows beneath it follow the repository's own folder structure. A config at `DP/dp_lif/BusinessConfig.json` shows as **repo → DP → dp_lif**. If one folder holds several configs, that folder keeps its own row and each file appears beneath it. A config sitting at the repository root appears directly under the repository row, named after its file.
+- **Adopt other filenames** with **Add Config** from a `.json` file's right-click menu in the Explorer. Automatic discovery only looks for `BusinessConfig.json`. Add Config accepts business configurations only, so picking another kind of JSON from the repository (a permissions or lookups file, for example) is refused with an error rather than adding a row you cannot open.
+- **Remove Config** drops a single config from the tree, leaving the rest of the repository connected. **Remove Repository** clears the connection and deletes the folder contents.
 - Tenant-only actions (fetch, apply, configuration history) are hidden in this mode. A workspace is connected either to a tenant or to a repository, never both.
 
 ---
