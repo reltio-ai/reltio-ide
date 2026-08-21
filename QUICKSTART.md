@@ -8,7 +8,7 @@ This guide gets you from zero to editing a Reltio tenant configuration in VS Cod
 
 - **VS Code** (1.85+) or **Cursor**
 - **Node.js 18+** and **npm** (only if building from source)
-- A Reltio environment host and a valid **Bearer token**
+- A Reltio environment host, plus either an **OAuth Client ID and Client secret** (with your SSO routing tenant ID) or a valid **Bearer token**
 - Or, to edit a configuration straight from version control, a working `git` installation on your `PATH` and no Reltio credentials at all (see [Connect a Git Repository](#alternative-to-steps-3-5-connect-a-git-repository))
 
 ---
@@ -54,7 +54,30 @@ Click the **Reltio** icon in the Activity Bar (left sidebar). This is your contr
 2. Enter your Reltio host, e.g. `361.reltio.com` — the extension validates the host before creating it.
 3. A `.reltio/361.reltio.com.reltio.environment/` directory appears in your workspace.
 
-**Authenticate:**
+**Authenticate.** Choose one of two methods.
+
+### Option A: Sign in with Browser (recommended)
+
+One-time setup per environment:
+
+4. Right-click the environment → **Configure OAuth Client…**
+5. Provide your **Client ID**, **Client secret**, and **SSO routing tenant ID**. The default routing tenant works for most organizations; change it only if yours runs its own.
+
+Then, to sign in:
+
+6. Right-click the environment → **Login with Browser**.
+7. Your default browser opens and you authenticate through single sign-on, exactly as you would for the Reltio web UI.
+8. On success the tree refreshes and the environment is ready to use.
+
+> Your Client ID, Client secret, and session are kept in your operating system's secure credential store, never in a plaintext file or in `settings.json`. The extension never sees your username, password, or MFA prompt: those stay inside the browser.
+
+Sessions refresh themselves in the background, so you are not prompted again mid-session, and they are restored automatically the next time you open the workspace. If a session cannot be renewed, you are asked to log in again.
+
+If browser login is unavailable for your tenant (no external identity provider is configured for it), the extension tells you so and points you at the bearer token method below.
+
+To sign in again as a different user, right-click the environment → **Re-Login with Browser**. To change or clear your stored client credentials, use **Reset OAuth Client…**. See [docs/BROWSER_LOGIN.md](docs/BROWSER_LOGIN.md) for the full detail.
+
+### Option B: Paste a Bearer Token
 
 4. Right-click the environment → **Provide Token**.
 5. Paste your Bearer token.
