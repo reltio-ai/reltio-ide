@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as crypto from 'crypto';
 
 export interface EntityDetailContext {
 	environmentName: string;
@@ -392,11 +393,7 @@ function escapeHtml(value: string): string {
 		.replace(/'/g, '&#39;');
 }
 
+/** Same CSPRNG pattern as the OAuth `state` parameter in `src/api/oauthLogin.ts`. */
 function getNonce(): string {
-	let text = '';
-	const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-	for (let i = 0; i < 32; i++) {
-		text += chars.charAt(Math.floor(Math.random() * chars.length));
-	}
-	return text;
+	return crypto.randomBytes(16).toString('hex');
 }
