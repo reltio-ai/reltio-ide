@@ -69,12 +69,15 @@ export class TenantNode extends vscode.TreeItem {
 		readonly isStaleLocal: boolean,
 		readonly isEnvironmentAuthorized: boolean,
 		readonly tState: TState = 'T_NO_L3',
+		readonly autoExpand: boolean = false,
+		/** Git mode only: the plain leaf name, so a collision-qualified `tenantId` stays out of the label. */
+		readonly displayLabel?: string,
 	) {
-		const label = tenantId;
+		const label = displayLabel ?? tenantId;
 		super(
 			label,
 			hasL3
-				? vscode.TreeItemCollapsibleState.Collapsed
+				? (autoExpand ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed)
 				: vscode.TreeItemCollapsibleState.None,
 		);
 		this.contextValue = hasL3 ? 'reltio.tenant.l3' : 'reltio.tenant';
@@ -110,6 +113,31 @@ function tooltipForTState(tenantId: string, state: TState): string {
 			return `${tenantId}\nL3 is downloaded. Open it to start editing.`;
 		case 'T_READY':
 			return tenantId;
+	}
+}
+
+/**
+ * A directory row inside a git-sourced repository tree, mirroring the repository's own
+ * folder layout (`repo / DP / dp_lif`). Purely structural: it groups config rows and
+ * carries no commands or context-menu actions of its own.
+ */
+export class GitFolderNode extends vscode.TreeItem {
+	constructor(
+		readonly environmentName: string,
+		/** Full path from the environment row down to and including this folder. */
+		readonly folderPath: string[],
+		expanded: boolean,
+	) {
+		super(
+			folderPath[folderPath.length - 1] ?? '',
+			expanded
+				? vscode.TreeItemCollapsibleState.Expanded
+				: vscode.TreeItemCollapsibleState.Collapsed,
+		);
+		this.contextValue = 'reltio.gitFolder';
+		this.iconPath = vscode.ThemeIcon.Folder;
+		this.tooltip = folderPath.join('/');
+		this.id = `gitFolder:${environmentName}/${folderPath.join('/')}`;
 	}
 }
 

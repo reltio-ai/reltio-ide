@@ -25,7 +25,7 @@ The current token-based authentication requires users to manually obtain and pas
 
 Keep the existing **`http://localhost:8081`** OAuth callback (no new `vscode://` / `cursor://` redirect URI on the Reltio auth server). Improve post-login UX so users know they can return to the IDE:
 
-- **Enhanced callback HTML** served by the local callback server: clear success message, instruction to return to the editor, and an optional **“Open in VS Code / Cursor”** link (e.g. `vscode://` or `cursor://` deep link) that may focus the host app when the OS registers the handler (best-effort; not required for token exchange).
+- **Enhanced callback HTML** served by the local callback server: the Reltio logo (inlined as a data URI) with **Login Successful!** and an instruction to close the tab, to its right. Informational only — no deep links; token exchange has already completed by the time the page renders. Revised by RP-190109; see D8.1.
 - **In-editor notification** when the authorization code is received and token exchange succeeds: confirm login for the environment and remind the user they may close the browser tab.
 
 A future **Postman-style** flow (`vscode://` redirect allowlisted by Reltio) remains out of scope until the identity provider supports it (see design).
@@ -54,5 +54,5 @@ A future **Postman-style** flow (`vscode://` redirect allowlisted by Reltio) rem
 - **`src/api/reltioClient.ts`** — 401 handling updated to attempt silent refresh before propagating `ReltioApiError`.
 - **`src/extension.ts`** — `reltio.loginWithBrowser`, **`reltio.configureOAuthClient`** (name TBD), and post-login success notification.
 - **`package.json`** — Command declarations + context menu entries in `1_auth` group.
-- **`docs/`** (OAuth / security guide) — Document credentials storage, localhost vs `vscode://` redirect, and optional editor deep links on the callback page.
+- **`docs/`** (OAuth / security guide) — Document credentials storage, localhost vs `vscode://` redirect, and that the callback page is informational only.
 - **Dependencies** — No new npm packages required; uses Node.js built-in `http` module and VS Code's `vscode.env.openExternal`.

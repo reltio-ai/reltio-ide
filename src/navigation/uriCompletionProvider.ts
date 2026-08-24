@@ -26,7 +26,8 @@ export class ReltioUriCompletionProvider implements vscode.CompletionItemProvide
 		_context: vscode.CompletionContext,
 	): vscode.CompletionItem[] | undefined {
 		if (!this.index || document.languageId !== 'json') return undefined;
-		if (!document.fileName.endsWith('.reltio.json')) return undefined;
+		const base = document.fileName.split(/[\\/]/).pop();
+		if (!document.fileName.endsWith('.reltio.json') && base !== 'L3.json') return undefined;
 
 		const text = document.getText();
 		const ast = parseTree(text, undefined, { allowTrailingComma: true });

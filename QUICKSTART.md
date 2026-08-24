@@ -1,6 +1,6 @@
-# Quickstart — How to Use the Reltio Metadata Editor
+# Quickstart — How to Use Reltio IDE
 
-This guide gets you from zero to editing a Reltio tenant configuration in VS Code or Cursor.
+This guide gets you from install to an open configuration in VS Code or Cursor. Use a **tenant** (steps 3–5) or a **git repository** ([alternative below](#alternative-to-steps-3-5-connect-a-git-repository)). For product context, install screenshots, and the full Git setup (including private repositories), see [README.md](README.md).
 
 ---
 
@@ -8,7 +8,8 @@ This guide gets you from zero to editing a Reltio tenant configuration in VS Cod
 
 - **VS Code** (1.85+) or **Cursor**
 - **Node.js 18+** and **npm** (only if building from source)
-- A Reltio environment host and a valid **Bearer token**
+- A Reltio environment host, plus either an **OAuth Client ID and Client secret** (with your SSO routing tenant ID) or a valid **Bearer token**
+- Or, to edit a configuration straight from version control, a working `git` installation on your `PATH` and no Reltio credentials at all (see [Connect a Git Repository](#alternative-to-steps-3-5-connect-a-git-repository))
 
 ---
 
@@ -16,7 +17,7 @@ This guide gets you from zero to editing a Reltio tenant configuration in VS Cod
 
 ### From a pre-built VSIX
 
-1. Obtain the `.vsix` file from your team (or build it — see below).
+1. Obtain the `.vsix` file from the releases list (or build it — see below).
 2. Open VS Code/Cursor → Extensions sidebar (`Ctrl+Shift+X`) → `...` menu → **Install from VSIX…**
 3. Select the file and reload when prompted.
 
@@ -45,6 +46,8 @@ Click the **Reltio** icon in the Activity Bar (left sidebar). This is your contr
 
 > The extension also activates automatically whenever you open a `*.reltio.json` file.
 
+**Choose a path:** connect a **live tenant** (steps 3–5) or skip to a **git repository** ([Connect a Git Repository](#alternative-to-steps-3-5-connect-a-git-repository)). You do not need both.
+
 ---
 
 ## 3. Connect to an Environment
@@ -53,7 +56,30 @@ Click the **Reltio** icon in the Activity Bar (left sidebar). This is your contr
 2. Enter your Reltio host, e.g. `361.reltio.com` — the extension validates the host before creating it.
 3. A `.reltio/361.reltio.com.reltio.environment/` directory appears in your workspace.
 
-**Authenticate:**
+**Authenticate.** Choose one of two methods.
+
+### Option A: Sign in with Browser (recommended)
+
+One-time setup per environment:
+
+4. Right-click the environment → **Configure OAuth Client…**
+5. Provide your **Client ID**, **Client secret**, and **SSO routing tenant ID**. The default routing tenant works for most organizations; change it only if yours runs its own.
+
+Then, to sign in:
+
+6. Right-click the environment → **Login with Browser**.
+7. Your default browser opens and you authenticate through single sign-on, exactly as you would for the Reltio web UI.
+8. On success the tree refreshes and the environment is ready to use.
+
+> Your Client ID, Client secret, and session are kept in your operating system's secure credential store, never in a plaintext file or in `settings.json`. The extension never sees your username, password, or MFA prompt: those stay inside the browser.
+
+Sessions refresh themselves in the background, so you are not prompted again mid-session, and they are restored automatically the next time you open the workspace. If a session cannot be renewed, you are asked to log in again.
+
+If browser login is unavailable for your tenant (no external identity provider is configured for it), the extension tells you so and points you at the bearer token method below.
+
+To sign in again as a different user, right-click the environment → **Re-Login with Browser**. To change or clear your stored client credentials, use **Reset OAuth Client…**. See [docs/BROWSER_LOGIN.md](docs/BROWSER_LOGIN.md) for the full detail.
+
+### Option B: Paste a Bearer Token
 
 4. Right-click the environment → **Provide Token**.
 5. Paste your Bearer token.
@@ -75,6 +101,70 @@ Click the **Reltio** icon in the Activity Bar (left sidebar). This is your contr
 1. Right-click the tenant → **Fetch Configuration**.
 2. The extension downloads the tenant metadata and saves it as `L3.reltio.json` inside the tenant folder.
 3. A `L3.remote-baseline.reltio.json` is also saved alongside it — used later to detect server-side drift before you apply changes.
+
+---
+
+## Alternative to Steps 3-5: Connect a Git Repository
+
+Use this instead of steps 3–5 when the configuration already lives in git. No Reltio host, token, or OAuth credentials are needed. Git must be installed on your PATH. For private-repository sign-in detail, see [README.md](README.md#private-repositories).
+
+1. Open an empty folder, or a folder that already holds your clone.
+2. In the Reltio sidebar, select **Connect your Repository**.
+3. If the folder is already a clone, Reltio IDE detects it and skips ahead. Otherwise, enter the remote URL (for example `https://github.com/org/repo.git`) and press Enter.
+
+<p align="center">
+  <img src="docs/images/git-connect-repository.png" alt="Connect your Repository prompt asking for a Git remote URL" width="700" />
+  <br/>
+  <em>Screenshot (VS Code): Connect your Repository — paste the remote URL to clone.</em>
+</p>
+
+4. Reltio IDE finds the `BusinessConfig.json` files in the repository and lists them in the tree.
+
+<p align="center">
+  <img src="docs/images/git-repository-connected.png" alt="RELTIO IDE view after connecting a git repository" width="700" />
+  <br/>
+  <em>Screenshot (VS Code): Connected repository — packs and configurations appear in the RELTIO IDE view.</em>
+</p>
+
+Authentication uses Git on your machine and its credential helper — whatever already works for `git clone` works here.
+
+**If Git is not installed**, Reltio IDE stops until you install Git from [https://git-scm.com/downloads](https://git-scm.com/downloads), reopen the editor, and retry:
+
+<p align="center">
+  <img src="docs/images/git-executable-not-found.png" alt="Git executable not found notification from Reltio IDE" width="500" />
+  <br/>
+  <em>Screenshot: Git is not installed — install Git, then retry Connect your Repository.</em>
+</p>
+
+**If the repository is private**, Git may ask you to **Select an account**. Select the account that has access, then **Continue**. If that account is not listed, select **Add a new account** at the bottom of the dialog and sign in in the browser.
+
+<p align="center">
+  <img src="docs/images/git-select-account.png" alt="GitHub Select an account dialog with Add a new account" width="700" />
+  <br/>
+  <em>Screenshot: Private repository — pick an account, or Add a new account.</em>
+</p>
+
+**The tree mirrors your repository's folder layout:**
+
+```
+▼ reltio-config                      ← the repository
+  ▼ DP
+      dp_lif                         ← DP/dp_lif/BusinessConfig.json
+      dp_ret                         ← DP/dp_ret/BusinessConfig.json
+    BusinessConfig.json              ← at the repository root
+```
+
+A folder holding a single config collapses onto that config's row. A folder holding several keeps its own row, with one row per file beneath it.
+
+**Managing configs:**
+
+| Action | Where | What it does |
+|---|---|---|
+| Add Config | Right-click a `.json` file in the Explorer | Adopts a config that discovery missed, such as `L3.json`. Business configurations only; anything else is refused with an error. |
+| Remove Config | Right-click a config row | Drops that one config. The rest of the repository stays connected. |
+| Remove Repository | Environment row, or the view title | Clears the connection and deletes the folder contents. |
+
+Everything from Step 6 onward (editing, validation, navigation, the ontology preview) works the same way here. Tenant-only actions such as fetch, apply, and configuration history are hidden, since there is no tenant to talk to. A workspace connects either to a tenant or to a repository, never both.
 
 ---
 
@@ -244,3 +334,5 @@ workspace/
 ```
 
 Legacy workspaces may still have `{host}.reltio.environment/` at the workspace root; the extension continues to discover those. New environments are created under `.reltio/`.
+
+If you connected a git repository instead, none of this applies: your config files stay exactly where the repository puts them, and you edit them in place. The extension only adds a small tracking file at the repository root, which it also adds to `.gitignore` for you.

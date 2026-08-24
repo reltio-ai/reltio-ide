@@ -23,6 +23,11 @@ class Uri {
 		const fsPath = value.replace(/^file:\/\//, '');
 		return new Uri(fsPath);
 	}
+	with(change) {
+		const next = new Uri(typeof change?.path === 'string' ? change.path : this.fsPath);
+		if (typeof change?.scheme === 'string') next.scheme = change.scheme;
+		return next;
+	}
 	toString() {
 		return `file://${this.fsPath}`;
 	}
