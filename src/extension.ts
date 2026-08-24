@@ -28,7 +28,7 @@ import { ReltioReferenceProvider } from './navigation/referenceProvider';
 import { DiagnosticsManager } from './navigation/diagnosticsManager';
 import { ReltioUriCompletionProvider } from './navigation/uriCompletionProvider';
 import { OntologyPanelManager } from './ontology/ontologyPanel';
-import { EnvironmentManager } from './workspace/environmentManager';
+import { EnvironmentManager, type GitSource } from './workspace/environmentManager';
 import {
 	applyDefaultEnvironments,
 	indexTokenFilesByCanonicalPath,
@@ -36,10 +36,17 @@ import {
 	reloadTokenFileIntoStore,
 	summarizeApplyResult,
 } from './workspace/applyDefaultEnvironments';
-import { TokenStore } from './api/tokenStore';
+import { TokenStore, GIT_SOURCE_TOKEN } from './api/tokenStore';
 import { SessionStore } from './api/sessionStore';
 import { OAuthCredentialsStore } from './api/oauthCredentialsStore';
-import { UxStateBus, deriveUxState, l3FileUri, publishUxStateContext } from './ux/uxState';
+import {
+	UxStateBus,
+	deriveUxState,
+	l3FileUri,
+	publishUxStateContext,
+	publishWorkspaceSourceContext,
+	type WorkspaceSource,
+} from './ux/uxState';
 import type { EState, TState } from './ux/uxState';
 import { StatusBarController } from './ux/statusBar';
 import { pushRecentHost, saveOpenedL3Files } from './ux/recents';
@@ -76,9 +83,32 @@ import {
 } from './workspace/configurationHistory';
 import { syncReltioAgentAssets } from './workspace/reltioAgentSync';
 import { registerReltioAutoSave } from './workspace/reltioAutoSave';
+import {
+	isGitRepo,
+	isGitRepoWithRemote,
+	isFolderEmpty,
+	isPathContainedIn,
+	cloneRepository,
+	GitNotFoundError,
+} from './workspace/gitConfigSource';
+import {
+	readMultiGitSourceMarker,
+	writeMultiGitSourceMarker,
+	type MultiGitSourceMarker,
+} from './workspace/gitSourceMarker';
+import {
+	discoverL3Files,
+	deriveTenantNamings,
+	isParsableL3File,
+	isBusinessConfigFile,
+} from './workspace/l3Discovery';
 
 const DEBOUNCE_MS = 300;
-const RELTIO_SELECTOR: vscode.DocumentFilter = { pattern: '**/*.reltio.json' };
+const RELTIO_SELECTOR: vscode.DocumentSelector = [
+	{ pattern: '**/*.reltio.json' },
+	{ pattern: '**/L3.json' },
+	{ pattern: '**/BusinessConfig.json' },
+];
 const HISTORY_PAGE_SIZE = 10;
 const ENTITY_BROWSER_PAGE_SIZE = 25;
 const HISTORY_COMPARE_A_KEY = 'reltio.history.compareA.v1';
@@ -120,7 +150,9 @@ function getWorkspaceFolder(): vscode.WorkspaceFolder | undefined {
 }
 
 function isReltioDocument(doc: vscode.TextDocument): boolean {
-	return doc.fileName.endsWith('.reltio.json');
+	if (doc.fileName.endsWith('.reltio.json')) return true;
+	const base = doc.fileName.split(/[\/]/).pop()?.toLowerCase() ?? '';
+	return base === 'l3.json' || base === 'businessconfig.json';
 }
 
 function getActiveReltioDocument(): vscode.TextDocument | undefined {
@@ -228,6 +260,49 @@ function promptForEntityFilter(title: string): Promise<string | undefined> {
 	});
 }
 
+/**
+ * Names every discovered config in one pass so folder rows, leaf names, and the
+ * uniqueness qualifiers stay consistent no matter which flow produced the list.
+ */
+function buildGitSources(root: vscode.Uri, l3Uris: vscode.Uri[]): GitSource[] {
+	const namings = deriveTenantNamings(root, l3Uris);
+	return l3Uris.map((l3Uri, i) => ({ ...namings[i], l3Uri }));
+}
+
+async function tryRestoreGitSource(
+	environmentManager: EnvironmentManager,
+	tokenStore: TokenStore,
+	workspaceRoot: vscode.Uri,
+): Promise<boolean> {
+	const multiMarker = await readMultiGitSourceMarker(workspaceRoot);
+	if (!multiMarker || multiMarker.sources.length === 0) return false;
+	if (!(await isGitRepo(workspaceRoot))) return false;
+
+	const validUris: vscode.Uri[] = [];
+	for (const marker of multiMarker.sources) {
+		const l3Uri = vscode.Uri.joinPath(workspaceRoot, marker.l3RelativePath);
+		if (!isPathContainedIn(workspaceRoot, l3Uri)) continue;
+		try {
+			await vscode.workspace.fs.stat(l3Uri);
+		} catch {
+			continue;
+		}
+		if (!(await isParsableL3File(l3Uri))) continue;
+		validUris.push(l3Uri);
+	}
+
+	// Re-derive rather than trusting the marker's stored ids: a dropped or added file changes
+	// which names are unique, and markers written by older builds hold dotted ids.
+	const validSources = buildGitSources(workspaceRoot, validUris);
+	if (validSources.length === 0) return false;
+	environmentManager.setGitSources(validSources);
+	// Set token once for the environment (not per tenant)
+	if (validSources.length > 0) {
+		tokenStore.setToken(validSources[0].environmentName, GIT_SOURCE_TOKEN);
+	}
+	return true;
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
 	const folder = getWorkspaceFolder();
 	const environmentManager = folder ? new EnvironmentManager(folder.uri) : null;
@@ -239,6 +314,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	const uxBus = new UxStateBus();
 	context.subscriptions.push({ dispose: () => uxBus.dispose() });
+
+	let workspaceSource: WorkspaceSource = undefined;
+	let fetchConfigFromGitInFlight = false;
+	let agentAssetsSynced = false;
+	/** Deferred until a mode (tenant or git) is actually chosen — syncing eagerly would create `.reltio/`
+	 *  before the user decides, which made a freshly-opened folder look non-empty to `reltio.fetchConfigFromGit`. */
+	function ensureAgentAssetsSynced(): void {
+		if (agentAssetsSynced) return;
+		agentAssetsSynced = true;
+		void syncReltioAgentAssets(context).catch(err => {
+			console.error('Reltio agent asset sync failed:', err);
+		});
+	}
+	function setWorkspaceSource(source: WorkspaceSource): void {
+		workspaceSource = source;
+		void publishWorkspaceSourceContext(workspaceSource);
+		if (source !== undefined) {
+			ensureAgentAssetsSynced();
+		}
+	}
+
+	if (environmentManager && folder) {
+		const realEnvs = await environmentManager.scanEnvironments();
+		if (realEnvs.length > 0) {
+			setWorkspaceSource('tenant');
+		} else if (await tryRestoreGitSource(environmentManager, tokenStore, folder.uri)) {
+			setWorkspaceSource('git');
+		} else {
+			setWorkspaceSource(undefined);
+		}
+	}
 
 	const statusBar = isClassic ? null : new StatusBarController();
 	if (statusBar) context.subscriptions.push({ dispose: () => statusBar.dispose() });
@@ -257,6 +363,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	async function refreshUxState(): Promise<void> {
 		if (!environmentManager) return;
+		if (workspaceSource !== 'git') {
+			const currentEnvs = await environmentManager.scanEnvironments();
+			if (currentEnvs.length > 0) {
+				if (workspaceSource !== 'tenant') {
+					setWorkspaceSource('tenant');
+				}
+			} else if (workspaceSource === 'tenant') {
+				// The environments are gone (user deleted them). Without this the flag stays
+				// latched at 'tenant' for the rest of the session and blocks Connect your Repository.
+				setWorkspaceSource(undefined);
+			}
+		}
 		if (isClassic) {
 			const environments = await environmentManager.scanEnvironments();
 			const perEnv = new Map<string, EState>();
@@ -284,9 +402,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		const state = await deriveUxState({
 			environments,
 			hasToken: env => tokenStore.hasToken(env),
+			getToken: env => tokenStore.getToken(env),
 			hasOAuthClient: env => oauthCredentialsStore.hasClientCredentials(env),
 			openedL3Files,
 		});
+		if (workspaceSource === 'git') {
+			// The "opened" bookkeeping key is built from the tenant-mode folder convention and never matches
+			// a git-sourced L3's real path, so this would otherwise perpetually show "Open L3 to start editing".
+			// A git-sourced tenant's config already exists on disk — there's no "not yet opened" state for it.
+			for (const key of state.perTenant.keys()) {
+				state.perTenant.set(key, 'T_READY');
+			}
+		}
 		await publishUxStateContext(state);
 		treeProvider.setUxState(state);
 		statusBar?.render(state, !!folder);
@@ -314,10 +441,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	context.subscriptions.push(treeView);
 
 	registerReltioAutoSave(context);
-
-	void syncReltioAgentAssets(context).catch(err => {
-		console.error('Reltio agent asset sync failed:', err);
-	});
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('reltio.resyncAgentAssets', async () => {
@@ -2059,6 +2182,346 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}),
 	);
 	setupTokenFileWatchers();
+
+	// Git configuration-source commands (RP-189575).
+	context.subscriptions.push(
+		vscode.commands.registerCommand('reltio.fetchConfigFromGit', async () => {
+			if (fetchConfigFromGitInFlight) {
+				void vscode.window.showWarningMessage('Already fetching configuration from version control — please wait.');
+				return;
+			}
+			fetchConfigFromGitInFlight = true;
+			try {
+			if (!folder || !environmentManager) {
+				void vscode.window.showErrorMessage('Open a workspace folder to connect a repository.');
+				return;
+			}
+			if (workspaceSource === 'tenant') {
+				// Re-check disk rather than trusting the cached flag: the user may have deleted the
+				// environment folders since activation, and file deletions do not refresh it.
+				const currentEnvs = await environmentManager.scanEnvironments();
+				if (currentEnvs.length > 0) {
+					void vscode.window.showErrorMessage(
+						'This workspace already has a connected Reltio tenant. Open a different, empty folder to connect a repository instead.',
+					);
+					return;
+				}
+				setWorkspaceSource(undefined);
+			}
+			const root = folder.uri;
+			const alreadyTracked = await isGitRepoWithRemote(root);
+
+			if (!alreadyTracked) {
+				const url = await vscode.window.showInputBox({
+					title: 'Connect your Repository',
+					prompt: 'Git remote URL to clone (e.g. https://github.com/org/repo.git)',
+					ignoreFocusOut: true,
+					validateInput: v => (v?.trim() ? undefined : 'Enter a git remote URL'),
+				});
+				if (!url) return;
+
+				let folderIsEmpty: boolean;
+				try {
+					folderIsEmpty = await isFolderEmpty(root);
+				} catch (e) {
+					void vscode.window.showErrorMessage(
+						`Could not verify the folder is empty: ${(e as Error).message}`,
+					);
+					return;
+				}
+				if (!folderIsEmpty) {
+					void vscode.window.showErrorMessage(
+						'The open folder is not empty. Open an empty folder to clone into, then run this command again.',
+					);
+					return;
+				}
+
+				// `git clone` requires a literally empty directory on disk, but activation may have already
+				// created `.reltio/` (synced agent skills/Velocity Packs) — move it aside for the clone, then restore it.
+				// The temp location must be on the same volume as `root` (a sibling folder), not the OS temp dir —
+				// os.tmpdir() can be a different drive on Windows, which makes `rename` fail with EXDEV and would
+				// silently reintroduce the exact "folder not empty" deadlock this is meant to fix.
+				const reltioFolderUri = vscode.Uri.joinPath(root, '.reltio');
+				const reltioTempUri = vscode.Uri.file(path.join(path.dirname(root.fsPath), `.reltio-tmp-${Date.now()}`));
+				let movedReltioAside = false;
+				let reltioExists = true;
+				try {
+					await vscode.workspace.fs.stat(reltioFolderUri);
+				} catch {
+					reltioExists = false;
+				}
+				if (reltioExists) {
+					try {
+						await vscode.workspace.fs.rename(reltioFolderUri, reltioTempUri, { overwrite: true });
+						movedReltioAside = true;
+					} catch (e) {
+						void vscode.window.showErrorMessage(
+							`Could not clear the folder for cloning: failed to temporarily move .reltio aside (${(e as Error).message}).`,
+						);
+						return;
+					}
+				}
+
+				try {
+					await vscode.window.withProgress(
+						{ location: vscode.ProgressLocation.Notification, title: 'Cloning repository…' },
+						() => cloneRepository(url.trim(), root),
+					);
+				} catch (e) {
+					if (e instanceof GitNotFoundError) {
+						void vscode.window.showErrorMessage(e.message);
+					} else {
+						void vscode.window.showErrorMessage(`Clone failed: ${(e as Error).message}`);
+					}
+					return;
+				} finally {
+					if (movedReltioAside) {
+						try {
+							await vscode.workspace.fs.rename(reltioTempUri, reltioFolderUri, { overwrite: true });
+						} catch {
+							// Best-effort restore; a reload will re-sync `.reltio/` from scratch if this fails.
+						}
+					}
+				}
+			}
+
+			const candidates = await discoverL3Files(root);
+
+			if (candidates.length === 0) {
+				const picked = await vscode.window.showOpenDialog({
+					title: 'No BusinessConfig.json found. Locate the L3 configuration file',
+					canSelectMany: false,
+					filters: { 'Reltio L3 config': ['json'] },
+					defaultUri: root,
+				});
+				if (!picked || picked.length === 0) return;
+				const chosen = picked[0];
+				if (!isPathContainedIn(root, chosen)) {
+					void vscode.window.showErrorMessage(
+						'The selected file must be inside the connected folder. Pick a file within the repository.',
+					);
+					return;
+				}
+				if (!(await isParsableL3File(chosen))) {
+					void vscode.window.showErrorMessage(
+						`"${vscode.workspace.asRelativePath(chosen, false)}" is not valid JSON and can't be used as the config source.`,
+					);
+					return;
+				}
+				candidates.push(chosen);
+			}
+
+			// Validate all candidates
+			const validCandidates: vscode.Uri[] = [];
+			for (const candidate of candidates) {
+				if (await isParsableL3File(candidate)) {
+					validCandidates.push(candidate);
+				}
+			}
+
+			if (validCandidates.length === 0) {
+				void vscode.window.showErrorMessage('No valid BusinessConfig.json files found in the repository.');
+				return;
+			}
+
+			const gitSources = buildGitSources(root, validCandidates);
+			await writeMultiGitSourceMarker(root, {
+				sources: gitSources.map(g => ({
+					l3RelativePath: vscode.workspace.asRelativePath(g.l3Uri, false),
+					environmentName: g.environmentName,
+					tenantId: g.tenantId,
+				})),
+			});
+
+			// Set token only once per environment (not per tenant)
+			if (gitSources.length > 0) {
+				tokenStore.setToken(gitSources[0].environmentName, GIT_SOURCE_TOKEN);
+			}
+
+			environmentManager.setGitSources(gitSources);
+			setWorkspaceSource('git');
+			treeProvider.invalidate();
+			uxBus.fire();
+
+			const message = validCandidates.length === 1
+				? `Loaded configuration from the repository.`
+				: `Loaded ${validCandidates.length} configurations from the repository.`;
+			void vscode.window.showInformationMessage(
+				alreadyTracked ? message : `Cloned and ${message.toLowerCase()}`,
+			);
+			} finally {
+				fetchConfigFromGitInFlight = false;
+			}
+		}),
+		vscode.commands.registerCommand('reltio.removeGitSource', async (node?: EnvironmentNode) => {
+			if (!folder || !environmentManager || workspaceSource !== 'git') return;
+			const pick = await vscode.window.showWarningMessage(
+				'Remove this repository connection? This unlinks all tenants from the workspace and deletes all files in this folder — this cannot be undone.',
+				{ modal: true },
+				'Remove',
+			);
+			if (pick !== 'Remove') return;
+			let deleteError: Error | undefined;
+			try {
+				const entries = await vscode.workspace.fs.readDirectory(folder.uri);
+				for (const [name] of entries) {
+					const entryUri = vscode.Uri.joinPath(folder.uri, name);
+					try {
+						// Prefer the OS trash so an accidental confirm click is recoverable.
+						await vscode.workspace.fs.delete(entryUri, { recursive: true, useTrash: true });
+					} catch {
+						// Trash isn't available on every filesystem (network drives, some remote/WSL setups) —
+						// fall back to a permanent delete for this entry rather than failing the whole removal.
+						await vscode.workspace.fs.delete(entryUri, { recursive: true, useTrash: false });
+					}
+				}
+			} catch (e) {
+				deleteError = e as Error;
+			} finally {
+				// Clear git-source state even on a partial failure — leaving `workspaceSource` at 'git'
+				// would point the tree at files that may no longer exist.
+				environmentManager.clearGitSource();
+				// Clear all git source tokens
+				const marker = await readMultiGitSourceMarker(folder.uri);
+				if (marker) {
+					for (const source of marker.sources) {
+						tokenStore.clearToken(source.environmentName);
+					}
+				}
+				setWorkspaceSource(undefined);
+				treeProvider.invalidate();
+				uxBus.fire();
+			}
+			if (deleteError) {
+				void vscode.window.showErrorMessage(
+					`Repository state was cleared, but some files could not be deleted: ${deleteError.message}`,
+				);
+			} else {
+				void vscode.window.showInformationMessage('Repository removed. The folder is now empty.');
+			}
+		}),
+		vscode.commands.registerCommand('reltio.removeGitTenant', async (node?: TenantNode) => {
+			if (!folder || !environmentManager || !node || workspaceSource !== 'git') return;
+			// Prompt and report with the row's own label. `tenantId` may carry a collision qualifier
+			// the user never saw, so echoing it back would name a config that is not on screen.
+			const shown = node.displayLabel ?? node.tenantId;
+			const pick = await vscode.window.showWarningMessage(
+				`Remove configuration "${shown}"? This cannot be undone.`,
+				{ modal: true },
+				'Remove',
+			);
+			if (pick !== 'Remove') return;
+
+			// Read current marker
+			const marker = await readMultiGitSourceMarker(folder.uri);
+			if (!marker || marker.sources.length === 0) return;
+
+			// Filter out the removed tenant by tenantId (not environmentName, since all share the same repo name)
+			const remainingSources = marker.sources.filter(s => s.tenantId !== node.tenantId);
+
+			if (remainingSources.length === 0) {
+				// Last tenant removed - disconnect repository entirely
+				void vscode.window.showInformationMessage(
+					'Last tenant removed. Use "Remove Repository" from the view title to delete all files.',
+				);
+				// Just clear the marker and state, but keep files
+				environmentManager.clearGitSource();
+				tokenStore.clearToken(node.environmentName);
+				setWorkspaceSource(undefined);
+				try {
+					const markerUri = vscode.Uri.joinPath(folder.uri, '.reltio-config-source.json');
+					await vscode.workspace.fs.delete(markerUri);
+				} catch {
+					// Ignore if marker doesn't exist
+				}
+			} else {
+				// Update marker with remaining sources
+				await writeMultiGitSourceMarker(folder.uri, { sources: remainingSources });
+
+				// Rebuild git sources
+				const gitSources = buildGitSources(
+					folder.uri,
+					remainingSources.map(s => vscode.Uri.joinPath(folder.uri, s.l3RelativePath)),
+				);
+				environmentManager.setGitSources(gitSources);
+				// Every source in a repository shares one environment name (see the filter above), so
+				// clearing the token here would revoke git mode for the configs that remain: the tree
+				// would fall back to the flat tenant-mode branch and the environment would ask the user
+				// to sign in. Re-assert it instead, matching connect, restore, and Add Config.
+				tokenStore.setToken(gitSources[0].environmentName, GIT_SOURCE_TOKEN);
+			}
+
+			treeProvider.invalidate();
+			uxBus.fire();
+			void vscode.window.showInformationMessage(`Removed "${shown}".`);
+		}),
+		vscode.commands.registerCommand('reltio.addFileAsTenant', async (uri: vscode.Uri) => {
+			if (!environmentManager || !uri) return;
+			const folder = getWorkspaceFolder();
+			if (!folder) {
+				void vscode.window.showErrorMessage('No workspace folder open.');
+				return;
+			}
+			const root = folder.uri;
+
+			// Verify it's a git repo
+			if (!(await isGitRepo(root))) {
+				void vscode.window.showErrorMessage('This command only works in git repositories. Use "Connect your Repository" first.');
+				return;
+			}
+
+			// Verify file is within workspace
+			if (!isPathContainedIn(root, uri)) {
+				void vscode.window.showErrorMessage('The selected file must be inside the workspace folder.');
+				return;
+			}
+
+			// Only a real business configuration may be adopted: a repository is full of other JSON
+			// (permissions, lookups, cleanse config) that would produce an unusable tree row.
+			if (!(await isBusinessConfigFile(uri))) {
+				void vscode.window.showErrorMessage(
+					`"${vscode.workspace.asRelativePath(uri, false)}" is not a valid Reltio business configuration`,
+				);
+				return;
+			}
+
+			// Read existing marker
+			const existing = await readMultiGitSourceMarker(root);
+			const existingSources = existing?.sources ?? [];
+
+			// Check if this file is already added
+			const relPath = vscode.workspace.asRelativePath(uri, false);
+			if (existingSources.some(s => s.l3RelativePath === relPath)) {
+				void vscode.window.showInformationMessage(`"${relPath}" is already added.`);
+				return;
+			}
+
+			// Build list of all L3 URIs (existing + new)
+			const existingUris = existingSources.map(s => vscode.Uri.joinPath(root, s.l3RelativePath));
+			const allL3Uris = [...existingUris, uri];
+
+			// Adding a file can change which names are unique, so re-derive the whole set.
+			const gitSources = buildGitSources(root, allL3Uris);
+			await writeMultiGitSourceMarker(root, {
+				sources: gitSources.map(g => ({
+					l3RelativePath: vscode.workspace.asRelativePath(g.l3Uri, false),
+					environmentName: g.environmentName,
+					tenantId: g.tenantId,
+				})),
+			});
+			environmentManager.setGitSources(gitSources);
+			if (gitSources.length > 0) {
+				tokenStore.setToken(gitSources[0].environmentName, GIT_SOURCE_TOKEN);
+			}
+
+			setWorkspaceSource('git');
+			treeProvider.invalidate();
+			uxBus.fire();
+
+			const added = gitSources.find(g => g.l3Uri.path === uri.path);
+			void vscode.window.showInformationMessage(`Added "${relPath}" as "${added?.tenantId ?? relPath}".`);
+		}),
+	);
 
 	const applyOnActivate = vscode.workspace
 		.getConfiguration('reltio')
