@@ -38,6 +38,8 @@
 
 Reltio IDE is an editor extension for building and managing your tenant's business configuration (L3). It brings modeling, validation, and deployment into a single environment inside VS Code or Cursor — with AI-assisted authoring, real-time validation, and a review step before any change reaches your tenant.
 
+If you already keep configuration in git, you can open that repository in Reltio IDE and work the same way — without connecting to a live tenant.
+
 Reltio IDE supports the people who design and maintain tenant configuration across data governance, integration, and stewardship roles. If you currently edit `L3` configuration through the Console Data Modeler, hand-edited JSON, or the Intelligent JSON Editor, Reltio IDE is built to replace that workflow with one connected experience.
 
 ---
@@ -61,6 +63,7 @@ Reltio IDE replaces all three with one environment for creating, validating, and
 | Capability | Description |
 |---|---|
 | **Tenant connectivity** | Connect securely to your Reltio environment and tenant, and start modeling. |
+| **Git repository connectivity** | Open business configuration from GitHub, GitLab, Bitbucket, Azure DevOps, or a self-hosted remote — including private repositories — using Git on your machine. |
 | **Intelligent navigation** | Browse the complete business configuration and navigate among entity, relation, interaction, hierarchy, and other object types. |
 | **AI-assisted authoring** | Create different object types through guided actions or natural-language prompts. |
 | **Code completion and validation** | Get context-aware suggestions and real-time validation as you edit metadata, so issues surface before deployment, not after. |
@@ -77,14 +80,14 @@ Before you install Reltio IDE, make sure you have:
 
 - **VS Code** or **Cursor** installed on your machine.
 - The Reltio IDE `.vsix` file — download the latest version from the [Releases](../../releases) page of this repository.
-- A Reltio tenant and valid credentials: an **OAuth Client ID and Client secret** (with your SSO routing tenant ID), or a **bearer token**. Not needed if you connect a git repository instead, which requires a working `git` installation on your `PATH`.
-- Permissions to read and apply L3 configuration on the tenant.
+- **Either** a Reltio tenant and valid credentials: an **OAuth Client ID and Client secret** (with your SSO routing tenant ID), or a **bearer token**, and permission to read and apply L3 configuration, **or** a git repository of business configuration and **Git** installed on your PATH ([git-scm.com/downloads](https://git-scm.com/downloads)).
+- You do not need Reltio credentials to work from a git repository.
 
 ---
 
 ## Install Reltio IDE
 
-Installation differs slightly by editor. Everything from [Connect to your tenant](#connect-to-your-tenant) onward is identical regardless of which editor you use.
+Installation differs slightly by editor. Connecting to a tenant or a git repository is the same in Cursor and VS Code.
 
 ### Install on Cursor
 
@@ -160,19 +163,64 @@ These steps are the same in Cursor and VS Code.
 
 ## Connect a git repository instead
 
-If you already keep your business configuration in a git repository (GitHub, Bitbucket, GitLab, Azure DevOps, or self-hosted), you can edit it without connecting to a live tenant.
+These steps are the same in Cursor and VS Code.
 
 1. Open an empty folder, or a folder that already contains your cloned repository.
 2. Select the **Reltio** icon in the activity bar.
-3. Select **Connect your Repository**. If the folder is already a git clone, Reltio IDE detects it and skips straight to discovery. Otherwise, enter the remote URL and it clones for you.
-4. Reltio IDE searches the repository for `BusinessConfig.json` files and lists them in the tree as one environment (named after the repository folder) with one entry per config.
+3. Select **Connect your Repository**.
+4. If the folder is already a git clone, Reltio IDE detects it and skips straight to discovery. Otherwise, enter the remote URL (for example `https://github.com/org/repo.git`) and press Enter.
 
-Authentication uses your existing system git setup and its credential helper, so no Reltio credentials are involved.
+> **Note:** If you already keep your business configuration in a git repository (GitHub, Bitbucket, GitLab, Azure DevOps, or self-hosted), you can edit it without connecting to a live tenant. Authentication uses Git on your machine — Reltio IDE does not collect git credentials.
 
-Notes:
+<p align="center">
+  <img src="docs/images/git-connect-repository.png" alt="Connect your Repository prompt in VS Code asking for a Git remote URL" width="700" />
+  <br/>
+  <em>Screenshot (VS Code): Connect your Repository — paste the remote URL to clone.</em>
+</p>
+
+5. Reltio IDE searches the repository for `BusinessConfig.json` files and lists them in the tree. Configurations at the repository root stay at the root. Configurations in subfolders stay in those folders.
+
+<p align="center">
+  <img src="docs/images/git-repository-connected.png" alt="RELTIO IDE view after connecting a git repository, with a configuration open in the tree" width="700" />
+  <br/>
+  <em>Screenshot (VS Code): Connected repository — configurations appear in the RELTIO IDE view, matching the repository folder layout.</em>
+</p>
+
+### If Git is not installed
+
+Reltio IDE needs Git on your PATH to clone. If it is missing, you see:
+
+> Git executable not found. Install Git (https://git-scm.com/downloads) and ensure it is on your PATH, then try again.
+
+<p align="center">
+  <img src="docs/images/git-executable-not-found.png" alt="Reltio IDE notification that Git is not installed" width="500" />
+  <br/>
+  <em>Screenshot: Git is not installed — install Git, then retry Connect your Repository.</em>
+</p>
+
+Install Git from [https://git-scm.com/downloads](https://git-scm.com/downloads), close and reopen the editor, then confirm with `git --version`. When that command prints a version, select **Connect your Repository** again.
+
+### Private repositories
+
+Public repositories clone with no extra sign-in. For a private repository, Git may open **Select an account**:
+
+<p align="center">
+  <img src="docs/images/git-select-account.png" alt="GitHub Select an account dialog, including Add a new account" width="700" />
+  <br/>
+  <em>Screenshot: Select an account — choose the account that can access the repository, or select Add a new account.</em>
+</p>
+
+1. Select the account that has access to the repository, then select **Continue**.
+2. If none of the listed accounts have access, select **Add a new account** at the bottom of the dialog and complete sign-in in the browser. After you add the account, the same clone flow continues.
+
+You can also add a GitHub account from any terminal, then connect again in Reltio IDE: `git credential-manager github login`.
+
+If Git reports that the repository was not found, the selected account does not have access (or the URL is wrong). Choose another account, or select **Add a new account**.
+
+### Notes
 
 - **Multi-config repositories are supported.** A repo holding many `BusinessConfig.json` files appears as a single root node, and the rows beneath it follow the repository's own folder structure. A config at `DP/dp_lif/BusinessConfig.json` shows as **repo → DP → dp_lif**. If one folder holds several configs, that folder keeps its own row and each file appears beneath it. A config sitting at the repository root appears directly under the repository row, named after its file.
-- **Adopt other filenames** with **Add Config** from a `.json` file's right-click menu in the Explorer. Automatic discovery only looks for `BusinessConfig.json`. Add Config accepts business configurations only, so picking another kind of JSON from the repository (a permissions or lookups file, for example) is refused with an error rather than adding a row you cannot open.
+- **Add Config:** Automatic discovery only looks for `BusinessConfig.json`. To add a file with another name (for example `L3.json`), right-click the `.json` file in the Explorer and select **Add Config**. The file must be a valid Reltio business configuration.
 - **Remove Config** drops a single config from the tree, leaving the rest of the repository connected. **Remove Repository** clears the connection and deletes the folder contents.
 - Tenant-only actions (fetch, apply, configuration history) are hidden in this mode. A workspace is connected either to a tenant or to a repository, never both.
 
@@ -180,8 +228,8 @@ Notes:
 
 ## Open and navigate your configuration
 
-1. In the **RELTIO IDE** view, select your tenant.
-2. Select the **Open L3** icon beside the tenant ID to open your configuration file, `L3.reltio.json`, in the editor.
+1. In the **RELTIO IDE** view, select your tenant or configuration.
+2. Select the **Open L3** icon beside the row to open the configuration file in the editor.
 3. Expand your tenant to browse its configuration folders — entity types, relation types, attribute types, and other object types, based on your L3 configuration.
 4. Right-click your tenant for additional actions: **Copy Tenant ID**, **Apply Configuration to Tenant**, **Fetch Configuration**, **Fetch Configuration History**, and options to add new entity types, relation types, and other object types.
 
@@ -273,6 +321,7 @@ Reltio IDE supports two configuration management workflows: **Fetch Configuratio
 
 - **Browser OAuth (recommended):** your Client ID, Client secret, and session are handled through single sign-on and stored in your operating system's secure credential store — never in a plaintext file.
 - **Bearer token:** kept in memory only for the current session and cleared on restart. It is never written to `settings.json` or committed to your workspace.
+- **Git repositories:** clone and private-repository access use Git on your machine and its credential helper. Reltio IDE never asks you to place a git password or token in workspace settings.
 - Reltio IDE never asks you to place a token, client secret, or password directly in workspace settings.
 
 ---
@@ -280,8 +329,8 @@ Reltio IDE supports two configuration management workflows: **Fetch Configuratio
 ## Requirements
 
 - VS Code or Cursor
-- A Reltio tenant and valid credentials (OAuth Client ID/Client secret + SSO routing tenant ID, or a bearer token)
-- Permissions to read and apply L3 configuration on the tenant
+- For tenant mode: a Reltio tenant and valid credentials (OAuth Client ID/Client secret + SSO routing tenant ID, or a bearer token), and permission to read and apply L3 configuration
+- For repository mode: Git installed on your PATH
 
 ---
 

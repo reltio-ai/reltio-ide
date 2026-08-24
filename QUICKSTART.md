@@ -1,6 +1,6 @@
 # Quickstart — How to Use Reltio IDE
 
-This guide gets you from zero to editing a Reltio tenant configuration in VS Code or Cursor.
+This guide gets you from install to an open configuration in VS Code or Cursor. Use a **tenant** (steps 3–5) or a **git repository** ([alternative below](#alternative-to-steps-3-5-connect-a-git-repository)). For product context, install screenshots, and the full Git setup (including private repositories), see [README.md](README.md).
 
 ---
 
@@ -45,6 +45,8 @@ cursor --install-extension target/reltio-metadata-editor-0.0.1.vsix
 Click the **Reltio** icon in the Activity Bar (left sidebar). This is your control panel for environments, tenants, and configurations.
 
 > The extension also activates automatically whenever you open a `*.reltio.json` file.
+
+**Choose a path:** connect a **live tenant** (steps 3–5) or skip to a **git repository** ([Connect a Git Repository](#alternative-to-steps-3-5-connect-a-git-repository)). You do not need both.
 
 ---
 
@@ -104,14 +106,43 @@ To sign in again as a different user, right-click the environment → **Re-Login
 
 ## Alternative to Steps 3-5: Connect a Git Repository
 
-If your business configuration already lives in a git repository (GitHub, Bitbucket, GitLab, Azure DevOps, or self-hosted), you can edit it without connecting to a live tenant. No Reltio host, token, or OAuth credentials are needed.
+Use this instead of steps 3–5 when the configuration already lives in git. No Reltio host, token, or OAuth credentials are needed. Git must be installed on your PATH. For private-repository sign-in detail, see [README.md](README.md#private-repositories).
 
 1. Open an empty folder, or a folder that already holds your clone.
-2. In the Reltio sidebar, click **Connect your Repository**.
-3. If the folder is already a clone, the extension detects it and skips ahead. Otherwise, enter the remote URL and it clones for you.
-4. The extension finds the `BusinessConfig.json` files in the repository and lists them in the tree.
+2. In the Reltio sidebar, select **Connect your Repository**.
+3. If the folder is already a clone, Reltio IDE detects it and skips ahead. Otherwise, enter the remote URL (for example `https://github.com/org/repo.git`) and press Enter.
 
-Authentication uses your existing system git installation and its credential helper, so whatever already works for `git clone` on your machine works here.
+<p align="center">
+  <img src="docs/images/git-connect-repository.png" alt="Connect your Repository prompt asking for a Git remote URL" width="700" />
+  <br/>
+  <em>Screenshot (VS Code): Connect your Repository — paste the remote URL to clone.</em>
+</p>
+
+4. Reltio IDE finds the `BusinessConfig.json` files in the repository and lists them in the tree.
+
+<p align="center">
+  <img src="docs/images/git-repository-connected.png" alt="RELTIO IDE view after connecting a git repository" width="700" />
+  <br/>
+  <em>Screenshot (VS Code): Connected repository — packs and configurations appear in the RELTIO IDE view.</em>
+</p>
+
+Authentication uses Git on your machine and its credential helper — whatever already works for `git clone` works here.
+
+**If Git is not installed**, Reltio IDE stops until you install Git from [https://git-scm.com/downloads](https://git-scm.com/downloads), reopen the editor, and retry:
+
+<p align="center">
+  <img src="docs/images/git-executable-not-found.png" alt="Git executable not found notification from Reltio IDE" width="500" />
+  <br/>
+  <em>Screenshot: Git is not installed — install Git, then retry Connect your Repository.</em>
+</p>
+
+**If the repository is private**, Git may ask you to **Select an account**. Select the account that has access, then **Continue**. If that account is not listed, select **Add a new account** at the bottom of the dialog and sign in in the browser.
+
+<p align="center">
+  <img src="docs/images/git-select-account.png" alt="GitHub Select an account dialog with Add a new account" width="700" />
+  <br/>
+  <em>Screenshot: Private repository — pick an account, or Add a new account.</em>
+</p>
 
 **The tree mirrors your repository's folder layout:**
 
