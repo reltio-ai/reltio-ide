@@ -85,3 +85,18 @@
 - [x] 10.4 `MultiTenantTreeProvider.refreshBrowserLoginEligibility()` + refresh after configure credentials
 - [x] 10.5 Update OpenSpec spec/design/proposal and `docs/browser-oauth-login.md`
 - [ ] 10.6 Manual test: one env configured → all envs show login; two different pairs → only those envs; zero → none
+
+---
+
+## Bugfix Round 1 — RP-190109 callback success message
+
+Ticket: [RP-190109](https://reltio.jira.com/browse/RP-190109) — *Update the success message on authentication*. Supersedes the callback page copy and links from section 9.
+
+- [x] B1.1 Add `RELTIO_LOGO_DATA_URI` to `oauthLogin.ts` — `resources/icons/reltio-icon.png` inlined as base64, with a comment recording *why* it must be inlined (`startCallbackServer()` closes the server after one response, so a second request for an image file can never be served)
+- [x] B1.2 Rewrite `buildCallbackSuccessHtml()`: flex row, logo left, message right; heading **Login Successful!**; body "You are signed into Reltio IDE. You can now close this browser tab."
+- [x] B1.3 Remove the **Open in VS Code** / **Open in Cursor** links, the "if the links do not switch apps" fallback note, and the now-unused `VSCODE_FOCUS_URI` / `CURSOR_FOCUS_URI` constants (see D8.1 for the rationale)
+- [x] B1.4 Export `buildCallbackSuccessHtml` so the unit gate can assert on it; error/timeout/state-mismatch paths left untouched
+- [x] B1.5 Extend `scripts/test-browser-oauth-login.cjs`: heading, body copy, img-before-h1 ordering, no `vscode://` / `cursor://`, and a self-oracle check that the data URI matches a runtime re-encode of the icon PNG
+- [x] B1.6 Update OpenSpec `spec.md` (callback page scenarios), `design.md` (D8 revision, new D8.1, risks, new **Test plan** section) and `docs/browser-oauth-login.md`
+- [x] B1.7 `npm test` green (`test-browser-oauth-login: OK`)
+- [ ] B1.8 Manual test: complete browser login → logo renders offline from the data URI, message sits to its right, editor toast still fires, closing the tab immediately keeps the session valid

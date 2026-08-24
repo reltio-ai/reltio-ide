@@ -15,10 +15,10 @@
 
 1. **Login with Browser** on the same environment node.
 2. Complete SSO in the browser; you are redirected to `http://localhost:8081`.
-3. The callback page confirms success and offers optional **Open in VS Code** / **Open in Cursor** links (best-effort).
+3. The callback page shows the Reltio logo and **Login Successful!** — it is informational only.
 4. An editor notification confirms login; you may close the browser tab.
 
-Tokens work even if you do not click the callback links.
+The callback page has no links: nothing there is needed for authentication. By the time it renders, the extension has already exchanged the code and stored the session, so switch back to the editor whenever you like.
 
 ## Security
 

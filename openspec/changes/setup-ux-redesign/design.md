@@ -202,7 +202,7 @@ Each step shows a step counter in the title (e.g., "Add Reltio environment (3 of
 
 **Step 3 — Auth sub-flow.** Branches by Step 2 choice:
 
-- **Browser:** if a shared OAuth client pair already exists in `oauthCredentialsStore` → jump straight to browser login. Otherwise → three sequential masked inputs for client ID → client secret → SSO routing tenant ID (pre-filled `GrmSwAZFRAeVy1K`), then launch browser login. On error (`PORT_BUSY`, `NO_IDP_CONFIGURED`, etc.) → existing error UX, return user to Step 2.
+- **Browser:** if a shared OAuth client pair already exists in `oauthCredentialsStore` → jump straight to browser login. Otherwise → three sequential masked inputs for client ID → client secret → SSO routing tenant ID (blank; the user supplies their own, required), then launch browser login. On error (`PORT_BUSY`, `NO_IDP_CONFIGURED`, etc.) → existing error UX, return user to Step 2.
 - **Token:** single masked input. Validate by issuing a no-op `GET /reltio/tenants` before continuing. On 401 → re-prompt.
 - **Skip:** Step 3 is no-op; jump to Step 5 with `E_NO_AUTH` state. Steps 4 and tenant work are also skipped.
 

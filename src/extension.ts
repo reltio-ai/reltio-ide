@@ -1385,8 +1385,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			const ssoTenantId = await vscode.window.showInputBox({
 				title: 'SSO routing tenant ID',
 				prompt: 'Tenant used for SSO routing during browser login.',
-				value: existingSsoTenantId ?? 'GrmSwAZFRAeVy1K',
-				placeHolder: 'GrmSwAZFRAeVy1K',
+				value: existingSsoTenantId,
+				placeHolder: 'Tenant ID used for SSO routing',
 				ignoreFocusOut: true,
 				validateInput: v => (v?.trim() ? undefined : 'SSO tenant ID is required'),
 			});
