@@ -63,9 +63,11 @@ The extension SHALL keep `redirect_uri=http://localhost:8081` and SHALL NOT requ
 #### Scenario: Enhanced callback page after successful login
 - **WHEN** the local callback server receives `GET /?code=<auth_code>` on port 8081
 - **THEN** the HTTP response body is an HTML page (not plain text only) that states login succeeded
-- **AND** the page instructs the user they may close the browser tab and continue in the editor
-- **AND** the page includes an optional link to open VS Code (e.g. `vscode://reltio-community.reltio-metadata-editor`) labeled clearly (e.g. **Open in VS Code**)
-- **AND** the page MAY include an optional **Open in Cursor** link (best-effort; behavior depends on OS protocol registration)
+- **AND** the page renders the Reltio logo with the confirmation text to the **right** of the logo
+- **AND** the heading reads **Login Successful!**
+- **AND** the body text reads "You are signed into Reltio IDE. You can now close this browser tab."
+- **AND** the logo is embedded in the same HTML payload as a data URI, because the callback server closes immediately after its single response and cannot serve a follow-up image request
+- **AND** the page does NOT include `vscode://` or `cursor://` deep links
 
 #### Scenario: In-editor notification after successful browser login
 - **WHEN** token exchange completes successfully after **Login with Browser**
@@ -73,8 +75,8 @@ The extension SHALL keep `redirect_uri=http://localhost:8081` and SHALL NOT requ
 - **AND** the notification tells the user they may close the browser tab and continue working in the editor
 - **AND** the user does not need to click the callback page link for tokens to be stored or for the environment to show as authorized
 
-#### Scenario: Callback page link is optional for authentication
-- **WHEN** the user closes the browser tab without clicking **Open in VS Code** or **Open in Cursor**
+#### Scenario: Callback page is informational only
+- **WHEN** the user closes the browser tab immediately after the success page appears
 - **AND** token exchange already completed
 - **THEN** the session remains valid in the extension (access token in memory, refresh token in Secret Storage if applicable)
 - **AND** the environment node shows the authorized state

@@ -99,12 +99,12 @@ The Reltio ecosystem already has a working browser-based OAuth login implementat
 
 **Choice:** Do **not** change the OAuth `redirect_uri` registered with Reltio. Continue using `http://localhost:8081`. After the callback server receives `?code=...`, respond with **enhanced HTML** and show a **VS Code information notification** when token exchange completes.
 
-**Callback HTML (served once per successful login):**
-- Short heading: login succeeded for Reltio Metadata Editor.
-- Text: you can close this browser tab; return to VS Code or Cursor to continue.
-- Optional primary link: **“Open in VS Code”** → `vscode://reltio-community.reltio-metadata-editor` (publisher + extension id from `package.json`).
-- Optional secondary link: **“Open in Cursor”** → `cursor://` or product-specific URI if documented for the user’s install (best-effort; may be hidden when not applicable).
-- Optional non-blocking `meta refresh` or script redirect to the same URI after 1–2 seconds (accept that some browsers block or ignore this).
+**Callback HTML (served once per successful login):** — revised by RP-190109
+- Reltio logo on the left, message block on the right (flex row, centered in the viewport).
+- Heading: **Login Successful!**
+- Text: "You are signed into Reltio IDE. You can now close this browser tab."
+- Logo is `resources/icons/reltio-icon.png` inlined as a base64 data URI in `RELTIO_LOGO_DATA_URI`. It cannot be a file reference: `startCallbackServer()` calls `server.close()` right after writing its one response, so a second request for an image would be refused.
+- No `vscode://` / `cursor://` deep links. See D8.1.
 
 **In-editor notification (extension, after successful `exchangeCodeForTokens`):**
 - Keep or refine the existing success toast (e.g. `Logged in to "{environmentName}".`).
@@ -114,6 +114,14 @@ The Reltio ecosystem already has a working browser-based OAuth login implementat
 **Rationale:** Reltio already allowlists `localhost:8081`. Token capture does not depend on refocusing the IDE. Postman-like auto-focus requires `vscode://` on the auth server allowlist (D1 alternative); until then, HTML + notification is the lowest-risk UX improvement.
 
 **Alternative considered — `registerUriHandler` only:** Rejected as primary flow without server allowlist; can be revisited when Reltio adds `vscode://` redirect support.
+
+### D8.1 — Drop the editor deep links from the callback page (RP-190109)
+
+**Choice:** Remove the **Open in VS Code** / **Open in Cursor** links, the fallback note beneath them, and the now-unused `VSCODE_FOCUS_URI` / `CURSOR_FOCUS_URI` constants. The callback page is reduced to logo + confirmation message.
+
+**Rationale:** The links never redirected anyone automatically — they required a click, and browsers frequently refuse to hand `vscode://` / `cursor://` off from a localhost page (the page carried its own "if the links do not switch apps" hedge, which is a tell). Authentication is entirely independent of them: the extension host has already exchanged the code and fired `showInformationMessage` by the time the page renders, so the only thing lost is an unreliable convenience shortcut. Keeping them would also contradict the new copy, which tells the user to close the tab.
+
+**Trade-off:** Users lose one-click app switching and must alt-tab back to the editor. Accepted — the in-editor success toast already tells them login worked.
 
 ### D9 — Shared OAuth client pair when only one exists in Secret Storage
 
@@ -135,7 +143,8 @@ The Reltio ecosystem already has a working browser-based OAuth login implementat
 - **`SecretStorage` unavailable** (rare edge case in some remote environments) → Fall back to in-memory only with a one-time warning for **session** tokens; OAuth client credentials cannot be persisted — browser login should warn that credentials will not survive reload. _Mitigation_: document remote-dev limitations.
 - **User misconfigures client ID/secret** → Token exchange returns 400/401. _Mitigation_: surface Reltio error body where possible; offer **Configure OAuth Client** again.
 - **Secrets lost on machine migration** → User re-runs **Configure OAuth Client** and **Login with Browser**. _Mitigation_: document in OAuth security guide.
-- **“Open in VS Code/Cursor” link does not focus the app** → OS/browser may not hand off `vscode://` / `cursor://` from a localhost page. _Mitigation_: in-editor notification already confirms success; treat browser link as optional convenience.
+- **User does not notice login finished** → the callback page no longer offers an app-switch link (D8.1), so the user must return to the editor themselves. _Mitigation_: the `Waiting for browser login…` progress notification resolves into a `Logged in to "{env}"` toast, and the success page explicitly says to close the tab.
+- **Inlined logo drifts from the shipped icon** → `RELTIO_LOGO_DATA_URI` is a copy of `resources/icons/reltio-icon.png`, so replacing the icon file alone would leave the callback page stale. _Mitigation_: `test-browser-oauth-login.cjs` re-encodes the PNG at runtime and asserts the constant still matches, so the gate fails on drift.
 
 ## Migration Plan
 
@@ -147,6 +156,30 @@ No migration required for existing manual token users. For browser login:
 4. Optional: on first **Login with Browser** without credentials, offer a single notification with a button/command to open **Configure OAuth Client**.
 
 Users who installed a build with embedded secrets should rotate the client secret on the Reltio/Okta side if that secret was ever considered confidential.
+
+## Test plan
+
+### Tier A — automated (`scripts/test-browser-oauth-login.cjs`)
+
+- Credential resolve matrix, `buildAuthorizationUrl`, `TokenStore` aliases (existing).
+- **RP-190109 callback success page** — `buildCallbackSuccessHtml()` is exported for this:
+  - heading is exactly `Login Successful!`;
+  - body copy is "You are signed into Reltio IDE. You can now close this browser tab.";
+  - the `<img>` precedes the `<h1>` in document order (logo left, text right);
+  - the inlined data URI equals a runtime re-encode of `resources/icons/reltio-icon.png` — self-oracle, no committed base64 expectation, and it fails the gate if the icon file and the constant drift apart;
+  - no `vscode://` or `cursor://` substring survives anywhere in the page.
+
+### Tier B — automated (none)
+
+No integration tier: the callback server binds a real port and performs a live OAuth exchange, which is out of scope for the unit gate.
+
+### Tier C — manual QA
+
+1. **Login with Browser** on a configured environment → complete SSO → callback page shows the Reltio logo with **Login Successful!** and the message to its right; layout is centered and readable.
+2. Confirm the page renders the logo with **no network access** (the data URI must not need a second request — the server has already closed).
+3. Confirm the editor shows `Logged in to "{env}"` and the environment node flips to authorized, without touching the browser page.
+4. Close the tab immediately → session still valid, tree still authorized.
+5. Error paths unchanged: missing `code` → "No authorization code in callback URL."; bad `state` → CSRF message; 120 s idle → timeout.
 
 ## Open Questions
 

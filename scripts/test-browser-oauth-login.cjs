@@ -6,6 +6,8 @@
  * Tier C (manual): browser login, SSO check, token refresh — docs/browser-oauth-login.md
  */
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 const { importDist } = require('./lib/import-dist.cjs');
 
 const {
@@ -13,7 +15,7 @@ const {
 	computeBrowserLoginEligibility,
 	resolveOAuthCredentials,
 } = importDist('api/oauthCredentialsResolve');
-const { buildAuthorizationUrl } = importDist('api/oauthLogin');
+const { buildAuthorizationUrl, buildCallbackSuccessHtml } = importDist('api/oauthLogin');
 const { TokenStore } = importDist('api/tokenStore');
 
 const credA = { clientId: 'id-a', clientSecret: 'sec-a' };
@@ -62,6 +64,31 @@ const store = {
 	assert.strictEqual(tokens.getToken('dst'), 'token-value');
 	tokens.clearToken('src');
 	assert.strictEqual(tokens.getToken('dst'), undefined);
+
+	// RP-190109: callback success page is the Reltio logo plus the message to its right.
+	const successHtml = buildCallbackSuccessHtml();
+	assert.ok(successHtml.includes('<h1>Login Successful!</h1>'));
+	assert.ok(
+		successHtml.includes('You are signed into Reltio IDE. You can now close this browser tab.'),
+	);
+
+	// The logo must be inlined: the callback server closes after its single response,
+	// so a separate request for an image file could never be served.
+	const logoBase64 = fs
+		.readFileSync(path.join(__dirname, '..', 'resources', 'icons', 'reltio-icon.png'))
+		.toString('base64');
+	assert.ok(
+		successHtml.includes(`src="data:image/png;base64,${logoBase64}"`),
+		'inlined logo must match resources/icons/reltio-icon.png',
+	);
+	assert.ok(/<img[^>]*alt="Reltio"/.test(successHtml));
+
+	// Logo left, text right — the img precedes the heading in document order.
+	assert.ok(successHtml.indexOf('<img') < successHtml.indexOf('<h1>'));
+
+	// The retired editor deep links must not come back.
+	assert.ok(!successHtml.includes('vscode://'));
+	assert.ok(!successHtml.includes('cursor://'));
 
 	console.log('test-browser-oauth-login: OK');
 })().catch(err => {
