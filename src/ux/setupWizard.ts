@@ -208,8 +208,7 @@ async function stepAuthSubflow(state: WizardState, deps: WizardDeps): Promise<St
 		const ssoTenantId = await vscode.window.showInputBox({
 			title: `Reltio Environment Setup (3 of ${TOTAL_STEPS}) — SSO routing tenant ID`,
 			prompt: 'Tenant used for SSO routing during browser login.',
-			value: 'GrmSwAZFRAeVy1K',
-			placeHolder: 'GrmSwAZFRAeVy1K',
+			placeHolder: 'Tenant ID used for SSO routing',
 			ignoreFocusOut: true,
 			validateInput: v => (v?.trim() ? undefined : 'SSO tenant ID is required'),
 		});
