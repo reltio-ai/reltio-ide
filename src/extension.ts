@@ -66,6 +66,7 @@ import {
 	fetchConfigurationHistory,
 	putL3Configuration,
 	ReltioApiError,
+	setTrustedHostSuffixes,
 } from './api/reltioClient';
 import { prettyPrintJsonIfPossible } from './api/formatJson';
 import { tenantIdFromTreeContext } from './util/tenantIdFromTreeContext';
@@ -303,7 +304,24 @@ async function tryRestoreGitSource(
 	return true;
 }
 
+/** Reads `reltio.trustedHostSuffixes` and applies it to `reltioClient`'s host allowlist. */
+function applyTrustedHostSuffixes(): void {
+	const suffixes = vscode.workspace
+		.getConfiguration('reltio')
+		.get<string[]>('trustedHostSuffixes', ['reltio.com']);
+	setTrustedHostSuffixes(suffixes);
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+	applyTrustedHostSuffixes();
+	context.subscriptions.push(
+		vscode.workspace.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration('reltio.trustedHostSuffixes')) {
+				applyTrustedHostSuffixes();
+			}
+		}),
+	);
+
 	const folder = getWorkspaceFolder();
 	const environmentManager = folder ? new EnvironmentManager(folder.uri) : null;
 	const tokenStore = new TokenStore();

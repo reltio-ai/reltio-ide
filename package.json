@@ -340,6 +340,17 @@
           "default": true,
           "description": "Save dirty *.reltio.json when the active editor changes (another tab, tree, or panel) so disk stays in sync with Cursor Agent and the extension."
         },
+        "reltio.trustedHostSuffixes": {
+          "type": "array",
+          "scope": "application",
+          "default": [
+            "reltio.com"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Hosts the extension will send Reltio API requests (and bearer tokens) to. An environment's host must equal one of these suffixes or be a subdomain of one. Add a suffix here only for a sanctioned, non-reltio.com Reltio environment. User-settings only (not settable from a workspace's .vscode/settings.json), so an opened repo cannot extend its own trust boundary."
+        },
         "reltio.autoSaveOnWindowBlur": {
           "type": "boolean",
           "default": false,

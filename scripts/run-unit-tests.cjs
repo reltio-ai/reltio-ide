@@ -22,6 +22,7 @@ const SCRIPTS = [
 	'test-editor-navigation.cjs',
 	'test-extension-packaging.cjs',
 	'test-git-repository-source.cjs',
+	'test-harden-reltio-client-base-url.cjs',
 	'test-hide-reference-attribute-for-relation-types.cjs',
 	'test-insert-interaction-type.cjs',
 	'test-multi-tenant-tree-view.cjs',
