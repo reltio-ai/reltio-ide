@@ -674,7 +674,7 @@
           {
             "id": "addEnvironment",
             "title": "Step 1: Connect to your Reltio environment",
-            "description": "Your Reltio environment is the host where your tenant resides (e.g. `361.reltio.com`). Click **Connect your Reltio Tenant** in the Reltio side panel to begin the guided setup. To work from version control instead, use **Connect your Repository** (step 6).",
+            "description": "Your Reltio environment is the host where your tenant resides (e.g. `361.reltio.com`). Click **Connect your Reltio Tenant** in the Reltio side panel to begin the guided setup. To work with a Git repository that contains your BusinessConfig, use **Connect your Repository** (step 6).",
             "completionEvents": [
               "onCommand:reltio.never_fired"
             ]
@@ -706,7 +706,7 @@
           {
             "id": "applyChanges",
             "title": "Step 5: Apply Your Changes",
-            "description": "When connected to a tenant, right-click the tenant and select **Apply Configuration to Tenant**. Reltio IDE compares your local configuration against the latest remote version and shows you a diff before deploying. From Git, commit and push with Source Control instead.",
+            "description": "When connected to a tenant, right-click the tenant and select **Apply Configuration to Tenant**. Reltio IDE compares your local configuration against the latest remote version and shows you a diff before deploying. For a Git repository that contains your BusinessConfig, commit and push with Source Control instead.",
             "completionEvents": [
               "onCommand:reltio.never_fired"
             ]

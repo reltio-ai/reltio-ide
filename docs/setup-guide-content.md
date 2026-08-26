@@ -2,8 +2,6 @@
 
 Get started with Reltio IDE in just a few minutes. Connect to a Reltio tenant or to a Git repository that holds your business configuration, then start modeling with AI-assisted authoring.
 
-This file stays in sync with `resources/setupGuide.json` (the in-product Setup Guide reads the JSON).
-
 ---
 
 ## Step 1 — Connect to your Reltio environment

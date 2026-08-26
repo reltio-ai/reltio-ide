@@ -281,7 +281,7 @@ Reltio IDE supports two ways to create configuration objects such as entity type
 
 The ontology view displays a diagram of your local configuration — entity types and the relationships between them. It reflects your local file, not the live tenant configuration, and is for visualization only.
 
-When you work from a git repository, use the tree action or the Command Palette. The ontology button on the editor tab works with `*.reltio.json` files; a repository configuration is typically named `BusinessConfig.json`.
+If you connected a Git repository, open the ontology from the RELTIO IDE tree or the Command Palette.
 
 1. Open the ontology view using any of the following:
    - Select the **...** (More Actions) menu in the editor toolbar, then select **Reltio: Show Ontology Preview**.
