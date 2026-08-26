@@ -721,7 +721,7 @@
     "build:webview": "esbuild src/webview/ontologyView.ts --bundle --outfile=dist/webview.js --format=iife --platform=browser && node -e \"require('fs').copyFileSync('src/webview/ontologyView.css','dist/webview.css')\"",
     "build:watch": "npm run build:ext -- --watch",
     "clean": "node -e \"['dist','target'].forEach(d=>{try{require('fs').rmSync(d,{recursive:true,force:true})}catch(e){}})\"",
-    "package": "npm run clean && npm run build && node -e \"require('fs').mkdirSync('target',{recursive:true})\" && npx vsce package --out target/ --no-rewrite-relative-links",
+    "package": "npm run clean && npm run build && node -e \"require('fs').mkdirSync('target',{recursive:true})\" && npx vsce package --out target/ --baseContentUrl https://github.com/reltio-ai/reltio-ide/blob/main/ --baseImagesUrl https://raw.githubusercontent.com/reltio-ai/reltio-ide/main/",
     "openspec": "openspec",
     "test": "npm run compile && node scripts/run-unit-tests.cjs",
     "bench:format-json": "node scripts/bench-format-json.cjs"

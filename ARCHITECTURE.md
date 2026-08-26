@@ -110,8 +110,8 @@ graph TD
 | `src/workspace/` | `EnvironmentManager` — creates under `.reltio/*.reltio.environment` (scans that home plus legacy workspace-root dirs), manages `*.reltio.tenant` and `L3.reltio.json` via `vscode.workspace.fs`; `configurationHistory.ts` — snapshot file naming, read/write/clear under `history/`; **`reltioAgentSync.ts`** — materialize bundled skills + Velocity Packs under `.reltio/reltio-agent/` (see D3b); **`reltioAutoSave.ts`** — save dirty `*.reltio.json` on editor switch (and optionally on window blur) so disk matches agents and parse/index passes; **`gitConfigSource.ts`** — system-`git` shell-out helpers (detect existing repo/remote, clone, empty-folder check, path containment with a Windows case-insensitive drive fix) via `child_process.execFile`; **`l3Discovery.ts`** — depth-10 search for `BusinessConfig.json` (case-insensitive) plus conflict-aware environment/tenant naming; **`gitSourceMarker.ts`** — persists discovered L3 locations in `.reltio-config-source.json` (multi-source format, backward compatible, auto-gitignored along with `.reltio/`) |
 | `src/navigation/` | Language feature providers: `UriIndex` (central URI → AST mapping), Go-to-Definition, Find References, Document Links, Diagnostics for unresolved URIs, **`uriCompletionProvider`** (Ctrl+Space URI + same-property value hints), **`uriPropertyScopes`** / **`samePropertyValues`** |
 | `src/commands/` | `editCommands` (insert/delete/rename via `WorkspaceEdit`), `elementSkeletons` (default-name builders), `revealInsertion` (select inserted JSON), `revealCommand` |
-| `src/ontology/` | Ontology preview: transforms model to graph, runs ELK layout, manages the webview panel lifecycle, persists layout positions |
-| `src/webview/` | Browser-side code for the ontology preview: SVG rendering, pan/zoom/drag, inspectors, context menus. Bundled separately as IIFE |
+| `src/ontology/` | Ontology preview: transforms model to graph, runs ELK layout, manages the webview panel lifecycle, persists layout positions. Also holds `inspectorHtml.ts` (pure, escaped HTML builders for the inspector popup) and `webviewMessageSafety.ts` (`message`-origin check, prototype-safe dynamic-key map) — kept outside `src/webview/` so `tsc`/`importDist` can test them directly, but imported by both the host and the webview bundle |
+| `src/webview/` | Browser-side code for the ontology preview: SVG rendering, pan/zoom/drag, inspectors, context menus. Bundled separately as IIFE. Validates the origin of every incoming `postMessage` before trusting it (`window.origin`, captured at bootstrap, vs. `e.origin`) |
 | `schemas/` | JSON schema (`reltio-metadata.schema.json`) registered for `*.reltio.json` validation |
 | `resources/` | Static assets (activity bar icon); **`resources/reltio-agent-assets.json`** (`skillsBundleVersion`, `velocityPacksBundleVersion`); **`resources/velocity-packs/`** bundled Velocity Pack reference JSON + `manifest.json` |
 | `skills/` | **`skills/reltio-default/*/`** default `SKILL.md` playbooks shipped in the VSIX; optional **`skills/workspace/**`** team overrides (never overwritten by sync) |
@@ -353,6 +353,7 @@ No metrics, health checks, or telemetry are collected.
 **Webview (browser, single-threaded):**
 - SVG rendering, event handling, and inspector logic run on the webview's single JS thread
 - Communication with extension host is asynchronous via `postMessage` / `onDidReceiveMessage`
+- The webview's `message` listener validates `e.origin` against its own `window.origin` (captured at bootstrap) before reading `e.data` — VS Code assigns each webview panel a random `vscode-webview://<uuid>` origin, so there is nothing to hardcode; see `isTrustedMessageOrigin()` in `src/ontology/webviewMessageSafety.ts`
 
 No shared mutable state between extension host and webview — they communicate exclusively through message passing.
 
@@ -367,6 +368,8 @@ No shared mutable state between extension host and webview — they communicate 
 **Sidecar layout persistence:** Ontology node positions are stored in a companion `*.reltio.layout.json` file rather than in VS Code workspace state. This makes layouts portable across machines and visible in the file system.
 
 **Model-first graph construction:** The ontology view builds a `GraphModel` from the parsed `ReltioBusinessModel` — not from the raw JSON. This ensures the graph always reflects the same semantic model used by the tree view and navigation providers.
+
+**Escape at the boundary, verify with a hostile fixture:** Every dynamic string the ontology webview places into `innerHTML` (entity/attribute/relation names and URIs) is escaped in `src/ontology/inspectorHtml.ts` before it reaches a template string — never at the point of insertion. `scripts/test-ontology-webview-hardening.cjs` runs a deliberately hostile `.reltio.json`-shaped fixture (names containing `<img onerror=...>`, `<script>`, quotes) through the real `buildGraphModel()` → `inspectorHtml.ts` pipeline and asserts the output never contains an unescaped tag or attribute, rather than relying on a one-time manual read-through.
 
 ## Common Modification Recipes
 
@@ -407,7 +410,7 @@ No shared mutable state between extension host and webview — they communicate 
 
 **Decision:** Host → webview messages carry data (graph, positions). Webview → host messages carry user actions (save, navigate, reveal).
 
-**Anti-pattern:** Don't access VS Code APIs from the webview — all VS Code interaction must go through `postMessage` to the host.
+**Anti-pattern:** Don't access VS Code APIs from the webview — all VS Code interaction must go through `postMessage` to the host. Don't interpolate a new field from `e.data` into HTML without escaping it via `src/ontology/inspectorHtml.ts`'s `escapeHtml()`, and don't use a message-derived string as a dynamic object key without `createKeyedMap()` (`src/ontology/webviewMessageSafety.ts`).
 
 **Example:** `savePositions` message flow in `ontologyPanel.ts` and `ontologyView.ts`
 
@@ -465,8 +468,6 @@ npm test    # compile + scripts/run-unit-tests.cjs (code-model first)
 ## Architectural Opportunities
 
 **VS Code integration tests:** `@vscode/test-electron` could complement CLI unit tests for command handlers and tree context menus; not in scope for the current harness.
-
-**Webview type sharing:** The `GraphModel` types (`GraphNode`, `GraphEdge`, `AttrInfo`, `RelTypeInfo`) are duplicated between `src/ontology/modelToGraph.ts` (host) and `src/webview/ontologyView.ts` (client) because they're in separate bundles. A shared types file that both bundles import could reduce drift risk.
 
 **Activation scope:** The extension still activates on generic `onLanguage:json` in addition to Reltio-specific `workspaceContains` patterns and the view-contribution `onView:reltioConfigTree`. Dropping `onLanguage:json` would reduce load for unrelated JSON at the cost of discoverability when users only open raw JSON.
 

@@ -1,44 +1,19 @@
+import type { GraphEdge, GraphModel, GraphNode } from '../ontology/modelToGraph';
+import { escapeHtml, buildConnectionInspectorHtml, buildEntityInspectorHtml, shortUri } from '../ontology/inspectorHtml';
+import { createKeyedMap, isTrustedMessageOrigin } from '../ontology/webviewMessageSafety';
+
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
-
-interface AttrInfo {
-	uri: string;
-	name: string;
-	category: 'Simple' | 'Nested' | 'Reference';
-	valueType: string;
-	children?: AttrInfo[];
-	relationshipTypeURI?: string;
-	referencedEntityTypeURI?: string;
-}
-
-function shortUri(uri: string): string {
-	const parts = uri.split('/');
-	return parts[parts.length - 1];
-}
-
-interface GraphNode {
-	id: string; label: string; abstract: boolean; consolidated: boolean;
-	simpleAttrCount: number; nestedAttrCount: number; refAttrCount: number;
-	matchGroupCount: number; attrs: AttrInfo[];
-	x: number; y: number; width: number; height: number;
-}
-
-interface RelTypeInfo {
-	label: string; uri: string;
-	startEntityId: string; endEntityId: string;
-}
-
-interface GraphEdge {
-	id: string; source: string; target: string;
-	type: 'connection' | 'extends'; label: string;
-	relationshipLabels: string[]; relationshipURIs: string[];
-	referenceLabels: string[]; referenceURIs: string[];
-	relationTypes: RelTypeInfo[]; referenceAttrs: AttrInfo[];
-}
-
-interface GraphModel { nodes: GraphNode[]; edges: GraphEdge[]; }
 
 const vscode = acquireVsCodeApi();
 const NS = 'http://www.w3.org/2000/svg';
+
+/**
+ * Captured once, at the moment this script starts running inside its own webview — VS Code
+ * assigns each webview panel a random `vscode-webview://<uuid>` origin, so there is no fixed
+ * value to hardcode. Every incoming `message` event is checked against this before its data
+ * is trusted.
+ */
+const trustedOrigin = window.origin;
 
 const NODE_HEADER_H = 28;
 const MAX_LABEL_CHARS = 24;
@@ -605,7 +580,7 @@ function onPointerMove(e: PointerEvent): void {
 function onPointerUp(e: PointerEvent): void {
 	if (dragNodeId && isDragging && graph) {
 		computeContentBounds();
-		const positions: Record<string, { x: number; y: number }> = {};
+		const positions = createKeyedMap<{ x: number; y: number }>();
 		for (const n of graph.nodes) positions[n.id] = { x: n.x, y: n.y };
 		vscode.postMessage({ type: 'savePositions', positions });
 	}
@@ -814,86 +789,9 @@ function createInspector(title: string, bodyHtml: string, clientX: number, clien
 	inspectorEl = div;
 }
 
-function renderAttrTree(attrs: AttrInfo[]): string {
-	let html = '';
-	for (const a of attrs) {
-		const dataUri = ` data-attr-uri="${escapeHtml(a.uri)}"`;
-		if (a.category === 'Simple') {
-			html += `<li${dataUri}>${escapeHtml(a.name)} <span class="attr-type">: ${escapeHtml(a.valueType)}</span></li>`;
-		} else if (a.category === 'Nested') {
-			html += `<li${dataUri}><details><summary>${escapeHtml(a.name)} <span class="attr-type">: Nested</span></summary>`;
-			if (a.children?.length) html += `<ul>${renderAttrTree(a.children)}</ul>`;
-			html += `</details></li>`;
-		} else {
-			html += `<li${dataUri}><details><summary>${escapeHtml(a.name)} <span class="attr-type">: Reference</span></summary>`;
-			html += `<ul>`;
-			if (a.referencedEntityTypeURI) html += `<li class="ref-meta">${escapeHtml(shortUri(a.referencedEntityTypeURI))} <span class="attr-type">: Entity</span></li>`;
-			if (a.relationshipTypeURI) html += `<li class="ref-meta">${escapeHtml(shortUri(a.relationshipTypeURI))} <span class="attr-type">: Relation</span></li>`;
-			if (a.children?.length) {
-				html += `<li><details><summary>Attributes (${a.children.length})</summary><ul>${renderAttrTree(a.children)}</ul></details></li>`;
-			}
-			html += `</ul></details></li>`;
-		}
-	}
-	return html;
-}
-
-function renderRelTypeTree(relTypes: RelTypeInfo[]): string {
-	let html = '';
-	for (const rt of relTypes) {
-		html += `<li data-rel-uri="${escapeHtml(rt.uri)}"><details><summary>${escapeHtml(rt.label)}</summary><ul>`;
-		html += `<li data-entity-id="${escapeHtml(rt.startEntityId)}">${escapeHtml(rt.startEntityId)} <span class="attr-type">: Start Type</span></li>`;
-		html += `<li data-entity-id="${escapeHtml(rt.endEntityId)}">${escapeHtml(rt.endEntityId)} <span class="attr-type">: End Type</span></li>`;
-		html += `<li data-rel-uri="${escapeHtml(rt.uri)}">${escapeHtml(rt.label)} <span class="attr-type">: Relation Type</span></li>`;
-		html += `</ul></details></li>`;
-	}
-	return html;
-}
-
 function showEntityInspector(node: GraphNode, cx: number, cy: number): void {
-	let html = `<p><strong>URI:</strong> ${escapeHtml(node.id)}</p>`;
-	if (node.abstract) html += `<p><em>Abstract entity type</em></p>`;
-	if (node.consolidated) html += `<p><em>\u2605 Consolidated profile type</em></p>`;
-
-	const simple = node.attrs.filter(a => a.category === 'Simple').sort((a, b) => a.name.localeCompare(b.name));
-	const nested = node.attrs.filter(a => a.category === 'Nested').sort((a, b) => a.name.localeCompare(b.name));
-	const refs = node.attrs.filter(a => a.category === 'Reference').sort((a, b) => a.name.localeCompare(b.name));
-	const total = simple.length + nested.length + refs.length;
-
-	html += `<details><summary>Attributes (${total})</summary><div class="attr-tree">`;
-	if (simple.length) {
-		html += `<details class="attr-group"><summary>Simple (${simple.length})</summary><ul>${renderAttrTree(simple)}</ul></details>`;
-	}
-	if (nested.length) {
-		html += `<details class="attr-group"><summary>Nested (${nested.length})</summary><ul>${renderAttrTree(nested)}</ul></details>`;
-	}
-	if (refs.length) {
-		html += `<details class="attr-group"><summary>Reference (${refs.length})</summary><ul>${renderAttrTree(refs)}</ul></details>`;
-	}
-	html += `</div></details>`;
-
-	if (node.matchGroupCount > 0) {
-		html += `<details><summary>Match Groups (${node.matchGroupCount})</summary><ul>`;
-		html += `<li>${node.matchGroupCount} group(s) configured</li>`;
-		html += `</ul></details>`;
-	}
-
 	const connected = graph?.edges.filter(e => e.source === node.id || e.target === node.id) ?? [];
-	if (connected.length > 0) {
-		html += `<details><summary>Connections (${connected.length})</summary><div class="attr-tree">`;
-		for (const e of connected) {
-			const other = e.source === node.id ? e.target : e.source;
-			html += `<details class="attr-group"><summary data-entity-id="${escapeHtml(other)}">\u2194 ${escapeHtml(other)}</summary><div class="attr-tree">`;
-			if (e.relationTypes.length > 0) {
-				html += `<details class="attr-group"><summary>Relationship Types (${e.relationTypes.length})</summary><ul>${renderRelTypeTree(e.relationTypes)}</ul></details>`;
-			}
-			if (e.referenceAttrs.length > 0) {
-				html += `<details class="attr-group"><summary>Reference Attributes (${e.referenceAttrs.length})</summary><ul>${renderAttrTree(e.referenceAttrs)}</ul></details>`;
-			}
-			html += `</div></details>`;
-		}
-		html += `</div></details>`;
-	}
+	const html = buildEntityInspectorHtml(node, connected);
 
 	const nodeShort = shortUri(node.id);
 	createInspector(node.label, html, cx, cy, [
@@ -903,18 +801,7 @@ function showEntityInspector(node: GraphNode, cx: number, cy: number): void {
 }
 
 function showConnectionInspector(edge: GraphEdge, cx: number, cy: number): void {
-	let html = `<p><strong>From:</strong> ${escapeHtml(edge.source)} \u2192 ${escapeHtml(edge.target)}</p>`;
-
-	if (edge.type === 'extends') {
-		html += `<p><em>Inheritance (extends)</em></p>`;
-	} else {
-		if (edge.relationTypes.length > 0) {
-			html += `<details open><summary>Relationship Types (${edge.relationTypes.length})</summary><ul>${renderRelTypeTree(edge.relationTypes)}</ul></details>`;
-		}
-		if (edge.referenceAttrs.length > 0) {
-			html += `<details open><summary>Reference Attributes (${edge.referenceAttrs.length})</summary><ul>${renderAttrTree(edge.referenceAttrs)}</ul></details>`;
-		}
-	}
+	const html = buildConnectionInspectorHtml(edge);
 
 	const edgeActions: InspectorAction[] = [
 		{ label: `Show "${edge.source}" in Editor`, action: () => vscode.postMessage({ type: 'revealInEditor', nodeId: edge.source }) },
@@ -930,13 +817,10 @@ function showConnectionInspector(edge: GraphEdge, cx: number, cy: number): void 
 	createInspector(edge.label || 'Connection', html, cx, cy, edgeActions);
 }
 
-function escapeHtml(s: string): string {
-	return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
 // ===== Message handling =====
 
 window.addEventListener('message', (e: MessageEvent) => {
+	if (!isTrustedMessageOrigin(e.origin, trustedOrigin)) return;
 	const msg = e.data;
 	if (msg.type === 'setGraph') {
 		graph = msg.graph;
