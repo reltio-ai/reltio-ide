@@ -98,7 +98,7 @@ To sign in again as a different user, right-click the environment → **Re-Login
 
 ## 5. Fetch the Tenant Configuration (L3)
 
-1. Right-click the tenant → **Fetch Configuration**.
+1. Right-click the tenant → **Get Configuration**.
 2. The extension downloads the tenant metadata and saves it as `L3.reltio.json` inside the tenant folder.
 3. A `L3.remote-baseline.reltio.json` is also saved alongside it — used later to detect server-side drift before you apply changes.
 
@@ -118,7 +118,7 @@ Use this instead of steps 3–5 when the configuration already lives in git. No 
   <em>Screenshot (VS Code): Connect your Repository — paste the remote URL to clone.</em>
 </p>
 
-4. Reltio IDE finds the `BusinessConfig.json` files in the repository and lists them in the tree.
+4. Reltio IDE searches up to 10 folder levels for `BusinessConfig.json` files (the name is not case-sensitive) and lists them in the tree.
 
 <p align="center">
   <img src="docs/images/git-repository-connected.png" alt="RELTIO IDE view after connecting a git repository" width="700" />
@@ -243,9 +243,9 @@ After editing locally:
 
 1. Right-click the tenant → **Apply Configuration to Tenant**.
 2. The extension compares your local file against the remote baseline:
-   - **No drift** → choose **Yes**, **View Changes**, or **Cancel**.
-   - **Remote has changed** → you must review the diff before proceeding.
-3. **View Changes** opens a side-by-side diff of the remote vs your local file.
+   - **No drift** → choose **Yes**, **View changes**, or **Don't apply**.
+   - **Remote has changed** → you must **Review changes** before proceeding (**Skip** cancels).
+3. **View changes** opens a side-by-side diff of the remote vs your local file. Confirm with **Apply to tenant** or choose **Don't apply**.
 4. Confirm → the extension sends a `PUT` to the Reltio API.
 5. On success, the remote baseline is updated automatically.
 
@@ -253,13 +253,13 @@ After editing locally:
 
 ## 9. Configuration History
 
-1. Right-click a tenant → **Fetch Configuration History** — downloads the 10 most recent revisions into `{tenant}/history/`.
-2. Right-click the **History** folder → **Fetch More** to load older revisions.
+1. Right-click a tenant → **View Configuration History** — downloads the 10 most recent revisions into `{tenant}/history/`.
+2. Right-click the **History** folder → **Fetch More Configuration History** to load older revisions.
 3. Right-click any snapshot for comparison options:
 
 | Option | What it does |
 |---|---|
-| Compare with Current | Diffs the snapshot against your live `L3.reltio.json` |
+| Compare with Current L3 | Diffs the snapshot against your live `L3.reltio.json` |
 | Compare with Previous Snapshot | Diffs against the next-older revision |
 | Select for Compare → Compare Selected | Arbitrary pairwise diff between any two snapshots |
 

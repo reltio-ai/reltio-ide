@@ -210,6 +210,7 @@ Precedence: **`skills/workspace/`** overrides the same logical playbook under **
 | `reltio.refreshEnvironment` | Tree context (environment) | Rescan workspace tree |
 | `reltio.resyncAgentAssets` | Command palette | Force re-copy of bundled skills + Velocity Packs into `.reltio/reltio-agent/` |
 | `reltio.launchSetupWizard` | Welcome view, view title bar, status bar, walkthrough, Command Palette | Multi-step QuickPick chain: host → sign-in method → auth sub-flow → first tenant → confirm. Persists results and opens L3 on finish. |
+| `reltio.openSetupGuide` | Welcome view, Command Palette | Opens the in-product Setup Guide webview (`resources/setupGuide.json`). Six steps: tenant connect → auth → pick tenant → model → apply, plus **Connect a Git repository instead**. Markdown twin: `docs/setup-guide-content.md`. The `reltio.gettingStarted` walkthrough mirrors those six steps (`featuredFor` includes `*.reltio.json`, `BusinessConfig.json`, `L3.json`). |
 | `reltio.signInEnvironment` | Inline tree icon on `E_NO_AUTH` env rows | Smart helper: QuickPick to choose browser-OAuth vs token, then runs the matching command. |
 | `reltio.signInToFirstEnvironment` | Walkthrough step 2, status bar (when `G_NEEDS_AUTH`) | Same as above but picks the first unauthed env automatically. |
 | `reltio.openL3` | Inline tree icon on tenants with L3, single-click on tenant row when `reltio.tenantSingleClickOpen` is true | Opens the tenant's `L3.reltio.json` in the editor. |

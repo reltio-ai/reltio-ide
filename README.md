@@ -178,7 +178,7 @@ These steps are the same in Cursor and VS Code.
   <em>Screenshot (VS Code): Connect your Repository — paste the remote URL to clone.</em>
 </p>
 
-5. Reltio IDE searches the repository for `BusinessConfig.json` files and lists them in the tree. Configurations at the repository root stay at the root. Configurations in subfolders stay in those folders.
+5. Reltio IDE searches up to 10 folder levels for `BusinessConfig.json` files (the name is not case-sensitive) and lists them in the tree. Configurations at the repository root stay at the root. Configurations in subfolders stay in those folders.
 
 <p align="center">
   <img src="docs/images/git-repository-connected.png" alt="RELTIO IDE view after connecting a git repository, with a configuration open in the tree" width="700" />
@@ -221,7 +221,7 @@ If Git reports that the repository was not found, the selected account does not 
 
 - **Multi-config repositories are supported.** A repo holding many `BusinessConfig.json` files appears as a single root node, and the rows beneath it follow the repository's own folder structure. A config at `DP/dp_lif/BusinessConfig.json` shows as **repo → DP → dp_lif**. If one folder holds several configs, that folder keeps its own row and each file appears beneath it. A config sitting at the repository root appears directly under the repository row, named after its file.
 - **Add Config:** Automatic discovery only looks for `BusinessConfig.json`. To add a file with another name (for example `L3.json`), right-click the `.json` file in the Explorer and select **Add Config**. The file must be a valid Reltio business configuration.
-- **Remove Config** drops a single config from the tree, leaving the rest of the repository connected. **Remove Repository** clears the connection and deletes the folder contents.
+- **Remove Config** drops a single config from the tree, leaving the rest of the repository connected. **Remove Repository** (trash icon in the RELTIO IDE title bar, or right-click the repository row) clears the connection and deletes the folder contents.
 - Tenant-only actions (fetch, apply, configuration history) are hidden in this mode. A workspace is connected either to a tenant or to a repository, never both.
 
 ---
@@ -231,7 +231,7 @@ If Git reports that the repository was not found, the selected account does not 
 1. In the **RELTIO IDE** view, select your tenant or configuration.
 2. Select the **Open L3** icon beside the row to open the configuration file in the editor.
 3. Expand your tenant to browse its configuration folders — entity types, relation types, attribute types, and other object types, based on your L3 configuration.
-4. Right-click your tenant for additional actions: **Copy Tenant ID**, **Apply Configuration to Tenant**, **Get Configuration**, **View Configuration History**, and options to add new entity types, relation types, and other object types.
+4. When you are connected to a tenant, right-click the tenant for **Copy Tenant ID**, **Apply Configuration to Tenant**, **Get Configuration**, **View Configuration History**, and options to add new entity types, relation types, and other object types. In a git-connected workspace those tenant-only actions are hidden.
 
 <p align="center">
   <img src="docs/images/config-tree-expanded.png" alt="RELTIO IDE view in VS Code showing a connected tenant with its configuration tree expanded" width="700" />
@@ -308,7 +308,7 @@ Reltio IDE supports two tenant configuration-management workflows: **Get Configu
 ### Fetch and apply configuration
 
 1. Right-click your tenant and select **Get Configuration** to retrieve the latest configuration from the tenant. Reltio IDE updates your local `L3.reltio.json` once complete.
-2. If your local file had unsaved changes when the fetch completed, choose **Keep File** to retain your edits, or **Undo File** to accept the fetched version.
+2. If your local file has unpublished changes, Reltio IDE warns that fetching will overwrite them. Choose **Review changes** to open a diff, or **Fetch anyway** to replace the local file immediately. After a review you can **Fetch and overwrite**, **Apply my changes instead** (push local edits to the tenant), or **Cancel**.
 3. Edit `L3.reltio.json` with the changes you want to apply.
 4. Right-click your tenant and select **Apply Configuration to Tenant**.
 
@@ -321,15 +321,16 @@ Reltio IDE supports two tenant configuration-management workflows: **Get Configu
 Reltio IDE checks whether the remote configuration matches your last fetch and shows a confirmation dialog:
 
 <p align="center">
-  <img src="docs/images/apply-configuration-confirm.png" alt="Apply configuration confirmation dialog with View Changes" width="700" />
+  <img src="docs/images/apply-configuration-confirm.png" alt="Apply configuration confirmation dialog with View changes" width="700" />
   <br/>
   <em>Screenshot: Confirmation before applying configuration to the tenant.</em>
 </p>
 
-   - **View Changes** — open a diff view and review your changes before applying.
-   - **Yes** — apply your local configuration to the tenant immediately.
-   - **Don't apply** — cancel the deployment and return to editing.
-   - **Cancel** — dismiss the dialog without taking action.
+   - **View changes** — open a diff, then confirm with **Apply to tenant** or choose **Don't apply**.
+   - **Yes** — apply your local configuration to the tenant immediately (shown when the remote still matches your last fetch).
+   - **Don't apply** — cancel and return to editing.
+
+If the tenant configuration changed since your last fetch, the dialog asks you to **Review changes** before you can apply. **Skip** cancels.
 
 ### Review configuration history
 
