@@ -124,9 +124,9 @@ You can install from VSIX using either of the following:
 Either way, confirm that **Reltio IDE** appears in your installed extensions.
 
 <p align="center">
-  <img src="docs/images/install-vsix-vscode.png" alt="Extensions view showing Install from VSIX in VS Code" width="700" />
+  <img src="docs/images/install-vsix-vscode.png" alt="Command Palette showing Install from VSIX in VS Code" width="700" />
   <br/>
-  <em>Screenshot: Extensions view "..." menu with "Install from VSIX..." selected.</em>
+  <em>Screenshot: Command Palette with "Install from VSIX..." selected.</em>
 </p>
 
 ---
@@ -231,12 +231,12 @@ If Git reports that the repository was not found, the selected account does not 
 1. In the **RELTIO IDE** view, select your tenant or configuration.
 2. Select the **Open L3** icon beside the row to open the configuration file in the editor.
 3. Expand your tenant to browse its configuration folders — entity types, relation types, attribute types, and other object types, based on your L3 configuration.
-4. Right-click your tenant for additional actions: **Copy Tenant ID**, **Apply Configuration to Tenant**, **Fetch Configuration**, **Fetch Configuration History**, and options to add new entity types, relation types, and other object types.
+4. Right-click your tenant for additional actions: **Copy Tenant ID**, **Apply Configuration to Tenant**, **Get Configuration**, **View Configuration History**, and options to add new entity types, relation types, and other object types.
 
 <p align="center">
-  <img src="docs/images/config-tree-expanded.png" alt="RELTIO IDE view in VS Code showing a connected tenant with its configuration tree expanded and L3.reltio.json open" width="700" />
+  <img src="docs/images/config-tree-expanded.png" alt="RELTIO IDE view in VS Code showing a connected tenant with its configuration tree expanded" width="700" />
   <br/>
-  <em>Screenshot (VS Code): Connected tenant with its configuration tree expanded, alongside the open L3.reltio.json file.</em>
+  <em>Screenshot (VS Code): Connected tenant with its configuration tree expanded.</em>
 </p>
 
 ---
@@ -254,9 +254,9 @@ Reltio IDE supports two ways to create configuration objects such as entity type
 5. Save `L3.reltio.json` (`Cmd+S` / `Ctrl+S`). Reltio IDE validates your changes and highlights any errors so you can fix them before you apply.
 
 <p align="center">
-  <img src="docs/images/add-new-entity-type.png" alt="Right-click context menu in VS Code on the Entity Types folder, showing Add a new Entity Type, Show in Editor, and Show in Ontology" width="700" />
+  <img src="docs/images/add-new-entity-type.png" alt="New entity type added to the configuration from the RELTIO IDE context menu" width="700" />
   <br/>
-  <em>Screenshot (VS Code): Entity Types folder context menu with Add a new Entity Type.</em>
+  <em>Screenshot (VS Code): A new entity type added through the context menu, with default values in the configuration file.</em>
 </p>
 
 ### Create an object with AI-assisted authoring
@@ -264,7 +264,14 @@ Reltio IDE supports two ways to create configuration objects such as entity type
 1. Open your editor's AI assistant.
 2. Describe the object you want — for example: *"Create an Employee entity type with the relevant attributes and a reference attribute to Organization."*
 3. Review the generated configuration. Reltio IDE creates the entity type, adds relevant attributes, adds the reference attribute, and creates the relation type the reference attribute depends on — automatically.
-4. Save `L3.reltio.json`.
+
+<p align="center">
+  <img src="docs/images/ai-assisted-authoring.png" alt="AI assistant proposing business configuration changes in the editor" width="700" />
+  <br/>
+  <em>Screenshot: Proposed configuration changes from AI-assisted authoring.</em>
+</p>
+
+4. Save `L3.reltio.json`. When you work from a git repository, commit and push with your editor's Source Control view instead of applying to a tenant.
 
 **Result:** Your new objects appear in the **RELTIO IDE** view under their object type, and their definitions are added to `L3.reltio.json`. For a reference attribute created with AI-assisted authoring, confirm the supporting relation type appears under Relation Types.
 
@@ -272,7 +279,9 @@ Reltio IDE supports two ways to create configuration objects such as entity type
 
 ## Visualize the ontology
 
-The ontology view displays a diagram of your local `L3.reltio.json` configuration — entity types and the relationships between them. It reflects your local file, not the live tenant configuration, and is for visualization only.
+The ontology view displays a diagram of your local configuration — entity types and the relationships between them. It reflects your local file, not the live tenant configuration, and is for visualization only.
+
+When you work from a git repository, use the tree action or the Command Palette. The ontology button on the editor tab works with `*.reltio.json` files; a repository configuration is typically named `BusinessConfig.json`.
 
 1. Open the ontology view using any of the following:
    - Select the **...** (More Actions) menu in the editor toolbar, then select **Reltio: Show Ontology Preview**.
@@ -292,14 +301,31 @@ The ontology view displays a diagram of your local `L3.reltio.json` configuratio
 
 ## Apply configuration and track changes
 
-Reltio IDE supports two configuration management workflows: **Fetch Configuration** syncs your local file with the tenant, and **Apply Configuration to Tenant** deploys your local changes.
+These workflows require a tenant connection. In a git-connected workspace, Reltio IDE hides **Get Configuration**, **Apply Configuration to Tenant**, and **View Configuration History**. Save your edits, then commit and push them with your editor's Source Control view.
+
+Reltio IDE supports two tenant configuration-management workflows: **Get Configuration** syncs your local file with the tenant, and **Apply Configuration to Tenant** deploys your local changes.
 
 ### Fetch and apply configuration
 
-1. Right-click your tenant and select **Fetch Configuration** to retrieve the latest configuration from the tenant. Reltio IDE updates your local `L3.reltio.json` once complete.
+1. Right-click your tenant and select **Get Configuration** to retrieve the latest configuration from the tenant. Reltio IDE updates your local `L3.reltio.json` once complete.
 2. If your local file had unsaved changes when the fetch completed, choose **Keep File** to retain your edits, or **Undo File** to accept the fetched version.
 3. Edit `L3.reltio.json` with the changes you want to apply.
-4. Right-click your tenant and select **Apply Configuration to Tenant**. Reltio IDE checks whether the remote configuration matches your last fetch and shows a confirmation dialog:
+4. Right-click your tenant and select **Apply Configuration to Tenant**.
+
+<p align="center">
+  <img src="docs/images/apply-configuration.png" alt="Apply Configuration to Tenant in the RELTIO IDE view" width="700" />
+  <br/>
+  <em>Screenshot (VS Code): Apply Configuration to Tenant from the tenant context menu.</em>
+</p>
+
+Reltio IDE checks whether the remote configuration matches your last fetch and shows a confirmation dialog:
+
+<p align="center">
+  <img src="docs/images/apply-configuration-confirm.png" alt="Apply configuration confirmation dialog with View Changes" width="700" />
+  <br/>
+  <em>Screenshot: Confirmation before applying configuration to the tenant.</em>
+</p>
+
    - **View Changes** — open a diff view and review your changes before applying.
    - **Yes** — apply your local configuration to the tenant immediately.
    - **Don't apply** — cancel the deployment and return to editing.
@@ -307,8 +333,15 @@ Reltio IDE supports two configuration management workflows: **Fetch Configuratio
 
 ### Review configuration history
 
-1. Right-click your tenant and select **Fetch Configuration History**. A **History** section lists past versions by timestamp and the user who made each change.
-2. Right-click your tenant and select **Fetch More Configuration History** to load older entries.
+1. Right-click your tenant and select **View Configuration History**. A **History** section lists past versions by timestamp and the user who made each change.
+
+<p align="center">
+  <img src="docs/images/configuration-history.png" alt="Configuration history in the RELTIO IDE view" width="700" />
+  <br/>
+  <em>Screenshot (VS Code): Configuration history entries under the tenant.</em>
+</p>
+
+2. Right-click the **History** folder and select **Fetch More Configuration History** to load older entries.
 3. Select a history entry to open that version of the configuration.
 4. Compare versions:
    - **Compare with Current L3** — compares a snapshot against your current local configuration.

@@ -664,15 +664,17 @@
       {
         "id": "reltio.gettingStarted",
         "title": "Get Started with Reltio IDE",
-        "description": "Connect to your Reltio tenant, download your business configuration, and start modeling with AI-assisted authoring.",
+        "description": "Connect to your Reltio tenant or a Git repository, open your business configuration, and start modeling with AI-assisted authoring.",
         "featuredFor": [
-          "**/*.reltio.json"
+          "**/*.reltio.json",
+          "**/BusinessConfig.json",
+          "**/L3.json"
         ],
         "steps": [
           {
             "id": "addEnvironment",
             "title": "Step 1: Connect to your Reltio environment",
-            "description": "Your Reltio environment is the host where your tenant resides (e.g. `361.reltio.com`). Click **Connect Your Reltio Tenant** in the Reltio side panel to begin the guided setup.",
+            "description": "Your Reltio environment is the host where your tenant resides (e.g. `361.reltio.com`). Click **Connect your Reltio Tenant** in the Reltio side panel to begin the guided setup. To work from version control instead, use **Connect your Repository** (step 6).",
             "completionEvents": [
               "onCommand:reltio.never_fired"
             ]
@@ -696,7 +698,7 @@
           {
             "id": "startModeling",
             "title": "Step 4: Start Modeling",
-            "description": "Open `L3.reltio.json` and start editing. Get AI-assisted authoring, intelligent code completion, real-time validation, easy navigation across entities and relationships, and full ontology visualization.",
+            "description": "Open `L3.reltio.json` (tenant) or `BusinessConfig.json` (Git) and start editing. Get AI-assisted authoring, intelligent code completion, real-time validation, easy navigation across entities and relationships, and full ontology visualization.",
             "completionEvents": [
               "onCommand:reltio.never_fired"
             ]
@@ -704,7 +706,15 @@
           {
             "id": "applyChanges",
             "title": "Step 5: Apply Your Changes",
-            "description": "Right-click the tenant and select **Apply Configuration to Tenant**. Reltio IDE compares your local configuration against the latest remote version and shows you a diff before deploying — so you always deploy with confidence.",
+            "description": "When connected to a tenant, right-click the tenant and select **Apply Configuration to Tenant**. Reltio IDE compares your local configuration against the latest remote version and shows you a diff before deploying. From Git, commit and push with Source Control instead.",
+            "completionEvents": [
+              "onCommand:reltio.never_fired"
+            ]
+          },
+          {
+            "id": "connectGit",
+            "title": "Step 6: Connect a Git repository instead",
+            "description": "Open an empty folder or an existing clone, then select **Connect your Repository**. Reltio IDE discovers `BusinessConfig.json` files (up to 10 folder levels). No Reltio credentials are required. Use **Add Config** in Explorer for other filenames. A workspace is either tenant or Git, never both.",
             "completionEvents": [
               "onCommand:reltio.never_fired"
             ]
