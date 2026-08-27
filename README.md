@@ -63,7 +63,7 @@ Reltio IDE replaces all three with one environment for creating, validating, and
 | Capability | Description |
 |---|---|
 | **Tenant connectivity** | Connect securely to your Reltio environment and tenant, and start modeling. |
-| **Git repository connectivity** | Open business configuration from GitHub, GitLab, Bitbucket, Azure DevOps, or a self-hosted remote — including private repositories — using Git on your machine. |
+| **Git repository connectivity** | Connect to your Git repository and fetch the hosted business configuration files. |
 | **Intelligent navigation** | Browse the complete business configuration and navigate among entity, relation, interaction, hierarchy, and other object types. |
 | **AI-assisted authoring** | Create different object types through guided actions or natural-language prompts. |
 | **Code completion and validation** | Get context-aware suggestions and real-time validation as you edit metadata, so issues surface before deployment, not after. |
@@ -170,7 +170,7 @@ These steps are the same in Cursor and VS Code.
 3. Select **Connect your Repository**.
 4. If the folder is already a git clone, Reltio IDE detects it and skips straight to discovery. Otherwise, enter the remote URL (for example `https://github.com/org/repo.git`) and press Enter.
 
-> **Note:** If you already keep your business configuration in a git repository (GitHub, Bitbucket, GitLab, Azure DevOps, or self-hosted), you can edit it without connecting to a live tenant. Authentication uses Git on your machine — Reltio IDE does not collect git credentials.
+> **Note:** If you already keep your business configuration in a Git repository, you can edit it without connecting to a live tenant. Authentication uses Git on your machine — Reltio IDE does not collect git credentials.
 
 <p align="center">
   <img src="docs/images/git-connect-repository.png" alt="Connect your Repository prompt in VS Code asking for a Git remote URL" width="700" />
@@ -202,12 +202,12 @@ Install Git from [https://git-scm.com/downloads](https://git-scm.com/downloads),
 
 ### Private repositories
 
-Public repositories clone with no extra sign-in. For a private repository, Git may open **Select an account**:
+A public repository does not require additional sign-in. For a private repository, complete any sign-in that Git requests.
 
 <p align="center">
-  <img src="docs/images/git-select-account.png" alt="GitHub Select an account dialog, including Add a new account" width="700" />
+  <img src="docs/images/git-select-account.png" alt="Git sign-in prompt during a private repository clone" width="700" />
   <br/>
-  <em>Screenshot: Select an account — choose the account that can access the repository, or select Add a new account.</em>
+  <em>Screenshot: Git may prompt you to sign in before cloning a private repository.</em>
 </p>
 
 1. Select the account that has access to the repository, then select **Continue**.
@@ -281,12 +281,7 @@ Reltio IDE supports two ways to create configuration objects such as entity type
 
 The ontology view displays a diagram of your local configuration — entity types and the relationships between them. It reflects your local file, not the live tenant configuration, and is for visualization only.
 
-If you connected a Git repository, open the ontology from the RELTIO IDE tree or the Command Palette.
-
-1. Open the ontology view using any of the following:
-   - Select the **...** (More Actions) menu in the editor toolbar, then select **Reltio: Show Ontology Preview**.
-   - Right-click an entity type or relation type in the **RELTIO IDE** view and select **Show in Ontology**.
-   - Open the Command Palette, type `ontology`, and select **Reltio: Show Ontology Preview**.
+1. Right-click **Entity Types** or **Relation Types** in the **RELTIO IDE** view and select **Show in Ontology**.
 2. Review the diagram. Each entity type appears as a labeled node showing its name, attribute count, connection count, and match rule count. Entity types marked **★ Consolidated** apply match and survivorship rules; entity types marked **Abstract** are base types that other entity types extend and don't hold records directly.
 3. Labeled arrows show relation type names, `extends` inheritance connections, and reference attribute connections.
 4. To reset the layout, open the Command Palette and run **Reltio: Reset Ontology Layout**.

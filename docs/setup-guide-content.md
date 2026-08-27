@@ -85,13 +85,13 @@ When you work from a Git repository, Reltio IDE hides tenant apply and history. 
 
 ## Step 6 — Connect a Git repository instead
 
-Use this instead of steps 1–3 when your business configuration already lives in Git (GitHub, GitLab, Bitbucket, Azure DevOps, or self-hosted). No Reltio host, token, or OAuth credentials are required. Git must be installed on your PATH.
+Use this instead of steps 1–3 when your business configuration already lives in a Git repository. No Reltio host, token, or OAuth credentials are required. Git must be installed on your PATH.
 
 Open an empty folder (Reltio IDE clones into it), or open a folder that already contains your clone. In the Reltio side panel, select **Connect your Repository**. If the folder is already a clone, Reltio IDE detects it. Otherwise, enter the remote URL (for example `https://github.com/org/repo.git`) and press Enter.
 
 Reltio IDE searches up to 10 folder levels for files named `BusinessConfig.json` (the name is not case-sensitive) and lists them in the RELTIO IDE view. To add a file with a different name, such as `L3.json`, right-click the `.json` file in Explorer and select **Add Config**. The file must be a valid Reltio business configuration.
 
-A public repository does not require extra sign-in. For a private GitHub repository, Git may ask you to **Select an account** — pick an account with access, or select **Add a new account**. Other Git hosts use whatever sign-in Git on your machine already uses.
+A public repository does not require additional sign-in. For a private repository, complete any sign-in that Git requests.
 
 Right-click a configuration and select **Remove Config** to drop it from the tree (the file stays in the repository). To disconnect, use the trash icon in the RELTIO IDE view title bar, or right-click the repository and select **Remove Repository** — this deletes the folder contents.
 

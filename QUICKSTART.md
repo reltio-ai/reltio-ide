@@ -136,12 +136,12 @@ Authentication uses Git on your machine and its credential helper — whatever a
   <em>Screenshot: Git is not installed — install Git, then retry Connect your Repository.</em>
 </p>
 
-**If the repository is private**, Git may ask you to **Select an account**. Select the account that has access, then **Continue**. If that account is not listed, select **Add a new account** at the bottom of the dialog and sign in in the browser.
+**If the repository is private**, complete any sign-in that Git requests.
 
 <p align="center">
-  <img src="docs/images/git-select-account.png" alt="GitHub Select an account dialog with Add a new account" width="700" />
+  <img src="docs/images/git-select-account.png" alt="Git sign-in prompt during a private repository clone" width="700" />
   <br/>
-  <em>Screenshot: Private repository — pick an account, or Add a new account.</em>
+  <em>Screenshot: Git may prompt you to sign in before cloning a private repository.</em>
 </p>
 
 **The tree mirrors your repository's folder layout:**
@@ -223,8 +223,7 @@ All edits are AST-aware — commas, nesting, and whitespace are handled correctl
 
 ## 7. Ontology Preview (Graph View)
 
-1. With `L3.reltio.json` open, click **Show Ontology Preview** in the editor title bar.
-   Alternatively, right-click a tenant in the tree → **Show Ontology Preview**.
+1. Right-click **Entity Types** or **Relation Types** in the **RELTIO IDE** view and select **Show in Ontology**.
 2. An interactive graph opens:
    - **Nodes** = entity types
    - **Edges** = inheritance, relationships, and cross-type references
