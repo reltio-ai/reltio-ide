@@ -40,10 +40,11 @@ const setupMd = fs.readFileSync(path.join(repoRoot, 'docs/setup-guide-content.md
 const setupJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'resources/setupGuide.json'), 'utf8'));
 
 assert.strictEqual(setupJson.steps.length, 6, 'Setup Guide should have 6 steps');
-assert.strictEqual(setupJson.steps[5].id, 'connectGit');
-assert.match(setupJson.steps[5].body, /Connect your Repository/);
-assert.match(setupJson.steps[5].body, /BusinessConfig\.json/);
-assert.match(setupMd, /## Step 6 — Connect a Git repository instead/);
+assert.strictEqual(setupJson.steps[3].id, 'connectGit');
+assert.strictEqual(setupJson.steps[3].number, 4);
+assert.match(setupJson.steps[3].body, /Connect your Repository/);
+assert.match(setupJson.steps[3].body, /BusinessConfig\.json/);
+assert.match(setupMd, /## Step 4 — Connect a Git repository/);
 
 const walkthrough = pkg.contributes.walkthroughs.find(w => w.id === 'reltio.gettingStarted');
 assert.ok(walkthrough, 'reltio.gettingStarted walkthrough missing');

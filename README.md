@@ -17,14 +17,14 @@
 ## Table of Contents
 
 - [What is Reltio IDE](#what-is-reltio-ide)
-- [Why Reltio IDE](#why-reltio-ide)
 - [Capabilities](#capabilities)
 - [Prerequisites](#prerequisites)
 - [Install Reltio IDE](#install-reltio-ide)
   - [Install on Cursor](#install-on-cursor)
   - [Install on VS Code](#install-on-vs-code)
+- [Choose how to connect](#choose-how-to-connect)
 - [Connect to your tenant](#connect-to-your-tenant)
-- [Connect a git repository instead](#connect-a-git-repository-instead)
+- [Connect a Git repository](#connect-a-git-repository)
 - [Open and navigate your configuration](#open-and-navigate-your-configuration)
 - [Create configuration objects](#create-configuration-objects)
 - [Visualize the ontology](#visualize-the-ontology)
@@ -36,25 +36,11 @@
 
 ## What is Reltio IDE
 
-Reltio IDE is an editor extension for building and managing your tenant's business configuration (L3). It brings modeling, validation, and deployment into a single environment inside VS Code or Cursor — with AI-assisted authoring, real-time validation, and a review step before any change reaches your tenant.
+Reltio IDE is an editor extension for building and managing Reltio business configuration (L3) inside VS Code or Cursor. It brings modeling, validation, AI-assisted authoring, and a review step into one place.
 
-If you already keep configuration in git, you can open that repository in Reltio IDE and work the same way — without connecting to a live tenant.
+You open configuration from **either** a live Reltio tenant **or** a Git repository — not both in the same workspace. Choose the source that matches how your team already works, then follow the matching section below.
 
-Reltio IDE supports the people who design and maintain tenant configuration across data governance, integration, and stewardship roles. If you currently edit `L3` configuration through the Console Data Modeler, hand-edited JSON, or the Intelligent JSON Editor, Reltio IDE is built to replace that workflow with one connected experience.
-
----
-
-## Why Reltio IDE
-
-Today, editing L3 metadata means moving between three tools, none of which cover the full workflow from creating a type to deploying it safely:
-
-| Existing approach | Limitation |
-|---|---|
-| **Console Data Modeler** | UI-based, but every change requires navigating multiple screens — slow for iterative modeling. |
-| **Direct JSON editing** | No validation, auto-completion, or structural guidance — prone to syntax errors and inconsistent configuration. |
-| **Intelligent JSON Editor** | Adds navigation, but doesn't validate against the L3 schema — errors often surface only after you apply to the tenant. |
-
-Reltio IDE replaces all three with one environment for creating, validating, and deploying L3 configuration — in the editor your team already uses for everything else.
+Reltio IDE supports the people who design and maintain tenant configuration across data governance, integration, and stewardship roles.
 
 ---
 
@@ -87,7 +73,7 @@ Before you install Reltio IDE, make sure you have:
 
 ## Install Reltio IDE
 
-Installation differs slightly by editor. Connecting to a tenant or a git repository is the same in Cursor and VS Code.
+Installation differs slightly by editor. After install, choose a tenant or a Git repository (see [Choose how to connect](#choose-how-to-connect)). The connect steps are the same in Cursor and VS Code.
 
 ### Install on Cursor
 
@@ -131,9 +117,22 @@ Either way, confirm that **Reltio IDE** appears in your installed extensions.
 
 ---
 
+## Choose how to connect
+
+Reltio IDE gives you two ways to open business configuration. Pick **one** based on how you work:
+
+| Option | Use when | What you click |
+|---|---|---|
+| **Reltio tenant** | You want to fetch configuration from a live tenant, edit it, and apply it back | **Connect your Reltio Tenant** |
+| **Git repository** | Your business configuration already lives in Git | **Connect your Repository** |
+
+Then follow **[Connect to your tenant](#connect-to-your-tenant)** or **[Connect a Git repository](#connect-a-git-repository)**.
+
+---
+
 ## Connect to your tenant
 
-These steps are the same in Cursor and VS Code.
+These steps are the same in Cursor and VS Code. Use this path if you chose a **Reltio tenant**.
 
 1. Open a folder in your editor. Reltio IDE requires an open folder before you can connect to a tenant.
 2. If you're prompted to trust the folder, select **Trust Folder & Continue**. This appears the first time you open the folder.
@@ -161,9 +160,9 @@ These steps are the same in Cursor and VS Code.
 
 ---
 
-## Connect a git repository instead
+## Connect a Git repository
 
-These steps are the same in Cursor and VS Code.
+These steps are the same in Cursor and VS Code. Use this path if you chose a **Git repository**.
 
 1. Open an empty folder, or a folder that already contains your cloned repository.
 2. Select the **Reltio** icon in the activity bar.
@@ -219,7 +218,7 @@ If Git reports that the repository was not found, the selected account does not 
 
 ### Notes
 
-- **Multi-config repositories are supported.** A repo holding many `BusinessConfig.json` files appears as a single root node, and the rows beneath it follow the repository's own folder structure. A config at `DP/dp_lif/BusinessConfig.json` shows as **repo → DP → dp_lif**. If one folder holds several configs, that folder keeps its own row and each file appears beneath it. A config sitting at the repository root appears directly under the repository row, named after its file.
+- You can work on **multiple configuration files** in the same repository at the same time.
 - **Add Config:** Automatic discovery only looks for `BusinessConfig.json`. To add a file with another name (for example `L3.json`), right-click the `.json` file in the Explorer and select **Add Config**. The file must be a valid Reltio business configuration.
 - **Remove Config** drops a single config from the tree, leaving the rest of the repository connected. **Remove Repository** (trash icon in the RELTIO IDE title bar, or right-click the repository row) clears the connection and deletes the folder contents.
 - Tenant-only actions (fetch, apply, configuration history) are hidden in this mode. A workspace is connected either to a tenant or to a repository, never both.
@@ -284,7 +283,6 @@ The ontology view displays a diagram of your local configuration — entity type
 1. Right-click **Entity Types** or **Relation Types** in the **RELTIO IDE** view and select **Show in Ontology**.
 2. Review the diagram. Each entity type appears as a labeled node showing its name, attribute count, connection count, and match rule count. Entity types marked **★ Consolidated** apply match and survivorship rules; entity types marked **Abstract** are base types that other entity types extend and don't hold records directly.
 3. Labeled arrows show relation type names, `extends` inheritance connections, and reference attribute connections.
-4. To reset the layout, open the Command Palette and run **Reltio: Reset Ontology Layout**.
 
 <p align="center">
   <img src="docs/images/ontology-viewer.png" alt="Interactive ontology diagram in VS Code showing entity type nodes with attribute and connection counts, and labeled relationship arrows" width="800" />
@@ -359,7 +357,7 @@ If the tenant configuration changed since your last fetch, the dialog asks you t
 
 - VS Code or Cursor
 - For tenant mode: a Reltio tenant and valid credentials (OAuth Client ID/Client secret + SSO routing tenant ID, or a bearer token), and permission to read and apply L3 configuration
-- For repository mode: Git installed on your PATH
+- For repository mode: Git installed on your PATH, and access to clone if the repository is private.
 
 ---
 

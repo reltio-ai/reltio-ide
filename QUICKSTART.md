@@ -1,6 +1,10 @@
 # Quickstart — How to Use Reltio IDE
 
-This guide gets you from install to an open configuration in VS Code or Cursor. Use a **tenant** (steps 3–5) or a **git repository** ([alternative below](#alternative-to-steps-3-5-connect-a-git-repository)). For product context, install screenshots, and the full Git setup (including private repositories), see [README.md](README.md).
+This guide gets you from install to editing. **Before you connect**, know that Reltio IDE has two options — a **Reltio tenant** or a **Git repository**. Pick one based on how you work. You cannot use both in the same workspace.
+
+After you are connected, continue here from [Edit the Configuration](#7-edit-the-configuration).
+
+Open [README.md](README.md#connect-a-git-repository) for the full Git connect (clone, private repositories, Add Config, Remove Config).
 
 ---
 
@@ -8,8 +12,8 @@ This guide gets you from install to an open configuration in VS Code or Cursor. 
 
 - **VS Code** (1.85+) or **Cursor**
 - **Node.js 18+** and **npm** (only if building from source)
-- A Reltio environment host, plus either an **OAuth Client ID and Client secret** (with your SSO routing tenant ID) or a valid **Bearer token**
-- Or, to edit a configuration straight from version control, a working `git` installation on your `PATH` and no Reltio credentials at all (see [Connect a Git Repository](#alternative-to-steps-3-5-connect-a-git-repository))
+- **If you will connect a tenant:** a Reltio environment host, plus either an **OAuth Client ID and Client secret** (with your SSO routing tenant ID) or a valid **Bearer token**
+- **If you will connect a Git repository:** Git on your `PATH`. No Reltio credentials. See [README.md — Connect a Git repository](README.md#connect-a-git-repository) if Git is missing or the repository is private.
 
 ---
 
@@ -20,6 +24,8 @@ This guide gets you from install to an open configuration in VS Code or Cursor. 
 1. Obtain the `.vsix` file from the releases list (or build it — see below).
 2. Open VS Code/Cursor → Extensions sidebar (`Ctrl+Shift+X`) → `...` menu → **Install from VSIX…**
 3. Select the file and reload when prompted.
+
+Install screenshots for Cursor and VS Code are in [README.md — Install Reltio IDE](README.md#install-reltio-ide).
 
 ### Build from source
 
@@ -44,13 +50,24 @@ cursor --install-extension target/reltio-metadata-editor-0.0.1.vsix
 
 Click the **Reltio** icon in the Activity Bar (left sidebar). This is your control panel for environments, tenants, and configurations.
 
-> The extension also activates automatically whenever you open a `*.reltio.json` file.
+---
 
-**Choose a path:** connect a **live tenant** (steps 3–5) or skip to a **git repository** ([Connect a Git Repository](#alternative-to-steps-3-5-connect-a-git-repository)). You do not need both.
+## 3. Choose how to connect
+
+Reltio IDE gives you two ways to open business configuration. Pick **one** based on how you work:
+
+| Option | Use when | What you click |
+|---|---|---|
+| **Reltio tenant** | You want to fetch configuration from a live tenant, edit it, and apply it back | **Add Environment** — then steps 4–6 below |
+| **Git repository** | Your business configuration already lives in Git | **Connect your Repository** — full steps in [README.md](README.md#connect-a-git-repository) |
+
+Then continue at [Edit the Configuration](#7-edit-the-configuration). If you chose Git, skip steps 4–6.
 
 ---
 
-## 3. Connect to an Environment
+## 4. Connect to an Environment
+
+*Only if you chose a **Reltio tenant**.*
 
 1. In the Reltio sidebar, click **Add Environment** (or run `Reltio: Add Environment` from the Command Palette).
 2. Enter your Reltio host, e.g. `361.reltio.com` — the extension validates the host before creating it.
@@ -88,7 +105,7 @@ To sign in again as a different user, right-click the environment → **Re-Login
 
 ---
 
-## 4. Add a Tenant
+## 5. Add a Tenant
 
 1. Right-click the authenticated environment → **Add Tenant**.
 2. Choose a tenant from the list fetched from the API.
@@ -96,7 +113,7 @@ To sign in again as a different user, right-click the environment → **Re-Login
 
 ---
 
-## 5. Fetch the Tenant Configuration (L3)
+## 6. Fetch the Tenant Configuration (L3)
 
 1. Right-click the tenant → **Get Configuration**.
 2. The extension downloads the tenant metadata and saves it as `L3.reltio.json` inside the tenant folder.
@@ -104,73 +121,19 @@ To sign in again as a different user, right-click the environment → **Re-Login
 
 ---
 
-## Alternative to Steps 3-5: Connect a Git Repository
+## Connect a Git repository
 
-Use this instead of steps 3–5 when the configuration already lives in git. No Reltio host, token, or OAuth credentials are needed. Git must be installed on your PATH. For private-repository sign-in detail, see [README.md](README.md#private-repositories).
+*Skip this if you chose a **Reltio tenant**.*
 
-1. Open an empty folder, or a folder that already holds your clone.
-2. In the Reltio sidebar, select **Connect your Repository**.
-3. If the folder is already a clone, Reltio IDE detects it and skips ahead. Otherwise, enter the remote URL (for example `https://github.com/org/repo.git`) and press Enter.
+In the Reltio sidebar, select **Connect your Repository**. Clone, private-repository sign-in, `BusinessConfig.json` discovery, **Add Config**, **Remove Config**, and **Remove Repository** are documented once in [README.md — Connect a Git repository](README.md#connect-a-git-repository).
 
-<p align="center">
-  <img src="docs/images/git-connect-repository.png" alt="Connect your Repository prompt asking for a Git remote URL" width="700" />
-  <br/>
-  <em>Screenshot (VS Code): Connect your Repository — paste the remote URL to clone.</em>
-</p>
-
-4. Reltio IDE searches up to 10 folder levels for `BusinessConfig.json` files (the name is not case-sensitive) and lists them in the tree.
-
-<p align="center">
-  <img src="docs/images/git-repository-connected.png" alt="RELTIO IDE view after connecting a git repository" width="700" />
-  <br/>
-  <em>Screenshot (VS Code): Connected repository — packs and configurations appear in the RELTIO IDE view.</em>
-</p>
-
-Authentication uses Git on your machine and its credential helper — whatever already works for `git clone` works here.
-
-**If Git is not installed**, Reltio IDE stops until you install Git from [https://git-scm.com/downloads](https://git-scm.com/downloads), reopen the editor, and retry:
-
-<p align="center">
-  <img src="docs/images/git-executable-not-found.png" alt="Git executable not found notification from Reltio IDE" width="500" />
-  <br/>
-  <em>Screenshot: Git is not installed — install Git, then retry Connect your Repository.</em>
-</p>
-
-**If the repository is private**, complete any sign-in that Git requests.
-
-<p align="center">
-  <img src="docs/images/git-select-account.png" alt="Git sign-in prompt during a private repository clone" width="700" />
-  <br/>
-  <em>Screenshot: Git may prompt you to sign in before cloning a private repository.</em>
-</p>
-
-**The tree mirrors your repository's folder layout:**
-
-```
-▼ reltio-config                      ← the repository
-  ▼ DP
-      dp_lif                         ← DP/dp_lif/BusinessConfig.json
-      dp_ret                         ← DP/dp_ret/BusinessConfig.json
-    BusinessConfig.json              ← at the repository root
-```
-
-A folder holding a single config collapses onto that config's row. A folder holding several keeps its own row, with one row per file beneath it.
-
-**Managing configs:**
-
-| Action | Where | What it does |
-|---|---|---|
-| Add Config | Right-click a `.json` file in the Explorer | Adopts a config that discovery missed, such as `L3.json`. Business configurations only; anything else is refused with an error. |
-| Remove Config | Right-click a config row | Drops that one config. The rest of the repository stays connected. |
-| Remove Repository | Environment row, or the view title | Clears the connection and deletes the folder contents. |
-
-Everything from Step 6 onward (editing, validation, navigation, the ontology preview) works the same way here. Tenant-only actions such as fetch, apply, and configuration history are hidden, since there is no tenant to talk to. A workspace connects either to a tenant or to a repository, never both.
+When the repository is connected, continue at [Edit the Configuration](#7-edit-the-configuration).
 
 ---
 
-## 6. Edit the Configuration
+## 7. Edit the Configuration
 
-Open `L3.reltio.json`. The editor comes alive with the following capabilities:
+Open `L3.reltio.json` (tenant) or `BusinessConfig.json` (Git). The editor comes alive with the following capabilities:
 
 ### Validation & Diagnostics
 
@@ -188,7 +151,7 @@ Open `L3.reltio.json`. The editor comes alive with the following capabilities:
 
 ### Configuration Tree
 
-The Reltio sidebar shows the full hierarchy:
+The Reltio sidebar shows the full hierarchy. A tenant workspace looks like this:
 
 ```
 ▼ 361.reltio.com
@@ -200,6 +163,8 @@ The Reltio sidebar shows the full hierarchy:
       ▶ Relation Types
     ▶ History
 ```
+
+A Git-connected workspace shows the repository's `BusinessConfig.json` files in the tree, matching the folder layout in Git.
 
 Click any tree item to jump to that location in the JSON editor.
 
@@ -221,7 +186,7 @@ All edits are AST-aware — commas, nesting, and whitespace are handled correctl
 
 ---
 
-## 7. Ontology Preview (Graph View)
+## 8. Ontology Preview (Graph View)
 
 1. Right-click **Entity Types** or **Relation Types** in the **RELTIO IDE** view and select **Show in Ontology**.
 2. An interactive graph opens:
@@ -236,7 +201,9 @@ All edits are AST-aware — commas, nesting, and whitespace are handled correctl
 
 ---
 
-## 8. Apply Changes Back to the Tenant
+## 9. Apply Changes Back to the Tenant
+
+*Only if you chose a **Reltio tenant**.* If you connected a Git repository, save your edits and commit and push with your editor's **Source Control** view instead.
 
 After editing locally:
 
@@ -250,7 +217,9 @@ After editing locally:
 
 ---
 
-## 9. Configuration History
+## 10. Configuration History
+
+*Only if you chose a **Reltio tenant**.*
 
 1. Right-click a tenant → **View Configuration History** — downloads the 10 most recent revisions into `{tenant}/history/`.
 2. Right-click the **History** folder → **Fetch More Configuration History** to load older revisions.
@@ -334,4 +303,4 @@ workspace/
 
 Legacy workspaces may still have `{host}.reltio.environment/` at the workspace root; the extension continues to discover those. New environments are created under `.reltio/`.
 
-If you connected a git repository instead, none of this applies: your config files stay exactly where the repository puts them, and you edit them in place. The extension only adds a small tracking file at the repository root, which it also adds to `.gitignore` for you.
+If you connected a Git repository instead, none of this applies: your config files stay exactly where the repository puts them. See [README.md — Connect a Git repository](README.md#connect-a-git-repository) for how the tree maps to those folders.
