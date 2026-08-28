@@ -1,13 +1,13 @@
 {
 	"title": "Reltio IDE Setup Guide",
-	"subtitle": "Get started with Reltio IDE in just a few minutes. Connect to your Reltio tenant, download your business configuration, and start building business configuration with AI-assisted authoring.",
+	"subtitle": "Get started with Reltio IDE in just a few minutes. First pick a Reltio tenant or a Git repository — you cannot use both in the same workspace — then start modeling with AI-assisted authoring.",
 	"steps": [
 		{
 			"id": "addEnvironment",
 			"number": 1,
 			"icon": "plug",
 			"title": "Connect to your Reltio environment",
-			"body": "<p>Your <strong>Reltio environment</strong> is the host where your tenant resides (for example, 361.reltio.com).</p><p>From the <strong>Reltio</strong> side panel, click <strong>Connect Your Reltio Tenant</strong>. The guided setup walks you through the complete onboarding process—from connecting to your environment to downloading your business configuration.</p>"
+			"body": "<p><strong>Choose how to connect first.</strong> Reltio IDE opens configuration from one source at a time:</p><ul><li><strong>Reltio tenant</strong> — click <strong>Connect your Reltio Tenant</strong> and continue with this step (skip step 4).</li><li><strong>Git repository</strong> — click <strong>Connect your Repository</strong> and go to step 4. No Reltio credentials are required.</li></ul><p>Pick the option that matches how you work.</p><p>Your <strong>Reltio environment</strong> is the host where your tenant resides (for example, 361.reltio.com). From the <strong>Reltio</strong> side panel, click <strong>Connect your Reltio Tenant</strong>. The guided setup walks you through connecting to your environment and downloading your business configuration.</p>"
 		},
 		{
 			"id": "signIn",
@@ -24,19 +24,26 @@
 			"body": "<p>After authentication, Reltio IDE retrieves the list of tenants you have access to.</p><p>Select the tenant you want to work with. Reltio IDE will automatically:</p><ul><li>Create a local workspace for the tenant.</li><li>Download the latest business configuration (L3.reltio.json).</li><li>Save a remote baseline so future changes can be compared before deployment.</li></ul><p>Need to work with additional tenants? Right-click your environment in the Reltio side panel and select <strong>Add Tenant</strong>.</p>"
 		},
 		{
-			"id": "startModeling",
+			"id": "connectGit",
 			"number": 4,
+			"icon": "repo",
+			"title": "Connect a Git repository",
+			"body": "<p>Use this instead of steps 1–3 if you chose a Git repository. Skip this step if you chose a Reltio tenant. No Reltio host, token, or OAuth credentials are required. Git must be installed on your PATH.</p><p>Open an empty folder (Reltio IDE clones into it), or open a folder that already contains your clone. In the Reltio side panel, select <strong>Connect your Repository</strong>. If the folder is already a clone, Reltio IDE detects it. Otherwise, enter the remote URL (for example <code>https://github.com/org/repo.git</code>) and press Enter.</p><p>Reltio IDE searches up to 10 folder levels for files named <code>BusinessConfig.json</code> (the name is not case-sensitive) and lists them in the RELTIO IDE view. To add a file with a different name, such as <code>L3.json</code>, right-click the <code>.json</code> file in Explorer and select <strong>Add Config</strong>. The file must be a valid Reltio business configuration.</p><p>A public repository does not require additional sign-in. For a private repository, complete any sign-in that Git requests.</p><p>You can work on multiple configuration files in the same repository at the same time.</p><p>Right-click a configuration and select <strong>Remove Config</strong> to drop it from the tree (the file stays in the repository). To disconnect, use the trash icon in the RELTIO IDE view title bar, or right-click the repository and select <strong>Remove Repository</strong> — this deletes the folder contents.</p><p>A workspace connects to a tenant or to a Git repository, not both. After you are connected, continue at step 5 to start modeling.</p>"
+		},
+		{
+			"id": "startModeling",
+			"number": 5,
 			"icon": "edit",
 			"title": "Start Modeling",
-			"body": "<p>Open L3.reltio.json and start editing.</p><p>Reltio IDE enhances the metadata authoring experience with:</p><ul><li>AI-assisted metadata authoring</li><li>Intelligent code completion</li><li>Real-time validation</li><li>Easy navigation across entities, relationships, and attributes</li><li>Ontology visualization</li></ul>"
+			"body": "<p>Open your configuration file and start editing (<code>L3.reltio.json</code> for a tenant, or <code>BusinessConfig.json</code> when you connected a Git repository).</p><p>Reltio IDE enhances the metadata authoring experience with:</p><ul><li>AI-assisted metadata authoring</li><li>Intelligent code completion</li><li>Real-time validation</li><li>Easy navigation across entities, relationships, and attributes</li><li>Ontology visualization</li></ul>"
 		},
 		{
 			"id": "applyChanges",
-			"number": 5,
+			"number": 6,
 			"icon": "cloud-upload",
 			"title": "Apply Your Changes",
-			"body": "<p>When you're ready to deploy your updates, right-click the tenant and select <strong>Apply Configuration to Tenant</strong>.</p><p>Before applying your changes, Reltio IDE automatically compares your local configuration with the latest version in the tenant. If the remote configuration has changed since you last downloaded it, you'll be shown a comparison view to review the differences before proceeding.</p><p>This helps prevent accidental overwrites and ensures you deploy with confidence.</p>"
+			"body": "<p>When you're connected to a tenant and ready to deploy, right-click the tenant and select <strong>Apply Configuration to Tenant</strong>.</p><p>Before applying your changes, Reltio IDE automatically compares your local configuration with the latest version in the tenant. If the remote configuration has changed since you last downloaded it, you'll be shown a comparison view to review the differences before proceeding.</p><p>This helps prevent accidental overwrites and ensures you deploy with confidence.</p><p>When you work from a Git repository, Reltio IDE hides tenant apply and history. Save your edits, then commit and push them with your editor's <strong>Source Control</strong> view.</p>"
 		}
 	],
-	"footer": "You can reopen this guide at any time by opening the <strong>Command Palette</strong> (Cmd+Shift+P on macOS or Ctrl+Shift+P on Windows/Linux) and running <strong>Reltio: Open Setup Guide</strong>, or by clicking <strong>Open the Setup Guide</strong> from the Reltio side panel."
+	"footer": "You can reopen this guide at any time by clicking <strong>Open the Setup Guide</strong> from the Reltio side panel."
 }

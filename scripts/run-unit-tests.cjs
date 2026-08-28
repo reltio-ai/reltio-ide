@@ -19,6 +19,7 @@ const SCRIPTS = [
 	'test-context-menu-reorganization.cjs',
 	'test-copy-tenant-id-to-clipboard.cjs',
 	'test-csp-nonce-hardening.cjs',
+	'test-docs-light-theme-screenshots-and-setup-guide.cjs',
 	'test-editor-navigation.cjs',
 	'test-extension-packaging.cjs',
 	'test-git-repository-source.cjs',
