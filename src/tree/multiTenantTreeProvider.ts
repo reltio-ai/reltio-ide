@@ -27,8 +27,7 @@ import {
 	WorkflowDraftNode,
 } from './workflowNodes';
 import { loadWorkflowAdapterUrl } from '../workspace/workflowAdapterConfig';
-import { listWorkflowDrafts } from '../workspace/workflowDrafts';
-import { listLocalBpmnFiles } from '../workspace/workflowBpmnFiles';
+import { bpmnFileName, listLocalBpmnFiles } from '../workspace/workflowBpmnFiles';
 import type { ProcessDefinition, JarDeployment } from '../api/workflowAdapterClient';
 import type { EState, TState, UxState } from '../ux/uxState';
 import { ConfigTreeItem } from './treeNodes';
@@ -113,11 +112,12 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 	 * Populated by `markWorkflowsLoaded()` after a successful fetch; `undefined`
 	 * means "not yet fetched this session".
 	 *
-	 * It is **not** cleared by `invalidate()`, and `clearWorkflowCache()` has no
-	 * caller yet, so an entry survives sign-out and tenant removal for the life
-	 * of the window. Deciding when to evict is an open item — see the review
-	 * notes on Part 1 — and needs settling before anything mutating (deploy,
-	 * JAR registration) reads from this map.
+	 * `invalidate()` deliberately does not clear it — a workspace rescan says
+	 * nothing about what is deployed, and re-fetching costs two network calls.
+	 * Removal does: `removeTenant()` and `removeEnvironment()` evict, so a
+	 * tenant that is removed and re-added cannot have a new process id
+	 * collision-checked against the previous tenant's definitions through
+	 * `getCachedProcessDefinitions()`.
 	 */
 	private readonly workflowCache = new Map<
 		string,
@@ -296,7 +296,10 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		this.invalidate();
 	}
 
-	removeEnvironment(_name: string): void {
+	removeEnvironment(name: string): void {
+		for (const key of this.workflowCache.keys()) {
+			if (key.startsWith(`${name}/`)) this.workflowCache.delete(key);
+		}
 		this.invalidate();
 	}
 
@@ -304,7 +307,8 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		this.invalidate();
 	}
 
-	removeTenant(_env: string, _tenantId: string): void {
+	removeTenant(env: string, tenantId: string): void {
+		this.clearWorkflowCache(env, tenantId);
 		this.invalidate();
 	}
 
@@ -520,7 +524,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		const files = await listLocalBpmnFiles(dir);
 		const drafts = files
 			.filter(f => f.baselineText === undefined)
-			.map(f => ({ processId: f.processId, fileUri: f.fileUri, fileName: `${f.processId}.bpmn20.xml` }));
+			.map(f => ({ processId: f.processId, fileUri: f.fileUri, fileName: bpmnFileName(f.processId) }));
 		const changed = new Set(files.filter(f => f.hasLocalChanges).map(f => f.processId));
 		const downloaded = new Set(files.filter(f => f.baselineText !== undefined).map(f => f.processId));
 		return { drafts, changed, downloaded };

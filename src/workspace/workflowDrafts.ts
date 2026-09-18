@@ -22,20 +22,19 @@
  * `workflowAdapterClient.ts`. `rewriteProcessIdentity` works by bounded regex.
  */
 import * as vscode from 'vscode';
-
-export const DRAFT_SUFFIX = '.bpmn20.xml';
+import { BPMN_SUFFIX, bpmnFileName, processIdFromBpmnFileName } from './workflowBpmnFiles';
 
 /**
- * A process id is the workflow's identity on the tenant: it names the process
- * in the engine, it is what an API call starts the workflow by, and it decides
- * whether a deploy creates a new workflow or a new *version* of an existing one.
- *
- * It also reaches three different contexts — a filename, a URL query parameter
- * and XML content — so this pattern is as much injection and path-traversal
- * safety as it is usability. Deliberately conservative: leading letter or
- * underscore, then letters, digits, underscore, dot or hyphen, 64 max.
+ * A draft and a downloaded deployment are the same kind of file on disk, so
+ * they share one suffix constant rather than each declaring the literal.
  */
-const PROCESS_ID_PATTERN = /^[A-Za-z_][A-Za-z0-9_.-]{0,63}$/;
+export const DRAFT_SUFFIX = BPMN_SUFFIX;
+
+/**
+ * Process-id rules live in `workflowBpmnFiles.ts`, beside the filename rules
+ * they have to agree with, and are re-exported here for this module's callers.
+ */
+export { isValidProcessId, processIdValidationMessage } from './workflowBpmnFiles';
 
 /** Matches the first `<process …>` element, with or without a namespace prefix. */
 const FIRST_PROCESS_TAG = /<(?:[\w.-]+:)?process\b[^>]*>/;
@@ -54,34 +53,17 @@ export interface DraftContext {
 
 // ─── Naming ──────────────────────────────────────────────────────────────────
 
-export function isValidProcessId(processId: string): boolean {
-	return PROCESS_ID_PATTERN.test(processId);
+export function draftFileName(processId: string): string {
+	return bpmnFileName(processId);
 }
 
 /**
- * Human-readable reason a process id was rejected, for `validateInput`.
- * Returns `undefined` when the id is acceptable.
+ * Strict inverse of `draftFileName`; `undefined` for anything else in the
+ * folder. One parser, shared with `listLocalBpmnFiles`, so a filename cannot be
+ * a valid draft here and an invalid BPMN there.
  */
-export function processIdValidationMessage(raw: string): string | undefined {
-	const id = raw.trim();
-	if (!id) return 'A process ID is required.';
-	if (id.length > 64) return 'A process ID must be 64 characters or fewer.';
-	if (!/^[A-Za-z_]/.test(id)) return 'A process ID must start with a letter or underscore.';
-	if (!PROCESS_ID_PATTERN.test(id)) {
-		return 'A process ID may contain only letters, digits, underscore, dot and hyphen.';
-	}
-	return undefined;
-}
-
-export function draftFileName(processId: string): string {
-	return `${processId}${DRAFT_SUFFIX}`;
-}
-
-/** Strict inverse of `draftFileName`; `undefined` for anything else in the folder. */
 export function processIdFromDraftFileName(fileName: string): string | undefined {
-	if (!fileName.endsWith(DRAFT_SUFFIX)) return undefined;
-	const processId = fileName.slice(0, -DRAFT_SUFFIX.length);
-	return isValidProcessId(processId) ? processId : undefined;
+	return processIdFromBpmnFileName(fileName);
 }
 
 /**

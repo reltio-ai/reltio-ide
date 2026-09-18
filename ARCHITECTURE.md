@@ -252,7 +252,7 @@ Create actions use the **context menu** only (`3_insert@*` groups — no `inline
 The tenant folder is the **git repository root** once bound to a remote. Everything git tracks lives in the component tree; everything the IDE maintains for itself lives in the gitignored `.reltio-ide/`. That split is what lets two tenants clone one repository on different branches and diff cleanly.
 
 - **`WorkflowAdapter.reltio.json`** — the tenant's Workflow Adapter base URL. A URL and a `version` field; never a token. Tracked at the tenant root, not gitignored: it is shared, non-secret configuration, not IDE-owned working state, so every teammate who clones the tenant's repository gets the correct Adapter URL automatically.
-- **`workflows/`** — local BPMN drafts, `{processId}.bpmn20.xml`. Created but not yet deployed; a draft survives its own deployment, since it is the only local copy and Activiti versions deployments anyway. Naming and parsing rules live in `src/workspace/workflowDrafts.ts`; `EnvironmentManager` supplies the URIs only.
+- **`workflows/`** — local BPMN process definitions, `{processId}.bpmn20.xml`, each with a `{processId}.bpmn20.baseline.xml` beside it once it has been fetched from the tenant. One rule separates the two kinds of file: a BPMN **with** a baseline is a downloaded deployment, and one **without** was never on the tenant, so it is a draft. Deploying a draft gives it a baseline and it stops being one. Comparison and baseline rules live in `src/workspace/workflowBpmnFiles.ts` — which also owns the process-id pattern, since every local BPMN is discovered by parsing its filename and the two rules have to agree; `src/workspace/workflowDrafts.ts` holds the draft-only XML generation and re-exports those rules. `EnvironmentManager` supplies the URIs only.
 
 ```text
 {tenantId}/                        <- git root (.git, .gitignore)
@@ -544,7 +544,9 @@ For a **mutating call to a separate service** (e.g. deploying a BPMN):
 4. **Re-fetch from the server afterwards** rather than patching the local cache — the server assigns ids, versions and timestamps, and may re-serialise the payload.
 5. Do not pre-gate the action on a role. The extension never decodes the JWT and has no roles endpoint, so a user's Reltio roles are unknowable client-side; a disabled-looking menu item would be a lie. Handle the 403 reactively and name the role in the message.
 
-**Example:** `deployProcessDefinition()` in `workflowAdapterClient.ts`, called from `reltio.deployWorkflowDraft`.
+**Example:** `deployProcessDefinition()` in `workflowAdapterClient.ts`, called from `reltio.deployWorkflow`.
+
+6. **Declare the command in `package.json` *and* register it in `src/`.** These are two separate edits and nothing ties them together: a command with a `contributes.commands` entry and a menu entry but no `registerCommand` call looks complete in review and in every structural test, then fails at click time with "command not found". `scripts/test-workflow-authoring.cjs` asserts every declared command is registered.
 
 ### Add a new webview message type
 

@@ -28,7 +28,9 @@
  *       right-click and not only as a hover icon (`group: "inline"` renders in
  *       the row action bar, never in the context menu); every workflow row type
  *       offers at least one right-click action; every tree `when` clause scoped
- *       with `view == reltioConfigTree &&`.
+ *       with `view == reltioConfigTree &&`; and every declared command actually
+ *       registered in `src/`, since a declared-but-unregistered command fails
+ *       at click time with "command not found" while passing every other check.
  *  13.  This script is registered in the hardcoded SCRIPTS array — the runner is
  *       not a glob, so an unregistered test silently never runs.
  *
@@ -483,6 +485,31 @@ const CRLF = '\r\n';
 			editorTitle.some(m => m.command === 'reltio.deployWorkflow' && /bpmn20/.test(String(m.when))),
 			'editor/title must offer Deploy on a .bpmn20.xml file',
 		);
+
+		// Declared, menu'd and documented is not the same as implemented.
+		// `reltio.copyJarModulePath` shipped with a command entry, two menu
+		// entries and a mention in a bundled skill, but no registerCommand call —
+		// so right-clicking a JAR and choosing it failed with "command not
+		// found". Every assertion above passed while that was true, because they
+		// all read package.json and none read the source.
+		const sourceDir = path.join(__dirname, '..', 'src');
+		const rawSource = (function readAll(dir) {
+			return fs.readdirSync(dir, { withFileTypes: true }).reduce((acc, entry) => {
+				const full = path.join(dir, entry.name);
+				if (entry.isDirectory()) return acc + readAll(full);
+				return entry.name.endsWith('.ts') ? acc + fs.readFileSync(full, 'utf-8') : acc;
+			}, '');
+		})(sourceDir);
+		// Most registrations put the id on its own line, so close the gap rather
+		// than requiring the call and the id to be adjacent in the source.
+		const sourceText = rawSource.replace(/registerCommand\(\s*/g, 'registerCommand(');
+
+		for (const id of declared) {
+			assert.ok(
+				sourceText.includes(`registerCommand('${id}'`),
+				`command "${id}" is declared in package.json but never registered in src/`,
+			);
+		}
 	}
 
 	// ── 14. Tier B: the test runner actually runs this script ─────────────────

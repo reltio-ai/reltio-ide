@@ -2909,6 +2909,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		),
 
 		/**
+		 * reltio.copyJarModulePath
+		 * The module path is the value needed to reference a registered JAR
+		 * anywhere else, and it is too long to retype from the tooltip.
+		 */
+		vscode.commands.registerCommand(
+			'reltio.copyJarModulePath',
+			async (node?: JarDeploymentNode) => {
+				if (!node) return;
+				await vscode.env.clipboard.writeText(node.deployment.module);
+				void vscode.window.showInformationMessage(
+					`Copied JAR module path: ${node.deployment.module}`,
+				);
+			},
+		),
+
+		/**
 		 * reltio.editWorkflowAdapterUrl
 		 * Context-menu recovery action: lets the user correct a wrong Adapter URL
 		 * without hunting through settings. Pre-fills the current saved value.
@@ -3018,7 +3034,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			void vscode.window.showErrorMessage('No Workflow Adapter URL saved. Run "Fetch Workflows" first.');
 			return undefined;
 		}
-		return { adapterUrl, token, environmentUrl: toHttpsBase(environmentName) };
+		// environmentName comes from a workspace folder name, so a folder such as
+		// `evil.com.reltio.environment` makes this throw UntrustedHostError. Every
+		// caller treats `undefined` as "already reported and handled"; letting the
+		// throw escape instead surfaces as an unhandled command failure, which is
+		// the exact defect the Part 1 review fixed in the two fetch handlers.
+		let environmentUrl: string;
+		try {
+			environmentUrl = toHttpsBase(environmentName);
+		} catch (e) {
+			void vscode.window.showErrorMessage((e as Error).message);
+			return undefined;
+		}
+		return { adapterUrl, token, environmentUrl };
 	}
 
 	/**

@@ -480,23 +480,34 @@ export async function getProcessDefinitionXml(
 	}
 
 	// Try JSON parse first — some local/dev Adapters wrap the XML in an object.
-	// If it succeeds and yields an object with at least one string-valued field,
-	// use the first string field as the XML. Otherwise fall back to the raw body.
+	// Only a value that actually looks like a BPMN document is accepted, and only
+	// from a known carrier field. Taking the first string-valued field instead
+	// returns `"OK"` for the Adapter's own `{status:"OK", data:"<definitions…"}`
+	// envelope, because `status` is enumerated first — and Part 2 writes whatever
+	// comes back to disk as both the editable BPMN and its baseline, so a wrong
+	// unwrap silently replaces the customer's workflow with that word.
 	const text = await response.text();
 	try {
 		const parsed = JSON.parse(text) as unknown;
 		if (parsed !== null && typeof parsed === 'object') {
-			const firstStringValue = Object.values(parsed as Record<string, unknown>).find(
-				(v): v is string => typeof v === 'string',
-			);
-			if (firstStringValue !== undefined) {
-				return firstStringValue;
+			const obj = parsed as Record<string, unknown>;
+			for (const key of ['data', 'xml', 'content', 'definition']) {
+				const value = obj[key];
+				if (typeof value === 'string' && looksLikeXml(value)) return value;
 			}
 		}
 	} catch {
 		// Not JSON — that's the normal production case.
 	}
 	return text;
+}
+
+/**
+ * A cheap shape check, not a parse — no XML parser is added to this project.
+ * Enough to tell a BPMN document from a status word or an error string.
+ */
+function looksLikeXml(value: string): boolean {
+	return value.trimStart().startsWith('<');
 }
 
 /**
