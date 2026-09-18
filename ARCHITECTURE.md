@@ -138,6 +138,10 @@ skills/workspace/                        # optional team overrides — never ove
 
 Precedence: **`skills/workspace/`** overrides the same logical playbook under **`.reltio/reltio-agent/skills/default/`**. Thin Cursor stubs under **`.cursor/skills/reltio-*`** point at canonical `skills/reltio-default/` paths. Full diagram and rules: [`openspec/changes/skills-and-enablement-packs-library/design.md`](openspec/changes/skills-and-enablement-packs-library/design.md) (§D3b, **§D4b**).
 
+
+**Workflow playbooks.** Four of the bundled skills cover Reltio Workflow: `workflow-bpmn-authoring`, `workflow-jar-customization`, `workflow-repo-contribution` and `workflow-local-adapter-setup`. The first ships a `references/bpmn-rules.md` beside it — `copyDirectory()` in `reltioAgentSync.ts` recurses, so a playbook's subfolder materializes with it. That file carries what determinism needs and a 30-line playbook cannot hold: the exact namespace block, the out-of-the-box class allow-list, the schema ordering constraints, a validation checklist and a deny-list, each entry naming the error code or silent failure it prevents.
+
+Raising `skillsBundleVersion` in `resources/reltio-agent-assets.json` is what delivers any skill change to an existing workspace — the sync gate is a string inequality against the user's `.sync-state.json`, so new files without a bump reach nobody. `scripts/test-workflow-skills-library.cjs` asserts the bump, house-style conformance, pointer parity, and that no internal-only content is shipped.
 ## Application Bootstrap
 
 **Activation triggers** (union in `package.json`): `onLanguage:json`, `workspaceContains:**/*.reltio.environment`, `workspaceContains:**/*.reltio.json`, plus the implicit `onView:reltioConfigTree` that VS Code generates from the view contribution (so the tree works in an empty workspace once the Reltio view is opened).
@@ -246,6 +250,9 @@ Create actions use the **context menu** only (`3_insert@*` groups — no `inline
 ### Tenant folder files (`{tenantId}/`)
 
 The tenant folder is the **git repository root** once bound to a remote. Everything git tracks lives in the component tree; everything the IDE maintains for itself lives in the gitignored `.reltio-ide/`. That split is what lets two tenants clone one repository on different branches and diff cleanly.
+
+- **`WorkflowAdapter.reltio.json`** — the tenant's Workflow Adapter base URL. A URL and a `version` field; never a token. Tracked at the tenant root, not gitignored: it is shared, non-secret configuration, not IDE-owned working state, so every teammate who clones the tenant's repository gets the correct Adapter URL automatically.
+- **`workflows/`** — local BPMN drafts, `{processId}.bpmn20.xml`. Created but not yet deployed; a draft survives its own deployment, since it is the only local copy and Activiti versions deployments anyway. Naming and parsing rules live in `src/workspace/workflowDrafts.ts`; `EnvironmentManager` supplies the URIs only.
 
 ```text
 {tenantId}/                        <- git root (.git, .gitignore)
@@ -372,7 +379,9 @@ Open a pre-upgrade workspace with two legacy tenants: confirm both migrate autom
 
 ## Data Architecture
 
-Beyond the file system, the extension keeps **tokens only in memory** (`TokenStore`). It reads `*.reltio.json` files (including `Business Config/BusinessConfig.json` under tenant folders), maintains `UriIndex`, and writes the ontology layout sidecar to `.reltio-ide/BusinessConfig.layout.json` inside the tenant folder (a git-sourced repository that carries the component tree gets the same treatment; one with an arbitrary layout keeps its sidecar beside the config, as before).
+Beyond the file system, the extension keeps **tokens only in memory** (`TokenStore`). It reads `*.reltio.json` files (including `Business Config/BusinessConfig.json` under tenant folders), maintains `UriIndex`, and writes the ontology layout sidecar to `.reltio-ide/BusinessConfig.layout.json` inside the tenant folder (a git-sourced repository that carries the component tree gets the same treatment; one with an arbitrary layout keeps its sidecar beside the config, as before). `WorkflowAdapter.reltio.json` (managed by `src/workspace/workflowAdapterConfig.ts`; a URL only, never a token) is tracked at the tenant root instead of `.reltio-ide/`, since it is shared, non-secret configuration rather than IDE-owned working state.
+
+All sidecars share the same pattern: a `version` field, `try/catch` on read → `undefined` on any error, and no secrets ever written.
 
 **In-memory / workspace data flow:**
 
@@ -475,6 +484,10 @@ No shared mutable state between extension host and webview — they communicate 
 
 **Model-first graph construction:** The ontology view builds a `GraphModel` from the parsed `ReltioBusinessModel` — not from the raw JSON. This ensures the graph always reflects the same semantic model used by the tree view and navigation providers.
 
+**Hand-built multipart bodies, not `FormData`:** `buildMultipartBody()` in `src/api/workflowAdapterClient.ts` assembles the deploy request body byte by byte and takes its boundary as a parameter. `FormData` generates its boundary internally at random, which makes the bytes that go on the wire unassertable; `tsconfig.json` also sets `lib: ["ES2022"]` with no `"DOM"`, so `FormData`/`Blob` availability is not something to depend on. Lengths are UTF-8 byte lengths — a BPMN carrying an accented process name is the case where byte and string length diverge, and getting it wrong malforms the request in a way the server reports unhelpfully. `scripts/test-workflow-authoring.cjs` pins the exact layout with a non-ASCII fixture.
+
+**Untrusted text never reaches a header:** the multipart builder refuses a field name or filename containing a quote or a line break, so a value that reached it from outside could not inject additional multipart headers. Process ids are already validated upstream; this is depth, not the primary control.
+
 **Escape at the boundary, verify with a hostile fixture:** Every dynamic string the ontology webview places into `innerHTML` (entity/attribute/relation names and URIs) is escaped in `src/ontology/inspectorHtml.ts` before it reaches a template string — never at the point of insertion. `scripts/test-ontology-webview-hardening.cjs` runs a deliberately hostile `.reltio.json`-shaped fixture (names containing `<img onerror=...>`, `<script>`, quotes) through the real `buildGraphModel()` → `inspectorHtml.ts` pipeline and asserts the output never contains an unescaped tag or attribute, rather than relying on a one-time manual read-through.
 
 ## Common Modification Recipes
@@ -492,21 +505,46 @@ No shared mutable state between extension host and webview — they communicate 
 
 ### Add a new tree section
 
+For a **config-model section** (entity types, relation types, sources, etc.) — sections that live inside `L3.reltio.json`:
 1. Define the new section's structure in `src/model/types.ts` if not already present
 2. Add tree node creation logic in `src/tree/configSubtree.ts` (section list and child dispatch) — follow existing patterns for entity types, relation types, or folders
 3. Assign a `ConfigNodeType` and `contextValue` in `src/tree/treeNodes.ts` for menu targeting
 4. If the section needs commands, register them in `src/extension.ts` and add `when` clauses in `package.json` `contributes.menus`
 
+For a **service-level section** (a distinct backend service, not part of the L3 config) — e.g., the Workflow Inspector:
+1. Add new node classes in a *separate* file (e.g., `src/tree/workflowNodes.ts`), not inside `treeNodes.ts`, so the `ConfigNodeType` union stays clean.
+2. Add the new node types to `MultiTenantTreeElement` in `multiTenantTreeProvider.ts` and add `getChildren` / `getParent` branches.
+3. For lazy-loaded data, use an in-memory cache map on `MultiTenantTreeProvider` keyed by `"${env}/${tenantId}"` and expose a `markXxxLoaded()` method the command handler calls after a successful fetch.
+4. For persisted settings (service URL, etc.), use a sidecar JSON file in the tenant directory — see `src/workspace/workflowAdapterConfig.ts` for the pattern.
+
 **Anti-pattern:** Don't add context menu items without a `when` clause — they'll appear on all tree items.
 
-**Example:** Entity types section in `configSubtree.ts`
+**Example:** Entity types section in `configSubtree.ts`; Workflow Inspector in `workflowNodes.ts` + `multiTenantTreeProvider.ts`
 
 ### Add a new Reltio API endpoint
 
-1. Add an async function in `src/api/reltioClient.ts` using `fetch` + `fetchWithTimeout`, building URLs with `toHttpsBase(baseUrl)`
-2. Map non-200 responses to `ReltioApiError`; treat 401 as unauthorized for token clearing in `extension.ts`
-3. Call the new function from the appropriate command handler in `src/extension.ts` (environment vs tenant context)
-4. Document the endpoint in the OpenSpec / internal API reference if the contract is non-trivial
+For a **platform API** (all calls go to the same Reltio environment URL as `listTenants`, `fetchL3Configuration`, etc.):
+1. Add an async function in `src/api/reltioClient.ts` using `fetch` + `fetchWithTimeout`, building URLs with `toHttpsBase(baseUrl)`.
+2. Map non-200 responses to `ReltioApiError`; treat 401 as unauthorized for token clearing in `extension.ts`.
+3. Call the new function from the appropriate command handler in `src/extension.ts` (environment vs tenant context).
+4. Document the endpoint in the OpenSpec / internal API reference if the contract is non-trivial.
+
+For a **separate service API** (different base URL, e.g. the Workflow Adapter):
+1. Create a new client module (e.g., `src/api/workflowAdapterClient.ts`).
+2. **Always call `toHttpsBase(serviceUrl)` before attaching any bearer token** — this ensures the host allowlist (`reltio.trustedHostSuffixes`) is applied, `http://` is upgraded to `https://`, and no credential can be sent to an untrusted host.
+3. Use `fetchWithTimeout` (imported from `reltioClient.ts`) rather than raw `fetch` to get the 15-second abort safety net.
+4. Wrap network-level failures in a domain-specific error class (e.g., `WorkflowConnectionError`) so the command handler can distinguish "wrong URL" from "wrong credentials" and offer the right recovery action.
+5. `toHttpsBase` and `fetchWithTimeout` are exported from `reltioClient.ts` precisely for this pattern.
+
+For a **mutating call to a separate service** (e.g. deploying a BPMN):
+
+1. Follow the separate-service rules above, then take the payload as a **string, not a `vscode.Uri`**. The test harness's `vscode` stub returns an empty `Uint8Array` from `workspace.fs.readFile`, so anything that reads a file is untestable by construction — keep the file read in the command handler (`vscode.workspace.openTextDocument(uri).getText()`) and leave the API function a pure string-to-request transform.
+2. Save a dirty editor before reading it, via `ensureDocumentSaved()` in `extension.ts`, so a command can never act on stale disk contents.
+3. Give the call its own timeout constant; a write that the server parses is not a read.
+4. **Re-fetch from the server afterwards** rather than patching the local cache — the server assigns ids, versions and timestamps, and may re-serialise the payload.
+5. Do not pre-gate the action on a role. The extension never decodes the JWT and has no roles endpoint, so a user's Reltio roles are unknowable client-side; a disabled-looking menu item would be a lie. Handle the 403 reactively and name the role in the message.
+
+**Example:** `deployProcessDefinition()` in `workflowAdapterClient.ts`, called from `reltio.deployWorkflowDraft`.
 
 ### Add a new webview message type
 

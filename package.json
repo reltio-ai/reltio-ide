@@ -344,6 +344,71 @@
       {
         "command": "reltio.addFileAsTenant",
         "title": "Add Config"
+      },
+      {
+        "command": "reltio.fetchWorkflows",
+        "title": "Fetch Workflows",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "reltio.refreshWorkflows",
+        "title": "Refresh Workflows",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "reltio.editWorkflowAdapterUrl",
+        "title": "Edit Workflow Adapter URL",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "reltio.openWorkflowBpmn",
+        "title": "Open BPMN",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "reltio.newWorkflowDraft",
+        "title": "New Workflow...",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "reltio.duplicateWorkflowDraft",
+        "title": "Duplicate as Draft...",
+        "icon": "$(files)"
+      },
+      {
+        "command": "reltio.deployWorkflow",
+        "title": "Deploy to Tenant",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "reltio.refreshProcessDefinitions",
+        "title": "Refresh BPMNs",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "reltio.refreshJarDeployments",
+        "title": "Refresh JARs",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "reltio.compareWorkflowBpmn",
+        "title": "Compare with Last Fetch",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "reltio.discardWorkflowBpmnChanges",
+        "title": "Discard Local Changes",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "reltio.deleteWorkflowDraft",
+        "title": "Delete Draft",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "reltio.copyJarModulePath",
+        "title": "Copy JAR Module Path",
+        "icon": "$(copy)"
       }
     ],
     "configuration": {
@@ -457,6 +522,11 @@
         {
           "command": "reltio.showOntologyPreview",
           "when": "resourceFilename =~ /\\.reltio\\.json$/",
+          "group": "navigation"
+        },
+        {
+          "command": "reltio.deployWorkflow",
+          "when": "resourceFilename =~ /\\.bpmn20\\.xml$/",
           "group": "navigation"
         }
       ],
@@ -691,6 +761,131 @@
           "command": "reltio.removeGitTenant",
           "when": "viewItem =~ /^reltio\\.tenant/ && reltio.workspaceSource == 'git'",
           "group": "9_delete"
+        },
+        {
+          "command": "reltio.fetchWorkflows",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.folder/",
+          "group": "inline@1"
+        },
+        {
+          "command": "reltio.refreshWorkflows",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.folder",
+          "group": "1_refresh@1"
+        },
+        {
+          "command": "reltio.refreshWorkflows",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.folder",
+          "group": "inline@2"
+        },
+        {
+          "command": "reltio.editWorkflowAdapterUrl",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.folder/",
+          "group": "2_config@1"
+        },
+        {
+          "command": "reltio.refreshProcessDefinitions",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.processDefinitions.folder",
+          "group": "1_refresh@1"
+        },
+        {
+          "command": "reltio.refreshProcessDefinitions",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.processDefinitions.folder",
+          "group": "inline@1"
+        },
+        {
+          "command": "reltio.newWorkflowDraft",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.processDefinitions.folder",
+          "group": "5_insert@01"
+        },
+        {
+          "command": "reltio.newWorkflowDraft",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.processDefinitions.folder",
+          "group": "inline@2"
+        },
+        {
+          "command": "reltio.openWorkflowBpmn",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.processDefinition(\\.changed)?$/",
+          "group": "navigation@1"
+        },
+        {
+          "command": "reltio.duplicateWorkflowDraft",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.processDefinition(\\.changed)?$/",
+          "group": "5_insert@01"
+        },
+        {
+          "command": "reltio.duplicateWorkflowDraft",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.processDefinition(\\.changed)?$/",
+          "group": "inline@2"
+        },
+        {
+          "command": "reltio.deployWorkflow",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.processDefinition.changed",
+          "group": "4_deploy@01"
+        },
+        {
+          "command": "reltio.deployWorkflow",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.processDefinition.changed",
+          "group": "inline@1"
+        },
+        {
+          "command": "reltio.compareWorkflowBpmn",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.processDefinition.changed",
+          "group": "4_deploy@02"
+        },
+        {
+          "command": "reltio.discardWorkflowBpmnChanges",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.processDefinition.changed",
+          "group": "7_modification@01"
+        },
+        {
+          "command": "reltio.refreshJarDeployments",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.jarDeployments.folder",
+          "group": "1_refresh@1"
+        },
+        {
+          "command": "reltio.refreshJarDeployments",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.jarDeployments.folder",
+          "group": "inline@1"
+        },
+        {
+          "command": "reltio.copyJarModulePath",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.jarDeployment",
+          "group": "8_copy@1"
+        },
+        {
+          "command": "reltio.copyJarModulePath",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.jarDeployment",
+          "group": "inline@1"
+        },
+        {
+          "command": "reltio.refreshProcessDefinitions",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.drafts.folder",
+          "group": "1_refresh@1"
+        },
+        {
+          "command": "reltio.newWorkflowDraft",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.drafts.folder",
+          "group": "5_insert@01"
+        },
+        {
+          "command": "reltio.newWorkflowDraft",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.drafts.folder",
+          "group": "inline@1"
+        },
+        {
+          "command": "reltio.deployWorkflow",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.draft",
+          "group": "4_deploy@01"
+        },
+        {
+          "command": "reltio.deployWorkflow",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.draft",
+          "group": "inline@1"
+        },
+        {
+          "command": "reltio.deleteWorkflowDraft",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.draft",
+          "group": "9_delete@01"
         }
       ],
       "explorer/context": [

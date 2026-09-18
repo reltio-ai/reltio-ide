@@ -36,6 +36,9 @@ const SCRIPTS = [
 	'test-setup-ux-redesign.cjs',
 	'test-skills-and-enablement-packs-library.cjs',
 	'test-terms-of-use-gate.cjs',
+	'test-workflow-authoring.cjs',
+	'test-workflow-inspector.cjs',
+	'test-workflow-skills-library.cjs',
 ];
 
 function main() {

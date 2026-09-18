@@ -14,7 +14,22 @@ import {
 	GitFolderNode,
 	HistoryFolderNode,
 	HistorySnapshotNode,
+	BusinessConfigFolderNode,
 } from './multiTenantNodes';
+import {
+	WorkflowsFolderNode,
+	WorkflowFetchActionNode,
+	ProcessDefinitionsFolderNode,
+	JarDeploymentsFolderNode,
+	ProcessDefinitionNode,
+	JarDeploymentNode,
+	WorkflowDraftsFolderNode,
+	WorkflowDraftNode,
+} from './workflowNodes';
+import { loadWorkflowAdapterUrl } from '../workspace/workflowAdapterConfig';
+import { listWorkflowDrafts } from '../workspace/workflowDrafts';
+import { listLocalBpmnFiles } from '../workspace/workflowBpmnFiles';
+import type { ProcessDefinition, JarDeployment } from '../api/workflowAdapterClient';
 import type { EState, TState, UxState } from '../ux/uxState';
 import { ConfigTreeItem } from './treeNodes';
 import {
@@ -30,9 +45,18 @@ export type MultiTenantTreeElement =
 	| EnvironmentNode
 	| TenantNode
 	| GitFolderNode
+	| BusinessConfigFolderNode
 	| HistoryFolderNode
 	| HistorySnapshotNode
-	| ConfigTreeItem;
+	| ConfigTreeItem
+	| WorkflowsFolderNode
+	| WorkflowFetchActionNode
+	| ProcessDefinitionsFolderNode
+	| JarDeploymentsFolderNode
+	| ProcessDefinitionNode
+	| JarDeploymentNode
+	| WorkflowDraftsFolderNode
+	| WorkflowDraftNode;
 
 export function historyExposedStorageKey(environmentName: string, tenantId: string): string {
 	return `reltio.history.exposed::${environmentName}::${tenantId}`;
@@ -84,6 +108,22 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 	private treeChangeDebounceTimer: ReturnType<typeof setTimeout> | undefined;
 	private uxState: UxState | undefined;
 
+	/**
+	 * In-memory workflow data keyed by `"${environmentName}/${tenantId}"`.
+	 * Populated by `markWorkflowsLoaded()` after a successful fetch; `undefined`
+	 * means "not yet fetched this session".
+	 *
+	 * It is **not** cleared by `invalidate()`, and `clearWorkflowCache()` has no
+	 * caller yet, so an entry survives sign-out and tenant removal for the life
+	 * of the window. Deciding when to evict is an open item — see the review
+	 * notes on Part 1 — and needs settling before anything mutating (deploy,
+	 * JAR registration) reads from this map.
+	 */
+	private readonly workflowCache = new Map<
+		string,
+		{ definitions: ProcessDefinition[]; jars: JarDeployment[] }
+	>();
+
 	constructor(
 		private readonly environmentManager: EnvironmentManager | null,
 		private readonly tokenStore: TokenStore,
@@ -132,6 +172,88 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 	markHistoryExposed(environmentName: string, tenantId: string): void {
 		void this.workspaceState.update(historyExposedStorageKey(environmentName, tenantId), true);
 		this.scheduleTreeRefresh();
+	}
+
+	/**
+	 * Store workflow results and refresh the tree so the Workflows sub-tree
+	 * expands immediately. Called from `extension.ts` after a successful
+	 * `reltio.fetchWorkflows` or `reltio.refreshWorkflows` command.
+	 */
+	markWorkflowsLoaded(
+		environmentName: string,
+		tenantId: string,
+		definitions: ProcessDefinition[],
+		jars: JarDeployment[],
+	): void {
+		this.workflowCache.set(`${environmentName}/${tenantId}`, { definitions, jars });
+		this.scheduleTreeRefresh();
+	}
+
+	/**
+	 * Replace only the process-definition half of a tenant's cache.
+	 *
+	 * The two lists come from two independent endpoints, so refreshing one should
+	 * not require a round trip for the other. A partial update on a tenant that
+	 * has never been fetched still seeds the other half as empty, so the tree has
+	 * something coherent to render.
+	 */
+	markProcessDefinitionsLoaded(
+		environmentName: string,
+		tenantId: string,
+		definitions: ProcessDefinition[],
+	): void {
+		const key = `${environmentName}/${tenantId}`;
+		const existing = this.workflowCache.get(key);
+		this.workflowCache.set(key, { definitions, jars: existing?.jars ?? [] });
+		this.scheduleTreeRefresh();
+	}
+
+	/** Replace only the JAR half of a tenant's cache. */
+	markJarDeploymentsLoaded(
+		environmentName: string,
+		tenantId: string,
+		jars: JarDeployment[],
+	): void {
+		const key = `${environmentName}/${tenantId}`;
+		const existing = this.workflowCache.get(key);
+		this.workflowCache.set(key, { definitions: existing?.definitions ?? [], jars });
+		this.scheduleTreeRefresh();
+	}
+
+	/** Cached JAR deployments for one tenant, or an empty list when unfetched. */
+	getCachedJarDeployments(environmentName: string, tenantId: string): JarDeployment[] {
+		return this.workflowCache.get(`${environmentName}/${tenantId}`)?.jars ?? [];
+	}
+
+	/**
+	 * Process definitions cached for one tenant, or an empty list when Workflows
+	 * has not been fetched this session.
+	 *
+	 * Exposed so a command can collision-check a proposed process id against what
+	 * is actually deployed regardless of which tree row it was launched from —
+	 * reading `definitions` off the node only works from the Process Definitions
+	 * folder, and that guard is what stops a draft silently versioning a live
+	 * workflow.
+	 */
+	getCachedProcessDefinitions(environmentName: string, tenantId: string): ProcessDefinition[] {
+		return this.workflowCache.get(`${environmentName}/${tenantId}`)?.definitions ?? [];
+	}
+
+	/**
+	 * A draft was created or deleted — re-render the Workflows branch so the
+	 * Drafts folder appears, updates its count, or disappears.
+	 *
+	 * Deliberately `scheduleTreeRefresh()` and not `invalidate()`: a local file
+	 * write says nothing about the environment, and `invalidate()` would trigger a
+	 * full environment rescan for it.
+	 */
+	notifyWorkflowDraftsChanged(): void {
+		this.scheduleTreeRefresh();
+	}
+
+	/** Clear cached workflow data for one tenant (e.g. after removing the tenant). */
+	clearWorkflowCache(environmentName: string, tenantId: string): void {
+		this.workflowCache.delete(`${environmentName}/${tenantId}`);
 	}
 
 	/** L3 / history edits: refresh tree labels only (no SecretStorage, no env rescan). */
@@ -259,6 +381,57 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			);
 		}
 		if (element instanceof HistoryFolderNode) {
+			// History now lives under Business Config, not directly under the tenant.
+			return new BusinessConfigFolderNode(element.environmentName, element.tenantId);
+		}
+		if (element instanceof WorkflowsFolderNode) {
+			const ti = this.findTenantInfo(element.environmentName, element.tenantId);
+			return new TenantNode(
+				element.environmentName,
+				element.tenantId,
+				ti?.hasL3 ?? false,
+				(ti?.hasL3 ?? false) && !this.tokenStore.hasToken(element.environmentName),
+				this.tokenStore.hasToken(element.environmentName),
+				this.uxState?.perTenant.get(`${element.environmentName}/${element.tenantId}`) ?? 'T_NO_L3',
+				false,
+				this.gitLabelFor(element.environmentName, element.tenantId),
+			);
+		}
+		// Everything below the Workflows folder. Before this, all of these fell
+		// through to `undefined`, so `reveal()` silently did nothing on any workflow
+		// node. Reconstruction rather than a held reference is safe because every
+		// node sets a stable `id` and VS Code matches on it — the same technique the
+		// TenantNode branches above already use.
+		if (
+			element instanceof ProcessDefinitionsFolderNode ||
+			element instanceof JarDeploymentsFolderNode ||
+			element instanceof WorkflowDraftsFolderNode ||
+			element instanceof WorkflowFetchActionNode
+		) {
+			return this.workflowsFolderFor(element.environmentName, element.tenantId);
+		}
+		if (element instanceof ProcessDefinitionNode) {
+			const cached = this.workflowCache.get(`${element.environmentName}/${element.tenantId}`);
+			return new ProcessDefinitionsFolderNode(
+				element.environmentName,
+				element.tenantId,
+				cached?.definitions ?? [],
+			);
+		}
+		if (element instanceof JarDeploymentNode) {
+			const cached = this.workflowCache.get(`${element.environmentName}/${element.tenantId}`);
+			return new JarDeploymentsFolderNode(
+				element.environmentName,
+				element.tenantId,
+				cached?.jars ?? [],
+			);
+		}
+		if (element instanceof WorkflowDraftNode) {
+			return this.workflowDraftsFor(element.environmentName, element.tenantId).then(
+				drafts => new WorkflowDraftsFolderNode(element.environmentName, element.tenantId, drafts),
+			);
+		}
+		if (element instanceof BusinessConfigFolderNode) {
 			const ti = this.findTenantInfo(element.environmentName, element.tenantId);
 			return new TenantNode(
 				element.environmentName,
@@ -310,17 +483,52 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		if (p) return p;
 		const loc = tenantLocFromL3File(element.tenantL3Uri!, this.environmentManager);
 		if (!loc || element.jsonPath.length > 1) return undefined;
-		const ti = this.findTenantInfo(loc.environmentName, loc.tenantId);
-		return new TenantNode(
-			loc.environmentName,
-			loc.tenantId,
-			ti?.hasL3 ?? false,
-			(ti?.hasL3 ?? false) && !this.tokenStore.hasToken(loc.environmentName),
-			this.tokenStore.hasToken(loc.environmentName),
-			this.uxState?.perTenant.get(`${loc.environmentName}/${loc.tenantId}`) ?? 'T_NO_L3',
-			false,
-			this.gitLabelFor(loc.environmentName, loc.tenantId),
-		);
+		// Top-level config items now live under Business Config, not directly under the tenant.
+		return new BusinessConfigFolderNode(loc.environmentName, loc.tenantId);
+	}
+
+	/**
+	 * Rebuild a tenant's Workflows folder node, reading the saved Adapter URL so
+	 * the reconstructed node carries the same collapsible state as the rendered
+	 * one. Async is legal here — `getParent` returns a `ProviderResult`.
+	 */
+	private async workflowsFolderFor(
+		environmentName: string,
+		tenantId: string,
+	): Promise<WorkflowsFolderNode> {
+		const savedAdapterUrl = this.environmentManager
+			? await loadWorkflowAdapterUrl(
+				this.environmentManager.getWorkflowAdapterConfigUri(environmentName, tenantId),
+			)
+			: undefined;
+		return new WorkflowsFolderNode(environmentName, tenantId, savedAdapterUrl);
+	}
+
+	/**
+	 * Local BPMNs for one tenant, split by whether they have a baseline.
+	 *
+	 * A baseline means the file came from the tenant, so it belongs to a deployed
+	 * definition and is surfaced there with a local-changes marker. No baseline
+	 * means it was never deployed — that is a draft. One directory scan answers
+	 * both questions, so the two branches cannot disagree.
+	 */
+	private async localBpmnStateFor(environmentName: string, tenantId: string) {
+		if (!this.environmentManager) {
+			return { drafts: [] as { processId: string; fileUri: vscode.Uri; fileName: string }[], changed: new Set<string>(), downloaded: new Set<string>() };
+		}
+		const dir = this.environmentManager.getWorkflowDraftsDirectoryUri(environmentName, tenantId);
+		const files = await listLocalBpmnFiles(dir);
+		const drafts = files
+			.filter(f => f.baselineText === undefined)
+			.map(f => ({ processId: f.processId, fileUri: f.fileUri, fileName: `${f.processId}.bpmn20.xml` }));
+		const changed = new Set(files.filter(f => f.hasLocalChanges).map(f => f.processId));
+		const downloaded = new Set(files.filter(f => f.baselineText !== undefined).map(f => f.processId));
+		return { drafts, changed, downloaded };
+	}
+
+	/** Drafts on disk for one tenant; empty when the folder does not exist yet. */
+	private async workflowDraftsFor(environmentName: string, tenantId: string) {
+		return (await this.localBpmnStateFor(environmentName, tenantId)).drafts;
 	}
 
 	/**
@@ -435,24 +643,101 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			return this.gitChildren(element.environmentName, element.folderPath);
 		}
 		if (element instanceof TenantNode) {
-			const items: MultiTenantTreeElement[] = [];
+			const children: MultiTenantTreeElement[] = [];
+
+			// Business Config folder — only shown when an L3 file is present.
 			if (element.hasL3) {
-				const showHistory = await this.shouldShowHistoryFolder(element.environmentName, element.tenantId);
-				if (showHistory) {
-					const dir = this.environmentManager.getHistoryDirectoryUri(
-						element.environmentName,
-						element.tenantId,
-					);
-					const snaps = await listLocalHistorySnapshots(dir);
-					items.push(new HistoryFolderNode(element.environmentName, element.tenantId, snaps.length));
-				}
-				const parsed = await this.loadParsed(element.environmentName, element.tenantId);
-				if (parsed) {
-					const uri = this.environmentManager.getL3Uri(element.environmentName, element.tenantId);
-					items.push(...getConfigRootChildren(parsed.model, uri));
-				}
+				children.push(new BusinessConfigFolderNode(element.environmentName, element.tenantId));
+			}
+
+			// Workflows folder — shown regardless of L3 presence, but never in git mode.
+			// `gitChildren()` also builds TenantNodes, and there its `tenantId` is a marker
+			// key derived from a repository folder path, not a Reltio tenant: there is no
+			// Adapter to query, and the environment's "token" is the GIT_SOURCE_TOKEN
+			// sentinel, which is a non-empty string and so passes an `if (!token)` guard.
+			const isGitSource = this.tokenStore.getToken(element.environmentName) === GIT_SOURCE_TOKEN;
+			if (!isGitSource) {
+				const configUri = this.environmentManager.getWorkflowAdapterConfigUri(
+					element.environmentName,
+					element.tenantId,
+				);
+				const savedAdapterUrl = await loadWorkflowAdapterUrl(configUri);
+				children.push(
+					new WorkflowsFolderNode(element.environmentName, element.tenantId, savedAdapterUrl),
+				);
+			}
+
+			return children;
+		}
+		if (element instanceof BusinessConfigFolderNode) {
+			// Today's tenant children, verbatim — moved one level deeper.
+			const items: MultiTenantTreeElement[] = [];
+			const showHistory = await this.shouldShowHistoryFolder(element.environmentName, element.tenantId);
+			if (showHistory) {
+				const dir = this.environmentManager.getHistoryDirectoryUri(
+					element.environmentName,
+					element.tenantId,
+				);
+				const snaps = await listLocalHistorySnapshots(dir);
+				items.push(new HistoryFolderNode(element.environmentName, element.tenantId, snaps.length));
+			}
+			const parsed = await this.loadParsed(element.environmentName, element.tenantId);
+			if (parsed) {
+				const uri = this.environmentManager.getL3Uri(element.environmentName, element.tenantId);
+				items.push(...getConfigRootChildren(parsed.model, uri));
 			}
 			return items;
+		}
+		if (element instanceof WorkflowsFolderNode) {
+			const cached = this.workflowCache.get(`${element.environmentName}/${element.tenantId}`);
+			if (cached === undefined) {
+				// URL saved but not yet loaded this session — show a fetch action row.
+				return element.savedAdapterUrl !== undefined
+					? [new WorkflowFetchActionNode(element.environmentName, element.tenantId)]
+					: [];
+			}
+			const children: MultiTenantTreeElement[] = [
+				new ProcessDefinitionsFolderNode(
+					element.environmentName,
+					element.tenantId,
+					cached.definitions,
+				),
+				new JarDeploymentsFolderNode(
+					element.environmentName,
+					element.tenantId,
+					cached.jars,
+				),
+			];
+			// Drafts appear only when at least one exists — same rule as History.
+			const drafts = await this.workflowDraftsFor(element.environmentName, element.tenantId);
+			if (drafts.length > 0) {
+				children.push(
+					new WorkflowDraftsFolderNode(element.environmentName, element.tenantId, drafts),
+				);
+			}
+			return children;
+		}
+		if (element instanceof WorkflowDraftsFolderNode) {
+			return element.drafts.map(
+				d => new WorkflowDraftNode(element.environmentName, element.tenantId, d),
+			);
+		}
+		if (element instanceof ProcessDefinitionsFolderNode) {
+			const { changed, downloaded } = await this.localBpmnStateFor(
+				element.environmentName,
+				element.tenantId,
+			);
+			return element.definitions.map(d => new ProcessDefinitionNode(
+				element.environmentName,
+				element.tenantId,
+				d,
+				changed.has(d.type) ? 'changed' : downloaded.has(d.type) ? 'clean' : 'none',
+			));
+		}
+		if (element instanceof JarDeploymentsFolderNode) {
+			return element.deployments.map(
+				d => new JarDeploymentNode(element.environmentName, element.tenantId, d),
+			);
 		}
 		if (element instanceof HistoryFolderNode) {
 			const dir = this.environmentManager.getHistoryDirectoryUri(element.environmentName, element.tenantId);

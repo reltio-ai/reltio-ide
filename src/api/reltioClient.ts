@@ -65,8 +65,12 @@ export class ReltioApiError extends Error {
  * call below is built from. Single enforcement point: forces an explicit
  * `http://` scheme to `https://` rather than preserving it, and rejects any
  * host outside the allowlist — before the caller attaches a bearer token.
+ *
+ * Exported so that callers with a separate service URL (e.g. the Workflow
+ * Adapter) can run the same allowlist check before attaching a bearer token,
+ * without duplicating the logic.
  */
-function toHttpsBase(baseUrl: string): string {
+export function toHttpsBase(baseUrl: string): string {
 	const trimmed = baseUrl.trim().replace(/^\/+/, '');
 	const withScheme = /^http:\/\//i.test(trimmed)
 		? trimmed.replace(/^http:\/\//i, 'https://')
@@ -89,7 +93,11 @@ function toHttpsBase(baseUrl: string): string {
 	return normalized;
 }
 
-async function fetchWithTimeout(
+/**
+ * Exported so that callers with a separate service URL (e.g. the Workflow
+ * Adapter) can reuse the same timeout/abort logic without duplicating it.
+ */
+export async function fetchWithTimeout(
 	url: string,
 	init: RequestInit,
 	timeoutMs: number,
@@ -128,6 +136,7 @@ export async function validateEnvironment(baseUrl: string): Promise<boolean> {
 		return false;
 	}
 }
+
 
 /** One row from `GET …/reltio/enhancedTenants`. */
 export interface TenantRecord {

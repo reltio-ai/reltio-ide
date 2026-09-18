@@ -15,6 +15,7 @@ import {
 	writeEnvironmentIdentityMarker,
 	writeTenantIdentityMarker,
 } from './gitSourceMarker';
+import { bpmnFileName, bpmnBaselineFileName } from './workflowBpmnFiles';
 
 const ENV_SUFFIX = '.reltio.environment';
 const TENANT_SUFFIX = '.reltio.tenant';
@@ -198,6 +199,40 @@ export class EnvironmentManager {
 	/** `{tenant}/.reltio-ide/history/` — configuration history snapshots, outside the tracked tree. */
 	getHistoryDirectoryUri(environment: string, tenantId: string): vscode.Uri {
 		return tenantPath(this.tenantUri(environment, tenantId), HISTORY_DIR);
+	}
+
+	/**
+	 * `{tenant}/WorkflowAdapter.reltio.json` — persists the user-supplied Workflow
+	 * Adapter base URL for this tenant. Contains a URL only; no token ever stored.
+	 */
+	getWorkflowAdapterConfigUri(environment: string, tenantId: string): vscode.Uri {
+		return vscode.Uri.joinPath(this.tenantUri(environment, tenantId), 'WorkflowAdapter.reltio.json');
+	}
+
+	/**
+	 * `{tenant}/workflows` — local BPMN drafts not yet deployed. Naming and
+	 * parsing rules live in `workflowDrafts.ts`; this only supplies the URI.
+	 */
+	getWorkflowDraftsDirectoryUri(environment: string, tenantId: string): vscode.Uri {
+		return vscode.Uri.joinPath(this.tenantUri(environment, tenantId), 'workflows');
+	}
+
+	/** One draft inside `{tenant}/workflows`. `fileName` comes from `draftFileName()`. */
+	getWorkflowDraftUri(environment: string, tenantId: string, fileName: string): vscode.Uri {
+		return vscode.Uri.joinPath(this.getWorkflowDraftsDirectoryUri(environment, tenantId), fileName);
+	}
+
+	/**
+	 * `{tenant}/workflows/{processId}.bpmn20.xml` — the editable local copy of a
+	 * process definition, and its baseline sibling. Same relationship as
+	 * `L3.reltio.json` to `L3.remote-baseline.reltio.json`.
+	 */
+	getWorkflowBpmnUri(environment: string, tenantId: string, processId: string): vscode.Uri {
+		return this.getWorkflowDraftUri(environment, tenantId, bpmnFileName(processId));
+	}
+
+	getWorkflowBpmnBaselineUri(environment: string, tenantId: string, processId: string): vscode.Uri {
+		return this.getWorkflowDraftUri(environment, tenantId, bpmnBaselineFileName(processId));
 	}
 
 	/** Git-sourced L3 files, when the workspace is in git-config-source mode. */
