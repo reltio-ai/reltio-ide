@@ -1,13 +1,18 @@
 import * as vscode from 'vscode';
+import {
+	BASELINE_FILE,
+	BUSINESS_CONFIG_FILE,
+	HISTORY_DIR,
+	LAYOUT_FILE,
+	materializeTenantTree,
+	tenantPath,
+} from './tenantFolderStructure';
 
 const ENV_SUFFIX = '.reltio.environment';
 const TENANT_SUFFIX = '.reltio.tenant';
 
-/** Preferred home for env/tenant dirs (alongside agent assets). */
+/** Legacy home for env/tenant dirs. Still scanned, but new environments go to the workspace root. */
 export const RELTIO_WORKSPACE_DOTDIR = '.reltio';
-
-/** Remote configuration snapshot at last successful Fetch L3; used for apply safety checks. */
-export const REMOTE_BASELINE_FILENAME = 'L3.remote-baseline.reltio.json';
 
 export interface TenantInfo {
 	tenantId: string;
@@ -44,13 +49,15 @@ export class EnvironmentManager {
 
 	constructor(private readonly workspaceRoot: vscode.Uri) {}
 
-	/** New environments are created under `.reltio/` (not the workspace root). */
+	/**
+	 * New environments are created at the workspace root, so each tenant folder below one is a
+	 * git repository sitting in plain sight rather than nested inside a hidden dotfolder.
+	 *
+	 * Environments already under `.reltio/` are never relocated: `envLocations` wins over this,
+	 * and `collectEnvironmentDirs` keeps scanning both.
+	 */
 	private preferredEnvironmentUri(name: string): vscode.Uri {
-		return vscode.Uri.joinPath(
-			this.workspaceRoot,
-			RELTIO_WORKSPACE_DOTDIR,
-			environmentDirName(name),
-		);
+		return vscode.Uri.joinPath(this.workspaceRoot, environmentDirName(name));
 	}
 
 	private environmentUri(name: string): vscode.Uri {
@@ -66,11 +73,11 @@ export class EnvironmentManager {
 		if (source) {
 			return source.l3Uri;
 		}
-		return vscode.Uri.joinPath(this.tenantUri(environment, tenantId), 'L3.reltio.json');
+		return tenantPath(this.tenantUri(environment, tenantId), BUSINESS_CONFIG_FILE);
 	}
 
 	getRemoteBaselineUri(environment: string, tenantId: string): vscode.Uri {
-		return vscode.Uri.joinPath(this.tenantUri(environment, tenantId), REMOTE_BASELINE_FILENAME);
+		return tenantPath(this.tenantUri(environment, tenantId), BASELINE_FILE);
 	}
 
 	getLayoutUri(environment: string, tenantId: string): vscode.Uri {
@@ -83,7 +90,7 @@ export class EnvironmentManager {
 				: 'L3.reltio.layout.json';
 			return source.l3Uri.with({ path: `${dir}/${layoutFilename}` });
 		}
-		return vscode.Uri.joinPath(this.tenantUri(environment, tenantId), 'L3.reltio.layout.json');
+		return tenantPath(this.tenantUri(environment, tenantId), LAYOUT_FILE);
 	}
 
 	/** Root URI of `{tenantId}.reltio.tenant/` (for `history/` and other tenant-local data). */
@@ -91,9 +98,9 @@ export class EnvironmentManager {
 		return this.tenantUri(environment, tenantId);
 	}
 
-	/** `{tenant}/history/` — configuration history snapshots. */
+	/** `{tenant}/.reltio-ide/history/` — configuration history snapshots, outside the tracked tree. */
 	getHistoryDirectoryUri(environment: string, tenantId: string): vscode.Uri {
-		return vscode.Uri.joinPath(this.tenantUri(environment, tenantId), 'history');
+		return tenantPath(this.tenantUri(environment, tenantId), HISTORY_DIR);
 	}
 
 	/** Git-sourced L3 files, when the workspace is in git-config-source mode. */
@@ -205,9 +212,11 @@ export class EnvironmentManager {
 		this.envLocations.delete(name);
 	}
 
+	/** Creates the tenant directory and materializes the component tree, so it is git-ready before the first fetch. */
 	async createTenant(environment: string, tenantId: string): Promise<vscode.Uri> {
 		const uri = this.tenantUri(environment, tenantId);
 		await vscode.workspace.fs.createDirectory(uri);
+		await materializeTenantTree(uri);
 		return uri;
 	}
 
@@ -215,8 +224,18 @@ export class EnvironmentManager {
 		await this.deleteRecursive(this.tenantUri(environment, tenantId));
 	}
 
+	/**
+	 * The config and its sidecars now sit in subdirectories (`Business Config/`, `.reltio-ide/`)
+	 * rather than at the tenant root, so the parent has to exist before the write.
+	 */
+	private async ensureParentDirectory(uri: vscode.Uri): Promise<void> {
+		const parentPath = uri.path.slice(0, uri.path.lastIndexOf('/'));
+		await vscode.workspace.fs.createDirectory(uri.with({ path: parentPath }));
+	}
+
 	async writeL3(environment: string, tenantId: string, content: string): Promise<vscode.Uri> {
 		const uri = this.getL3Uri(environment, tenantId);
+		await this.ensureParentDirectory(uri);
 		const enc = new TextEncoder();
 		await vscode.workspace.fs.writeFile(uri, enc.encode(content));
 		return uri;
@@ -224,6 +243,7 @@ export class EnvironmentManager {
 
 	async writeRemoteBaseline(environment: string, tenantId: string, content: string): Promise<vscode.Uri> {
 		const uri = this.getRemoteBaselineUri(environment, tenantId);
+		await this.ensureParentDirectory(uri);
 		const enc = new TextEncoder();
 		await vscode.workspace.fs.writeFile(uri, enc.encode(content));
 		return uri;

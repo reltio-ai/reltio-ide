@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { EnvironmentInfo } from '../workspace/environmentManager';
+import { BUSINESS_CONFIG_FILE } from '../workspace/tenantFolderStructure';
 import { GIT_SOURCE_TOKEN, type TokenStore } from '../api/tokenStore';
 import type { OAuthCredentialsStore } from '../api/oauthCredentialsStore';
 
@@ -102,11 +103,16 @@ function deriveGlobal(
 }
 
 /**
- * Logical key for an L3 file under (env, tenant).
- * Physical path may be under `.reltio/` or (legacy) workspace root — use this key, not asRelativePath.
+ * Logical key for a tenant's configuration file under (env, tenant).
+ *
+ * Physical path may be at the workspace root or (legacy) under `.reltio/`, and the file itself may
+ * still be at the legacy flat location on a tenant awaiting migration — use this key, not
+ * asRelativePath. Callers normalize any stored path through `pathTenantLocFromL3Path`, which keys
+ * off the folder suffixes rather than the filename, so keys persisted by earlier versions
+ * re-normalize onto this one with no state migration.
  */
 export function l3FileUri(env: string, tenantId: string): string {
-	return `${env}.reltio.environment/${tenantId}.reltio.tenant/L3.reltio.json`;
+	return `${env}.reltio.environment/${tenantId}.reltio.tenant/${BUSINESS_CONFIG_FILE}`;
 }
 
 /**

@@ -1,33 +1,33 @@
 ## 1. Component tree foundation
 
-- [ ] 1.1 Create `src/workspace/tenantFolderStructure.ts` exporting the component-tree definition: an ordered list of the 18 directories from the `tenant-folder-structure` spec, each flagged managed or unmanaged, with the expected filenames for the unmanaged ones
-- [ ] 1.2 Export path constants for the managed locations (`Business Config/BusinessConfig.json`, `.reltio-ide/BusinessConfig.baseline.json`, `.reltio-ide/BusinessConfig.layout.json`, `.reltio-ide/history/`) so nothing else hardcodes them
-- [ ] 1.3 Implement `materializeTenantTree(tenantUri)`: create every missing directory, leave existing ones untouched, never delete
-- [ ] 1.4 Add the verified `docs.reltio.com` URL map from `design.md` D10 as a single table beside the tree definition, one entry per unmanaged folder
-- [ ] 1.5 Implement README generation: write `README.md` into each unmanaged folder naming the component, listing expected files, linking to its documentation URL, and stating the IDE does not fetch or apply them; skip `Business Config/`; never overwrite an existing file
-- [ ] 1.6 Implement `isComponentTree(uri)` returning true when a folder already carries the tree, for use by migration detection and git-source recognition
+- [x] 1.1 Create `src/workspace/tenantFolderStructure.ts` exporting the component-tree definition: an ordered list of the 18 leaf component paths from the `tenant-folder-structure` spec (which imply 21 directories on disk once the 3 container parents are included), each flagged managed or unmanaged, with the expected filenames for the unmanaged ones
+- [x] 1.2 Export path constants for the managed locations (`Business Config/BusinessConfig.json`, `.reltio-ide/BusinessConfig.baseline.json`, `.reltio-ide/BusinessConfig.layout.json`, `.reltio-ide/history/`) so nothing else hardcodes them
+- [x] 1.3 Implement `materializeTenantTree(tenantUri)`: create every missing directory, leave existing ones untouched, never delete
+- [x] 1.4 Add the verified `docs.reltio.com` URL map from `design.md` D10 as a single table beside the tree definition, one entry per unmanaged folder
+- [x] 1.5 Implement README generation: write `README.md` into each unmanaged folder naming the component, listing expected files, linking to its documentation URL, and stating the IDE does not fetch or apply them; skip `Business Config/`; never overwrite an existing file
+- [x] 1.6 Implement `isComponentTree(uri)` returning true when a folder already carries the tree, for use by migration detection and git-source recognition
 
 ## 2. Repath EnvironmentManager
 
-- [ ] 2.1 Point `getL3Uri` at `Business Config/BusinessConfig.json`, leaving the git-source branch of the method unchanged
-- [ ] 2.2 Point `getRemoteBaselineUri` at `.reltio-ide/BusinessConfig.baseline.json` and retire the `REMOTE_BASELINE_FILENAME` constant's flat-root usage
-- [ ] 2.3 Point `getLayoutUri` at `.reltio-ide/BusinessConfig.layout.json` for the native path, leaving the git-source sidecar-beside-source behaviour unchanged
-- [ ] 2.4 Point `getHistoryDirectoryUri` at `.reltio-ide/history/`
-- [ ] 2.5 Change `preferredEnvironmentUri` to resolve to the workspace root instead of `.reltio/`; confirm `collectEnvironmentDirs` still scans both and that an environment already known under `.reltio/` keeps its location
-- [ ] 2.6 Make `createTenant` call `materializeTenantTree` after creating the directory
-- [ ] 2.7 Confirm `scanTenants` still reports `hasL3` correctly now that the config sits one level deeper
+- [x] 2.1 Point `getL3Uri` at `Business Config/BusinessConfig.json`, leaving the git-source branch of the method unchanged
+- [x] 2.2 Point `getRemoteBaselineUri` at `.reltio-ide/BusinessConfig.baseline.json` and retire the `REMOTE_BASELINE_FILENAME` constant's flat-root usage
+- [x] 2.3 Point `getLayoutUri` at `.reltio-ide/BusinessConfig.layout.json` for the native path, leaving the git-source sidecar-beside-source behaviour unchanged
+- [x] 2.4 Point `getHistoryDirectoryUri` at `.reltio-ide/history/`
+- [x] 2.5 Change `preferredEnvironmentUri` to resolve to the workspace root instead of `.reltio/`; confirm `collectEnvironmentDirs` still scans both and that an environment already known under `.reltio/` keeps its location
+- [x] 2.6 Make `createTenant` call `materializeTenantTree` after creating the directory
+- [x] 2.7 Confirm `scanTenants` still reports `hasL3` correctly now that the config sits one level deeper
 
 ## 3. Eliminate stray path construction
 
-- [ ] 3.1 Replace the hardcoded logical key in `src/ux/uxState.ts:109` (`l3FileUri`) with the component-tree path, keeping it a logical key rather than a filesystem path
-- [ ] 3.2 Replace `endsWith('/L3.reltio.json')` in `src/extension.ts:2045` with a check against the component-tree config path
-- [ ] 3.3 Update the "Save L3.reltio.json before applying" message in `src/extension.ts:1185` to name the new file
-- [ ] 3.4 Grep `src/` for remaining `L3.reltio.json`, `L3.remote-baseline`, `L3.reltio.layout` and `'history'` literals; move any survivor behind `EnvironmentManager` or `tenantFolderStructure`
+- [x] 3.1 Replace the hardcoded logical key in `src/ux/uxState.ts:109` (`l3FileUri`) with the component-tree path, keeping it a logical key rather than a filesystem path
+- [x] 3.2 Replace `endsWith('/L3.reltio.json')` in `src/extension.ts:2045` with a check against the component-tree config path
+- [x] 3.3 Update the "Save L3.reltio.json before applying" message in `src/extension.ts:1185` to name the new file
+- [x] 3.4 Grep `src/` for remaining `L3.reltio.json`, `L3.remote-baseline`, `L3.reltio.layout` and `'history'` literals; move any survivor behind `EnvironmentManager` or `tenantFolderStructure`
 
 ## 4. Marker-sourced tenant identity
 
-- [ ] 4.1 Extend the marker type in `src/workspace/gitSourceMarker.ts` to carry native-tenant identity alongside the existing git-source shape, keeping both legacy formats readable
-- [ ] 4.2 Add `.reltio-ide/` to `ensureMarkerGitignored`, preserving unrelated entries and never duplicating
+- [x] 4.1 Extend the marker type in `src/workspace/gitSourceMarker.ts` to carry native-tenant identity alongside the existing git-source shape, keeping both legacy formats readable
+- [x] 4.2 Add `.reltio-ide/` to `ensureMarkerGitignored`, preserving unrelated entries and never duplicating
 - [ ] 4.3 Write the marker when a tenant is bound to Git; do not write one for unbound tenants
 - [ ] 4.4 Make the tree prefer marker-sourced environment and tenant labels, falling back to folder names when no marker is present
 
@@ -68,7 +68,7 @@
 ## 9. Tests
 
 - [ ] 9.1 Create `scripts/test-git-ready-tenant-folder-structure.cjs` and register it in the explicit array in `scripts/run-unit-tests.cjs`
-- [ ] 9.2 Tier A: component tree materializes the exact directory set; READMEs written to unmanaged folders only; existing README not overwritten; re-materializing is non-destructive; every unmanaged folder has a non-empty `docs.reltio.com` URL and the generated README contains it (assert the map, do not hit the network)
+- [ ] 9.2 Tier A: component tree materializes the exact 21 directories (18 leaf paths plus the 3 container parents); READMEs written to unmanaged folders only; existing README not overwritten; re-materializing is non-destructive; every unmanaged folder has a non-empty `docs.reltio.com` URL and the generated README contains it (assert the map, do not hit the network)
 - [ ] 9.3 Tier A: all five `EnvironmentManager` accessors resolve to component-tree paths; `preferredEnvironmentUri` resolves to the workspace root; a known `.reltio/` environment keeps its location
 - [ ] 9.4 Tier A: marker round-trip carries environment and tenant; tree label prefers the marker and falls back to the folder name
 - [ ] 9.5 Tier A: `.gitignore` generation adds `.reltio-ide/` and the marker, preserves unrelated entries, never duplicates

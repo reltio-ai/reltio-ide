@@ -10,7 +10,12 @@ const { importDist } = require('./lib/import-dist.cjs');
 
 const { deriveUxState, l3FileUri } = importDist('ux/uxState');
 
-assert.strictEqual(l3FileUri('361', 'demo'), '361.reltio.environment/demo.reltio.tenant/L3.reltio.json');
+// Repathed by openspec change git-ready-tenant-folder-structure: the tenant config moved from a
+// flat `L3.reltio.json` to `Business Config/BusinessConfig.json` inside the component tree.
+assert.strictEqual(
+	l3FileUri('361', 'demo'),
+	'361.reltio.environment/demo.reltio.tenant/Business Config/BusinessConfig.json',
+);
 
 (async () => {
 	const empty = await deriveUxState({

@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { IDE_STATE_DIR } from './tenantFolderStructure';
 
 const MARKER_FILENAME = '.reltio-config-source.json';
 
@@ -12,8 +13,55 @@ export interface MultiGitSourceMarker {
 	sources: GitSourceMarker[];
 }
 
+/**
+ * Identity of a natively-connected tenant whose folder is its own git repository.
+ *
+ * The tenant folder is the repository root, so the environment host and tenant ID are not
+ * path segments any more and cannot be recovered from a tracked path. This marker carries them
+ * instead. It is gitignored, so it never reaches the remote and two tenants cloned from one
+ * repository stay byte-identical in everything git tracks.
+ */
+export interface TenantIdentityMarker {
+	kind: 'tenant';
+	environmentName: string;
+	tenantId: string;
+}
+
 function markerUri(root: vscode.Uri): vscode.Uri {
 	return vscode.Uri.joinPath(root, MARKER_FILENAME);
+}
+
+function isTenantIdentityMarker(parsed: unknown): parsed is TenantIdentityMarker {
+	const m = parsed as Partial<TenantIdentityMarker> | null;
+	return (
+		!!m &&
+		m.kind === 'tenant' &&
+		typeof m.environmentName === 'string' &&
+		typeof m.tenantId === 'string'
+	);
+}
+
+/** Reads the tenant-identity marker from a tenant folder, or undefined when absent or another shape. */
+export async function readTenantIdentityMarker(
+	tenantRoot: vscode.Uri,
+): Promise<TenantIdentityMarker | undefined> {
+	try {
+		const bytes = await vscode.workspace.fs.readFile(markerUri(tenantRoot));
+		const parsed = JSON.parse(new TextDecoder().decode(bytes));
+		return isTenantIdentityMarker(parsed) ? parsed : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/** Writes the tenant-identity marker and ensures it plus IDE state are gitignored. */
+export async function writeTenantIdentityMarker(
+	tenantRoot: vscode.Uri,
+	marker: TenantIdentityMarker,
+): Promise<void> {
+	const enc = new TextEncoder();
+	await vscode.workspace.fs.writeFile(markerUri(tenantRoot), enc.encode(JSON.stringify(marker, null, 2)));
+	await ensureMarkerGitignored(tenantRoot);
 }
 
 /** Reads git source marker(s) - supports both single and multi-source formats. */
@@ -65,8 +113,35 @@ export async function writeMultiGitSourceMarker(root: vscode.Uri, marker: MultiG
 	await ensureMarkerGitignored(root);
 }
 
-/** Adds `.reltio-config-source.json` and `.reltio/` to the repo's `.gitignore` (creating it if needed), so marker and auto-synced agent assets never get committed. */
-async function ensureMarkerGitignored(root: vscode.Uri): Promise<void> {
+/**
+ * Entries every extension-managed repository must ignore.
+ *
+ * Each is `[entry, alternateSpellings]` — a directory is considered present whether or not the
+ * user wrote the trailing slash, so we never append a near-duplicate of a line they already have.
+ */
+const REQUIRED_GITIGNORE_ENTRIES: ReadonlyArray<readonly [string, readonly string[]]> = [
+	[MARKER_FILENAME, []],
+	// Workspace-level agent assets (skills, Velocity Packs) synced on activation.
+	['.reltio/', ['.reltio']],
+	// Per-tenant IDE working state: drift baseline, ontology layout, history snapshots.
+	[`${IDE_STATE_DIR}/`, [IDE_STATE_DIR]],
+];
+
+/**
+ * Ensures the repository's `.gitignore` excludes the marker, synced agent assets and IDE working
+ * state, so `git status` in a tenant shows only configuration the user meant to version.
+ *
+ * Creates the file when absent, preserves unrelated entries, and never duplicates a line.
+ */
+export async function ensureMarkerGitignored(root: vscode.Uri): Promise<void> {
+	await ensureGitignoreEntries(root, REQUIRED_GITIGNORE_ENTRIES);
+}
+
+/** Shared append-if-missing over a `.gitignore`, used for both tenant and workspace-root files. */
+export async function ensureGitignoreEntries(
+	root: vscode.Uri,
+	entries: ReadonlyArray<readonly [string, readonly string[]]>,
+): Promise<void> {
 	const gitignoreUri = vscode.Uri.joinPath(root, '.gitignore');
 	let existing = '';
 	try {
@@ -75,23 +150,17 @@ async function ensureMarkerGitignored(root: vscode.Uri): Promise<void> {
 		existing = '';
 	}
 
-	const lines = existing.split(/\r?\n/);
-	const hasMarker = lines.some(line => line.trim() === MARKER_FILENAME);
-	const hasReltioFolder = lines.some(line => line.trim() === '.reltio/' || line.trim() === '.reltio');
-
-	if (hasMarker && hasReltioFolder) {
+	const present = new Set(existing.split(/\r?\n/).map(line => line.trim()));
+	const missing = entries.filter(
+		([entry, alternates]) => !present.has(entry) && !alternates.some(a => present.has(a)),
+	);
+	if (missing.length === 0) {
 		return;
 	}
 
-	let updated = existing;
-	const withTrailingNewline = updated.length > 0 && !updated.endsWith('\n') ? `${updated}\n` : updated;
-	updated = withTrailingNewline;
-
-	if (!hasMarker) {
-		updated += `${MARKER_FILENAME}\n`;
-	}
-	if (!hasReltioFolder) {
-		updated += `.reltio/\n`;
+	let updated = existing.length > 0 && !existing.endsWith('\n') ? `${existing}\n` : existing;
+	for (const [entry] of missing) {
+		updated += `${entry}\n`;
 	}
 
 	await vscode.workspace.fs.writeFile(gitignoreUri, new TextEncoder().encode(updated));

@@ -97,6 +97,7 @@ import {
 	writeMultiGitSourceMarker,
 	type MultiGitSourceMarker,
 } from './workspace/gitSourceMarker';
+import { isTenantConfigPath } from './workspace/tenantFolderStructure';
 import {
 	discoverL3Files,
 	deriveTenantNamings,
@@ -1136,8 +1137,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	}
 
 	/**
-	 * True when local L3 has edits that were never published to the tenant, i.e. it no longer
-	 * matches `L3.remote-baseline.reltio.json` (the snapshot recorded at the last successful fetch).
+	 * True when the local configuration has edits that were never published to the tenant, i.e. it
+	 * no longer matches `.reltio-ide/BusinessConfig.baseline.json` (the snapshot recorded at the
+	 * last successful fetch).
 	 * A missing or unparsable baseline is treated as "unpublished changes" — we have no evidence
 	 * it's safe to discard the local file.
 	 */
@@ -1182,7 +1184,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 		const saved = await ensureL3DocumentSaved(l3Uri);
 		if (!saved) {
-			void vscode.window.showErrorMessage('Save L3.reltio.json before applying.');
+			void vscode.window.showErrorMessage('Save BusinessConfig.json before applying.');
 			return;
 		}
 
@@ -2042,7 +2044,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	context.subscriptions.push(
 		vscode.workspace.onDidOpenTextDocument(async doc => {
-			if (!doc.uri.path.endsWith('/L3.reltio.json')) return;
+			if (!isTenantConfigPath(doc.uri.path)) return;
 			const key = logicalOpenedL3Key(doc.uri.fsPath);
 			if (openedL3Files.has(key)) return;
 			openedL3Files.add(key);
