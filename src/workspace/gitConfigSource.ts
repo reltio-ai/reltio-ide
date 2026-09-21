@@ -82,30 +82,70 @@ export async function isGitRepoWithRemote(root: vscode.Uri): Promise<boolean> {
 	return (await getRemoteUrl(root)) !== undefined;
 }
 
+/** Raised when `git clone --branch <b>` fails specifically because the branch is not on the remote. */
+export class BranchNotFoundError extends Error {
+	constructor(readonly branch: string, readonly url: string) {
+		super(`Branch '${branch}' does not exist on ${url}.`);
+	}
+}
+
+/** git's wording for a missing ref, across the versions we support. */
+function isMissingBranchFailure(stderr: string, branch: string): boolean {
+	return (
+		/Remote branch .* not found in upstream/i.test(stderr) ||
+		/warning: Could not find remote branch/i.test(stderr) ||
+		new RegExp(`pathspec '${branch}' did not match`, 'i').test(stderr)
+	);
+}
+
 /**
  * Clones `url` directly into `destRoot` (must already be empty — caller's responsibility to check).
  * Auth is entirely delegated to the system git installation and its credential helper
  * (e.g. Git Credential Manager), which opens a browser login when credentials aren't cached.
+ *
+ * When `branch` is given, only that branch is checked out; a branch absent from the remote raises
+ * `BranchNotFoundError` so the caller can offer to create it rather than reporting a generic failure.
  */
-export async function cloneRepository(url: string, destRoot: vscode.Uri): Promise<void> {
+export async function cloneRepository(
+	url: string,
+	destRoot: vscode.Uri,
+	branch?: string,
+): Promise<void> {
+	const args = branch ? ['clone', '--branch', branch, url, '.'] : ['clone', url, '.'];
 	try {
-		await execFileAsync(getGitExecutable(), ['clone', url, '.'], {
+		await execFileAsync(getGitExecutable(), args, {
 			cwd: destRoot.fsPath,
 			timeout: CLONE_TIMEOUT_MS,
 			killSignal: 'SIGTERM',
 		});
 	} catch (e) {
-		const err = e as NodeJS.ErrnoException & { killed?: boolean };
-		if (err.code === 'ENOENT') {
-			throw new GitNotFoundError(
-				'Git executable not found. Install Git (https://git-scm.com/downloads) and ensure it is on your PATH, then try again.',
-			);
+		if (branch) {
+			const stderr = String((e as { stderr?: string }).stderr ?? '');
+			if (isMissingBranchFailure(stderr, branch)) {
+				throw new BranchNotFoundError(branch, url);
+			}
 		}
-		if (err.killed) {
-			throw new Error(
-				`Clone timed out after ${CLONE_TIMEOUT_MS / 60000} minutes. Check your network connection and git credentials, then try again.`,
-			);
-		}
-		throw e;
+		throw describeGitFailure(e);
 	}
+}
+
+/**
+ * Translates a raw `execFile` rejection into the user-facing error for a git shell-out.
+ *
+ * Kept separate so every git-invoking code path (clone, branch creation, branch read) reports a
+ * missing git executable and a timeout the same way.
+ */
+export function describeGitFailure(e: unknown): Error {
+	const err = e as NodeJS.ErrnoException & { killed?: boolean };
+	if (err.code === 'ENOENT') {
+		return new GitNotFoundError(
+			'Git executable not found. Install Git (https://git-scm.com/downloads) and ensure it is on your PATH, then try again.',
+		);
+	}
+	if (err.killed) {
+		return new Error(
+			`Git operation timed out after ${CLONE_TIMEOUT_MS / 60000} minutes. Check your network connection and git credentials, then try again.`,
+		);
+	}
+	return e instanceof Error ? e : new Error(String(e));
 }

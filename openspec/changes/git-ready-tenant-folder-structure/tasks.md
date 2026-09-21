@@ -28,35 +28,35 @@
 
 - [x] 4.1 Extend the marker type in `src/workspace/gitSourceMarker.ts` to carry native-tenant identity alongside the existing git-source shape, keeping both legacy formats readable
 - [x] 4.2 Add `.reltio-ide/` to `ensureMarkerGitignored`, preserving unrelated entries and never duplicating
-- [ ] 4.3 Write the marker when a tenant is bound to Git; do not write one for unbound tenants
+- [x] 4.3 Write the marker when a tenant is bound to Git; do not write one for unbound tenants
 - [ ] 4.4 Make the tree prefer marker-sourced environment and tenant labels, falling back to folder names when no marker is present
 
 ## 5. Per-tenant Git binding
 
-- [ ] 5.1 Add a branch argument and an explicit target directory to `cloneRepository` in `src/workspace/gitConfigSource.ts`, passing `--branch` via the existing `execFile` argument array
-- [ ] 5.2 Create `src/workspace/tenantGitBinding.ts` with `bindTenantToGit`, `getCurrentBranch` (via `git rev-parse --abbrev-ref HEAD`), and a tenant-folder emptiness check that tolerates a tree of generated READMEs
-- [ ] 5.3 Implement the `reltio.connectTenantToGit` command: prompt for the remote (pre-filled from workspace state after first use), prompt for the branch (never pre-filled), clone, materialize any missing tree, write the marker and `.gitignore`
-- [ ] 5.4 Implement branch creation for an absent branch: confirmation naming branch and remote, clone the remote default branch, `git checkout -b <branch>`, `git push -u origin <branch>`; never an orphan branch, so history is shared
-- [ ] 5.5 Handle the remaining failure cases: non-empty tenant folder, declined branch creation, failed publish (report that the branch exists locally but was not pushed), empty remote with no default branch, `GitNotFoundError`, clone timeout. Leave the folder empty rather than partially cloned
-- [ ] 5.6 Register the command and its tree context menu entry in `package.json`, gated off when `reltio.workspaceSource` is `git`
+- [x] 5.1 Add a branch argument and an explicit target directory to `cloneRepository` in `src/workspace/gitConfigSource.ts`, passing `--branch` via the existing `execFile` argument array
+- [x] 5.2 Create `src/workspace/tenantGitBinding.ts` with `bindTenantToGit`, `getCurrentBranch` (via `git rev-parse --abbrev-ref HEAD`), and a tenant-folder emptiness check that tolerates a tree of generated READMEs
+- [x] 5.3 Implement the `reltio.connectTenantToGit` command: prompt for the remote (pre-filled from workspace state after first use), prompt for the branch (never pre-filled), clone, materialize any missing tree, write the marker and `.gitignore`
+- [x] 5.4 Implement branch creation for an absent branch: confirmation naming branch and remote, clone the remote default branch, `git checkout -b <branch>`, `git push -u origin <branch>`; never an orphan branch, so history is shared
+- [x] 5.5 Handle the remaining failure cases: non-empty tenant folder, declined branch creation, failed publish (report that the branch exists locally but was not pushed), empty remote with no default branch, `GitNotFoundError`, clone timeout. Leave the folder empty rather than partially cloned
+- [x] 5.6 Register the command and its tree context menu entry in `package.json`, gated off when `reltio.workspaceSource` is `git`
 
 ## 6. Branch display in the tree
 
-- [ ] 6.1 Add branch resolution to the tenant node in `src/tree/multiTenantNodes.ts`, rendering the branch as a description suffix
-- [ ] 6.2 Render nothing (no error, no placeholder) for an unbound tenant or a detached HEAD
-- [ ] 6.3 Refresh branch state on tree refresh so an external checkout is picked up
+- [x] 6.1 Add branch resolution to the tenant node in `src/tree/multiTenantNodes.ts`, rendering the branch as a description suffix
+- [x] 6.2 Render nothing (no error, no placeholder) for an unbound tenant or a detached HEAD
+- [x] 6.3 Refresh branch state on tree refresh so an external checkout is picked up
 
 ## 7. Legacy layout migration
 
-- [ ] 7.1 Create `src/workspace/layoutMigration.ts` with `detectLegacyTenants(environmentManager)` returning the tenants that still use the flat layout
-- [ ] 7.2 Implement `planMigration(tenantUri)` producing the from/to file map, omitting files that are absent
-- [ ] 7.3 Implement the dirty-worktree check: skip a tenant that is a Git repository with uncommitted changes, and record the reason
-- [ ] 7.4 Implement the backup into `.reltio-ide-backup/{env}/{tenant}/` at the workspace root before the first move; add `.reltio-ide-backup/` to the workspace-root `.gitignore`; abort that tenant if the backup fails; retain the backup after success
-- [ ] 7.5 Implement `migrateTenant`: materialize the tree, move each file, write the `.gitignore` entries, then write the `workspaceState` stamp only on full success
-- [ ] 7.6 Implement `undoMigration` restoring from the backup and clearing the stamp, with a confirmation listing the affected tenants and a clear refusal when no backup exists
-- [ ] 7.7 Register the `reltio.undoLayoutMigration` command in `package.json` and wire it in `extension.ts`
-- [ ] 7.8 Hook migration into activation off the critical path, refresh the tree when it finishes, and show one non-blocking summary notification for the whole workspace with a detail action
-- [ ] 7.9 Suppress the notification entirely when nothing needed migrating
+- [x] 7.1 Create `src/workspace/layoutMigration.ts` with `detectLegacyTenants(environmentManager)` returning the tenants that still use the flat layout
+- [x] 7.2 Implement `planMigration(tenantUri)` producing the from/to file map, omitting files that are absent
+- [x] 7.3 Implement the dirty-worktree check: skip a tenant that is a Git repository with uncommitted changes, and record the reason
+- [x] 7.4 Implement the backup into `.reltio-ide-backup/{env}/{tenant}/` at the workspace root before the first move; add `.reltio-ide-backup/` to the workspace-root `.gitignore`; abort that tenant if the backup fails; retain the backup after success
+- [x] 7.5 Implement `migrateTenant`: materialize the tree, move each file, write the `.gitignore` entries, then write the `workspaceState` stamp only on full success
+- [x] 7.6 Implement `undoMigration` restoring from the backup and clearing the stamp, with a confirmation listing the affected tenants and a clear refusal when no backup exists
+- [x] 7.7 Register the `reltio.undoLayoutMigration` command in `package.json` and wire it in `extension.ts`
+- [x] 7.8 Hook migration into activation off the critical path, refresh the tree when it finishes, and show one non-blocking summary notification for the whole workspace with a detail action
+- [x] 7.9 Suppress the notification entirely when nothing needed migrating
 
 ## 8. Coexistence with git-sourced mode
 

@@ -197,6 +197,17 @@
         "icon": "$(add)"
       },
       {
+        "command": "reltio.connectTenantToGit",
+        "title": "Connect Tenant to Git",
+        "category": "Reltio",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "reltio.undoLayoutMigration",
+        "title": "Undo Layout Migration",
+        "category": "Reltio"
+      },
+      {
         "command": "reltio.removeTenant",
         "title": "Remove Tenant",
         "icon": "$(trash)"
@@ -564,6 +575,11 @@
         {
           "command": "reltio.addTenant",
           "when": "viewItem =~ /^reltio\\.environment\\.authorized/ && reltio.workspaceSource != 'git'",
+          "group": "3_tenant"
+        },
+        {
+          "command": "reltio.connectTenantToGit",
+          "when": "viewItem =~ /^reltio\\.tenant/ && reltio.workspaceSource != 'git'",
           "group": "3_tenant"
         },
         {

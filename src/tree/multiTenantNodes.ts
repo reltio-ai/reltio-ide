@@ -72,6 +72,13 @@ export class TenantNode extends vscode.TreeItem {
 		readonly autoExpand: boolean = false,
 		/** Git mode only: the plain leaf name, so a collision-qualified `tenantId` stays out of the label. */
 		readonly displayLabel?: string,
+		/**
+		 * Current git branch of this tenant's folder, when it is bound to a remote.
+		 *
+		 * Read from `HEAD` at refresh time rather than stored, so an external checkout is reflected.
+		 * Undefined for an unbound tenant or a detached HEAD; shown as nothing, never faked.
+		 */
+		readonly branch?: string,
 	) {
 		const label = displayLabel ?? tenantId;
 		super(
@@ -81,7 +88,10 @@ export class TenantNode extends vscode.TreeItem {
 				: vscode.TreeItemCollapsibleState.None,
 		);
 		this.contextValue = hasL3 ? 'reltio.tenant.l3' : 'reltio.tenant';
-		this.description = descriptionForTState(tState, isStaleLocal, isEnvironmentAuthorized);
+		const stateDescription = descriptionForTState(tState, isStaleLocal, isEnvironmentAuthorized);
+		this.description = branch
+			? [stateDescription, `⎇ ${branch}`].filter(Boolean).join('  ')
+			: stateDescription;
 		this.tooltip = tooltipForTState(tenantId, tState);
 		this.id = `tenant:${environmentName}/${tenantId}`;
 
