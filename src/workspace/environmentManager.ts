@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import {
 	BASELINE_FILE,
+	BUSINESS_CONFIG_DIR,
 	BUSINESS_CONFIG_FILE,
 	HISTORY_DIR,
 	LAYOUT_FILE,
@@ -85,6 +86,15 @@ export class EnvironmentManager {
 		if (source) {
 			const l3Path = source.l3Uri.path;
 			const dir = l3Path.slice(0, l3Path.lastIndexOf('/'));
+
+			// A cloned repository that carries the component tree gets the same treatment as a
+			// natively-connected tenant: the layout is IDE state, so it belongs in the gitignored
+			// `.reltio-ide/` rather than beside the config where it would show up in every PR.
+			if (dir.endsWith(`/${BUSINESS_CONFIG_DIR}`)) {
+				const repoRoot = dir.slice(0, -(`/${BUSINESS_CONFIG_DIR}`.length));
+				return source.l3Uri.with({ path: `${repoRoot}/${LAYOUT_FILE}` });
+			}
+
 			const layoutFilename = l3Path.endsWith('BusinessConfig.json')
 				? 'BusinessConfig.layout.json'
 				: 'L3.reltio.layout.json';

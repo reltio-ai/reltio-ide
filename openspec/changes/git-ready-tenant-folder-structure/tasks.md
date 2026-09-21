@@ -29,7 +29,7 @@
 - [x] 4.1 Extend the marker type in `src/workspace/gitSourceMarker.ts` to carry native-tenant identity alongside the existing git-source shape, keeping both legacy formats readable
 - [x] 4.2 Add `.reltio-ide/` to `ensureMarkerGitignored`, preserving unrelated entries and never duplicating
 - [x] 4.3 Write the marker when a tenant is bound to Git; do not write one for unbound tenants
-- [ ] 4.4 Make the tree prefer marker-sourced environment and tenant labels, falling back to folder names when no marker is present
+- [x] 4.4 Make the tree prefer marker-sourced environment and tenant labels, falling back to folder names when no marker is present
 
 ## 5. Per-tenant Git binding
 
@@ -60,23 +60,23 @@
 
 ## 8. Coexistence with git-sourced mode
 
-- [ ] 8.1 Confirm activation resolves exactly one mode and that `reltio.workspaceSource` reflects it
-- [ ] 8.2 Make `l3Discovery` recognize a cloned repository carrying the component tree and resolve `Business Config/BusinessConfig.json` without prompting
-- [ ] 8.3 Confirm arbitrary repositories still fall through to the existing depth-limited discovery, and multi-config repositories still produce one row each
-- [ ] 8.4 Confirm no migration is attempted in git-sourced mode
+- [x] 8.1 Confirm activation resolves exactly one mode and that `reltio.workspaceSource` reflects it
+- [x] 8.2 Make `l3Discovery` recognize a cloned repository carrying the component tree and resolve `Business Config/BusinessConfig.json` without prompting
+- [x] 8.3 Confirm arbitrary repositories still fall through to the existing depth-limited discovery, and multi-config repositories still produce one row each
+- [x] 8.4 Confirm no migration is attempted in git-sourced mode
 
 ## 9. Tests
 
-- [ ] 9.1 Create `scripts/test-git-ready-tenant-folder-structure.cjs` and register it in the explicit array in `scripts/run-unit-tests.cjs`
-- [ ] 9.2 Tier A: component tree materializes the exact 21 directories (18 leaf paths plus the 3 container parents); READMEs written to unmanaged folders only; existing README not overwritten; re-materializing is non-destructive; every unmanaged folder has a non-empty `docs.reltio.com` URL and the generated README contains it (assert the map, do not hit the network)
-- [ ] 9.3 Tier A: all five `EnvironmentManager` accessors resolve to component-tree paths; `preferredEnvironmentUri` resolves to the workspace root; a known `.reltio/` environment keeps its location
-- [ ] 9.4 Tier A: marker round-trip carries environment and tenant; tree label prefers the marker and falls back to the folder name
-- [ ] 9.5 Tier A: `.gitignore` generation adds `.reltio-ide/` and the marker, preserves unrelated entries, never duplicates
-- [ ] 9.6 Tier A: migration plan maps each legacy file correctly, omits absent files, no-ops on an already-migrated folder, is refused on a dirty worktree, and does not write the stamp on a simulated partial failure; backup path resolves to `.reltio-ide-backup/{env}/{tenant}/` and the workspace-root `.gitignore` gains the entry without duplication
-- [ ] 9.7 Tier A: branch-creation flow builds the correct Git argument sequence (clone default, `checkout -b`, `push -u`) and never `--orphan`; a declined confirmation produces no Git invocation
-- [ ] 9.8 Tier A: grep invariant asserting no `L3.reltio.json` literal survives outside `EnvironmentManager` / `tenantFolderStructure`
-- [ ] 9.9 Tier B: load the canonical fixture from both a legacy path and `Business Config/BusinessConfig.json`, and assert the parsed model, `UriIndex` and derived tree sections are identical
-- [ ] 9.10 Run `npm test` and confirm the whole suite passes, including `test-code-model-and-schema.cjs` running first
+- [x] 9.1 Create `scripts/test-git-ready-tenant-folder-structure.cjs` and register it in the explicit array in `scripts/run-unit-tests.cjs`
+- [x] 9.2 Tier A: component tree materializes the exact 21 directories (18 leaf paths plus the 3 container parents); READMEs written to unmanaged folders only; existing README not overwritten; re-materializing is non-destructive; every unmanaged folder has a non-empty `docs.reltio.com` URL and the generated README contains it (assert the map, do not hit the network)
+- [x] 9.3 Tier A: all five `EnvironmentManager` accessors resolve to component-tree paths; `preferredEnvironmentUri` resolves to the workspace root; a known `.reltio/` environment keeps its location
+- [x] 9.4 Tier A: marker round-trip carries environment and tenant; tree label prefers the marker and falls back to the folder name
+- [x] 9.5 Tier A: `.gitignore` generation adds `.reltio-ide/` and the marker, preserves unrelated entries, never duplicates
+- [x] 9.6 Tier A: migration plan maps each legacy file correctly, omits absent files, no-ops on an already-migrated folder, is refused on a dirty worktree, and does not write the stamp on a simulated partial failure; backup path resolves to `.reltio-ide-backup/{env}/{tenant}/` and the workspace-root `.gitignore` gains the entry without duplication
+- [x] 9.7 Tier A: branch-creation flow builds the correct Git argument sequence (clone default, `checkout -b`, `push -u`) and never `--orphan`; a declined confirmation produces no Git invocation
+- [x] 9.8 Tier A: grep invariant asserting no `L3.reltio.json` literal survives outside `EnvironmentManager` / `tenantFolderStructure`
+- [x] 9.9 Tier B: load the canonical fixture from both a legacy path and `Business Config/BusinessConfig.json`, and assert the parsed model, `UriIndex` and derived tree sections are identical
+- [x] 9.10 Run `npm test` and confirm the whole suite passes, including `test-code-model-and-schema.cjs` running first
 
 ## 10. Documentation
 
