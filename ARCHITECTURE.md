@@ -26,12 +26,12 @@ This is a **single-module** project — not a multi-module monorepo. All source 
 | Git-sourced environment | An alternative to a live-tenant environment: a single environment node (named after the repository folder) holding one tenant per `BusinessConfig.json` discovered in a cloned or already-present git repository. The rows beneath it mirror the repository's directory layout (`repo / DP / dp_lif`) via inert `GitFolderNode` rows; a config's `tenantId` is its own folder name, qualified with the folder path only when two would otherwise collide. Wired in via `EnvironmentManager.setGitSources(...)`. Reuses the tenant-mode tree/navigation/ontology pipeline unchanged. See the **`git-repository-source`** OpenSpec change and its `design-amendment-multi-tenant.md`. |
 | Workspace source | The `reltio.workspaceSource` context key (`'tenant' \| 'git' \| undefined`), independent of `reltio.uxState`, recording whether the workspace is connected to a live tenant or a git repository. Drives welcome-view button visibility and hides tenant-connectivity menu items in git mode. A workspace is one or the other, never both. |
 | Environment | A Reltio host (e.g. `361.reltio.com`) represented as a `{host}.reltio.environment/` directory under `.reltio/` (preferred) or, for legacy workspaces, at the workspace root. Validated with `GET /reltio/status` before creation. |
-| Tenant | A tenant ID under an environment, stored as `{tenantId}.reltio.tenant/` with optional `L3.reltio.json` (fetched L3 configuration) and optional `history/` (local configuration history snapshots). |
+| Tenant | A tenant ID under an environment, stored as `{tenantId}.reltio.tenant/`. The folder carries the **component tree** and is itself the **git repository root** when bound to a remote, so nothing git tracks contains the environment host or tenant ID. Holds `Business Config/BusinessConfig.json` (fetched L3 configuration) and `.reltio-ide/` (gitignored IDE state: drift baseline, ontology layout, history snapshots). |
 | Token Store | In-memory map of environment name → Bearer token (and optional aliases). Never persisted; cleared on restart. For browser-OAuth environments it additionally holds the refresh token and access-token expiry alongside the in-memory access token. |
 | Session Store | Thin wrapper over `vscode.SecretStorage` (OS keychain) that persists OAuth **refresh tokens** per environment so sessions survive a window reload. Access tokens are never written to disk. |
 | OAuth credentials store | Per-environment OAuth **client ID**, **client secret**, and **SSO routing tenant ID** in `SecretStorage` (set via **Configure OAuth Client…**). The client pair can be shared across environments when only one pair is stored; the SSO routing tenant ID is always per-environment. Required for browser login and token refresh; never bundled in the extension. |
-| L3 configuration | Tenant metadata returned by `GET /reltio/api/{tenantId}/configuration`, saved locally as `L3.reltio.json`. |
-| Configuration history (local) | Paginated revisions from `GET …/configuration/_history`, written as one JSON file per revision under `{tenant}/history/` (see **Configuration history** below). |
+| L3 configuration | Tenant metadata returned by `GET /reltio/api/{tenantId}/configuration`, saved locally as `Business Config/BusinessConfig.json` (was `Business Config/BusinessConfig.json` before the `git-ready-tenant-folder-structure` change). |
+| Configuration history (local) | Paginated revisions from `GET …/configuration/_history`, written as one JSON file per revision under `{tenant}/.reltio-ide/history/` (see **Configuration history** below). |
 | UX state | A pure-function projection (`deriveUxState`) of the workspace's environments + tokens + OAuth credentials + opened-L3 files into a global state (`G_EMPTY` / `G_NEEDS_AUTH` / `G_NEEDS_TENANT` / `G_NEEDS_L3` / `G_READY`), per-environment state, and per-tenant state. Published as the `reltio.uxState` context key. Every "what's next" surface (walkthrough, viewsWelcome, tree descriptions, inline icons, status bar) reads from this single source. |
 | Setup Wizard | Multi-step `QuickPick` chain (`src/ux/setupWizard.ts`) that takes a user from "no environment" to "L3 open in the editor" in one continuous flow. Reachable from the welcome view, the tree view title bar, the status bar, the Walkthrough, and the Command Palette. The existing single-input **Add Environment** command remains for now and will be retired in a later change. |
 
@@ -107,7 +107,7 @@ graph TD
 | `src/api/` | Stateless Reltio REST helpers (`reltioClient`; `listTenants` reads `GET /reltio/enhancedTenants?showAll=true` and reduces each `TenantRecord` to its `tenantId`; the only call that omits the `xxx-client` header; `toHttpsBase()` is the single choke point every call passes through — it force-upgrades an explicit `http://` to `https://` and rejects any host outside the `reltio.trustedHostSuffixes` allowlist (default `reltio.com`) before a bearer token is attached, throwing `UntrustedHostError`), in-memory `TokenStore` (access token + optional refresh-token/expiry for OAuth sessions), `SessionStore` (refresh-token persistence via `vscode.SecretStorage`), `OAuthCredentialsStore` (per-environment client ID/secret in `SecretStorage`), **`oauthLogin`** (Authorization Code flow: local callback server on `http://localhost:8081`, browser-based `auth.reltio.com/oauth/sso`, code→token exchange, refresh-token rotation), and `formatJson` (pretty-print fetched L3 via `JSON.parse` / `JSON.stringify` — fast; preserves key / array order from the parsed document) |
 | `src/ux/` | UX state derivation (`uxState.ts`), status bar item (`statusBar.ts`), Setup Wizard (`setupWizard.ts`), recents persistence (`recents.ts`), quick-switch command (`quickSwitch.ts`). The "what's next" guidance layer. |
 | `src/util/` | Small shared helpers (e.g. **`jsonDeepEqual`** for JSON-parse result comparison) |
-| `src/workspace/` | `EnvironmentManager` — creates under `.reltio/*.reltio.environment` (scans that home plus legacy workspace-root dirs), manages `*.reltio.tenant` and `L3.reltio.json` via `vscode.workspace.fs`; `configurationHistory.ts` — snapshot file naming, read/write/clear under `history/`; **`reltioAgentSync.ts`** — materialize bundled skills + Velocity Packs under `.reltio/reltio-agent/` (see D3b); **`reltioAutoSave.ts`** — save dirty `*.reltio.json` on editor switch (and optionally on window blur) so disk matches agents and parse/index passes; **`gitConfigSource.ts`** — system-`git` shell-out helpers (detect existing repo/remote, clone, empty-folder check, path containment with a Windows case-insensitive drive fix) via `child_process.execFile`; **`l3Discovery.ts`** — depth-10 search for `BusinessConfig.json` (case-insensitive) plus conflict-aware environment/tenant naming; **`gitSourceMarker.ts`** — persists discovered L3 locations in `.reltio-config-source.json` (multi-source format, backward compatible, auto-gitignored along with `.reltio/`) |
+| `src/workspace/` | `EnvironmentManager` — creates `*.reltio.environment` at the **workspace root** (still scans legacy `.reltio/` dirs and never relocates one), manages `*.reltio.tenant` and resolves every tenant-local path through **`tenantFolderStructure.ts`** via `vscode.workspace.fs`; **`tenantFolderStructure.ts`** — the component-tree definition, docs-URL map, `materializeTenantTree`, and the only place legacy path literals are named; **`tenantGitBinding.ts`** — clone a chosen branch into a tenant folder, create an absent branch from the remote default, read `HEAD`, dirty-worktree check; **`layoutMigration.ts`** — detect/plan/back up/migrate/undo the legacy flat layout; `configurationHistory.ts` — snapshot file naming, read/write/clear under `history/`; **`reltioAgentSync.ts`** — materialize bundled skills + Velocity Packs under `.reltio/reltio-agent/` (see D3b); **`reltioAutoSave.ts`** — save dirty `*.reltio.json` on editor switch (and optionally on window blur) so disk matches agents and parse/index passes; **`gitConfigSource.ts`** — system-`git` shell-out helpers (detect existing repo/remote, clone, empty-folder check, path containment with a Windows case-insensitive drive fix) via `child_process.execFile`; **`l3Discovery.ts`** — depth-10 search for `BusinessConfig.json` (case-insensitive) plus conflict-aware environment/tenant naming; **`gitSourceMarker.ts`** — persists discovered L3 locations in `.reltio-config-source.json` (multi-source format, backward compatible, auto-gitignored along with `.reltio/`) |
 | `src/navigation/` | Language feature providers: `UriIndex` (central URI → AST mapping), Go-to-Definition, Find References, Document Links, Diagnostics for unresolved URIs, **`uriCompletionProvider`** (Ctrl+Space URI + same-property value hints), **`uriPropertyScopes`** / **`samePropertyValues`** |
 | `src/commands/` | `editCommands` (insert/delete/rename via `WorkspaceEdit`), `elementSkeletons` (default-name builders), `revealInsertion` (select inserted JSON), `revealCommand` |
 | `src/ontology/` | Ontology preview: transforms model to graph, runs ELK layout, manages the webview panel lifecycle, persists layout positions. Also holds `inspectorHtml.ts` (pure, escaped HTML builders for the inspector popup) and `webviewMessageSafety.ts` (`message`-origin check, prototype-safe dynamic-key map) — kept outside `src/webview/` so `tsc`/`importDist` can test them directly, but imported by both the host and the webview bundle |
@@ -150,7 +150,7 @@ Precedence: **`skills/workspace/`** overrides the same logical playbook under **
 4. **Fire-and-forget** `syncReltioAgentAssets(context)` — materialize bundled skills + Velocity Packs under `.reltio/reltio-agent/` per `resources/reltio-agent-assets.json` vs `.sync-state.json`
 5. Register language providers (links, definition, references) scoped to `**/*.reltio.json`
 6. Register all commands (ontology, environment/tenant/L3 and configuration-history fetch, history compare, reveal, edit operations, **`reltio.resyncAgentAssets`**)
-7. Set up debounced document change listener (300ms) — on `*.reltio.json` change: invalidate multi-tenant tree when `L3.reltio.json` or files under `history/` change, rebuild URI index
+7. Set up debounced document change listener (300ms) — on `*.reltio.json` change: invalidate multi-tenant tree when `Business Config/BusinessConfig.json` or files under `history/` change, rebuild URI index
 8. Set up active editor change listener — rebuild URI index when a different `*.reltio.json` becomes active
 9. Initialize URI index from the current active editor if it matches `*.reltio.json`
 10. **Fire-and-forget** OAuth session restore — for each scanned environment, call `sessionStore.loadRefreshToken(env)`; if a refresh token and OAuth client credentials are present, call `refreshTokens()` silently and on success store the rotated session via `tokenStore.setSession()` (and persist the new refresh token); if credentials are missing, delete the stale refresh token; on refresh failure delete the stored refresh token so the user is prompted to log in on next API call
@@ -170,14 +170,14 @@ Precedence: **`skills/workspace/`** overrides the same logical playbook under **
 | Diagnostics | `DiagnosticsManager` | Squiggles on unresolved `configuration/...` references |
 | IntelliSense (URI values) | `ReltioUriCompletionProvider` | Suggests `configuration/...` definition URIs from **UriIndex** (scoped by property name via `uriPropertyScopes.ts`) plus **values already used for the same JSON property** elsewhere in the file; `"` and `/` triggers |
 
-**Manual QA (URI completion, release gate):** Open a tenant `L3.reltio.json`; trigger Ctrl+Space inside string values for (1) a **reference attribute** (`referencedEntityTypeURI`, `relationshipTypeURI`, `referencedAttributeURIs`), (2) a **relation endpoint** (`startObject` / `endObject`) if present, (3) a nested **`uri`** under an attribute or source; confirm schema-driven **property-name** completion still appears when editing keys; confirm suggestions prefer indexed URIs and same-property reuse over random tokens (`editor.wordBasedSuggestions` defaults off for `[reltio.json]`).
+**Manual QA (URI completion, release gate):** Open a tenant `Business Config/BusinessConfig.json`; trigger Ctrl+Space inside string values for (1) a **reference attribute** (`referencedEntityTypeURI`, `relationshipTypeURI`, `referencedAttributeURIs`), (2) a **relation endpoint** (`startObject` / `endObject`) if present, (3) a nested **`uri`** under an attribute or source; confirm schema-driven **property-name** completion still appears when editing keys; confirm suggestions prefer indexed URIs and same-property reuse over random tokens (`editor.wordBasedSuggestions` defaults off for `[reltio.json]`).
 
 **Commands** (registered in `package.json`):
 
 | Command | Trigger | Action |
 |---------|---------|--------|
 | `reltio.showOntologyPreview` | Editor title bar / context menu | Open ontology graph preview |
-| `reltio.revealInEditor` | Tree primary open / context menu | Open tenant `L3.reltio.json` if needed, navigate to JSON location |
+| `reltio.revealInEditor` | Tree primary open / context menu | Open tenant `Business Config/BusinessConfig.json` if needed, navigate to JSON location |
 | `reltio.showOntologyFromTree` | Configuration tree context menu | Open ontology preview for the tenant L3 document |
 | `reltio.revealInTreeView` | Ontology view context menu | Reveal entity in tree |
 | `reltio.addEntityType` | Tree / palette (`*.reltio.json`) | Insert **entity type skeleton** (`EntityType{n}`, `attributes: []`) — **no name wizard** |
@@ -197,14 +197,16 @@ Precedence: **`skills/workspace/`** overrides the same logical playbook under **
 | `reltio.loginWithBrowser` | Tree context (environment) | OAuth Authorization Code flow using stored client credentials. Before opening the browser, POSTs to `/oauth/ssoCheck` with the per-environment SSO routing tenant ID to confirm external IdP is configured; if the response is `native`, login is blocked with a guided error pointing at **Provide Token**. On `sso`, generates a fresh CSRF `state` (16 bytes hex), opens the browser to `/oauth/sso`, captures the callback on `http://localhost:8081` (HTML success page: Reltio logo inlined as a data URI, **Login Successful!**, no links — the server closes after its single response), verifies `state` matches, exchanges the code for tokens, and shows an in-editor success notification. Errors: `PORT_BUSY`, `TIMEOUT`, `EXCHANGE_FAILED`, `NO_IDP_CONFIGURED`, `STATE_MISMATCH`, `SSO_CHECK_FAILED`. |
 | `reltio.provideToken` / `reltio.useTokenFrom` | Tree context (environment) | Store or alias Bearer token in memory |
 | `reltio.applyDefaultEnvironments` | Command Palette | Scaffold `reltio.defaultEnvironments` (host/tenant folders) and load bearers from optional workspace-relative `tokenFile` paths into memory (same as Provide Token). Never reads inline secrets from settings. Optional Fetch L3 when `reltio.fetchL3AfterApplyDefaults` is true; never auto-PUT. |
-| `reltio.addTenant` | Tree context (authorized environment) | List tenants from API, create `*.reltio.tenant` directory |
+| `reltio.addTenant` | Tree context (authorized environment) | List tenants from API, create `*.reltio.tenant` directory and materialize the component tree |
+| `reltio.connectTenantToGit` | Tree context (tenant), hidden in git-source mode | Prompt for a remote (remembered per workspace) and a branch (never pre-filled), `git clone --branch` into the still-empty tenant folder so the folder becomes the repository root. A branch absent on the remote is offered for creation from the default branch (`checkout -b` + `push -u`, never `--orphan`, so promotion branches share history). Writes the identity marker and `.gitignore`. |
+| `reltio.undoLayoutMigration` | Command Palette | Restore the legacy flat layout from `.reltio-ide-backup/` and clear the migration stamps |
 | `reltio.removeTenant` | Tree context (tenant with or without L3) | Delete tenant directory |
 | `reltio.copyTenantId` | Tree context (`reltio.tenant` / `reltio.tenant.l3`) | Copy tenant ID to the system clipboard |
-| `reltio.fetchL3` | Tree context (tenant with L3) | Download L3 JSON via API, write `L3.reltio.json` and remote baseline. If local L3 has diverged from `L3.remote-baseline.reltio.json` (unpublished local edits), warns before overwriting — **Review changes** / **Fetch anyway** / **Cancel**. **Review changes** opens a diff (remote vs local), then offers **Fetch and overwrite** (replace local with remote) / **Apply my changes instead** (`pushLocalToTenant` — PUT local to the tenant, no further prompts) / **Cancel** |
-| `reltio.applyL3Configuration` | Tree context (tenant with L3) | **PUT** local `L3.reltio.json` to tenant after GET-vs-baseline drift checks and confirmation/diff review (`putL3Configuration`); refreshes `L3.remote-baseline.reltio.json` from GET on success |
+| `reltio.fetchL3` | Tree context (tenant with L3) | Download L3 JSON via API, write `Business Config/BusinessConfig.json` and remote baseline. If local L3 has diverged from `.reltio-ide/BusinessConfig.baseline.json` (unpublished local edits), warns before overwriting — **Review changes** / **Fetch anyway** / **Cancel**. **Review changes** opens a diff (remote vs local), then offers **Fetch and overwrite** (replace local with remote) / **Apply my changes instead** (`pushLocalToTenant` — PUT local to the tenant, no further prompts) / **Cancel** |
+| `reltio.applyL3Configuration` | Tree context (tenant with L3) | **PUT** local `Business Config/BusinessConfig.json` to tenant after GET-vs-baseline drift checks and confirmation/diff review (`putL3Configuration`); refreshes `.reltio-ide/BusinessConfig.baseline.json` from GET on success |
 | `reltio.fetchConfigurationHistory` | Tree context (tenant with L3) | Clear `history/`, fetch first page (`max=10`), write snapshot files, expose History folder |
 | `reltio.fetchMoreConfigurationHistory` | Tree context (History folder) | Fetch next page (`offset` = snapshot file count) |
-| `reltio.historyCompareWithCurrent` | Tree context (any history snapshot) | `vscode.diff` snapshot vs tenant `L3.reltio.json` |
+| `reltio.historyCompareWithCurrent` | Tree context (any history snapshot) | `vscode.diff` snapshot vs tenant `Business Config/BusinessConfig.json` |
 | `reltio.historyCompareWithPrevious` | Tree context (`reltio.history.snapshot.hasOlder` only) | `vscode.diff` with **older** snapshot on the left and **selected** on the right; neighbor is the next-older file in `listLocalHistorySnapshots` order (newest first). Chronologically oldest snapshot uses `reltio.history.snapshot` so this menu entry is hidden; if there is no older neighbor on disk, an informational message is shown instead of opening a diff. |
 | `reltio.historySelectForCompare` / `reltio.historyCompareSelected` | Tree context (any history snapshot) | Store first URI in `workspaceState`, then open diff (same tenant only) |
 | `reltio.refreshEnvironment` | Tree context (environment) | Rescan workspace tree |
@@ -213,7 +215,7 @@ Precedence: **`skills/workspace/`** overrides the same logical playbook under **
 | `reltio.openSetupGuide` | Welcome view, Command Palette | Opens the in-product Setup Guide webview (`resources/setupGuide.json`). Six steps: tenant connect → auth → pick tenant → model → apply, plus **Connect a Git repository instead**. Markdown twin: `docs/setup-guide-content.md`. The `reltio.gettingStarted` walkthrough mirrors those six steps (`featuredFor` includes `*.reltio.json`, `BusinessConfig.json`, `L3.json`). |
 | `reltio.signInEnvironment` | Inline tree icon on `E_NO_AUTH` env rows | Smart helper: QuickPick to choose browser-OAuth vs token, then runs the matching command. |
 | `reltio.signInToFirstEnvironment` | Walkthrough step 2, status bar (when `G_NEEDS_AUTH`) | Same as above but picks the first unauthed env automatically. |
-| `reltio.openL3` | Inline tree icon on tenants with L3, single-click on tenant row when `reltio.tenantSingleClickOpen` is true | Opens the tenant's `L3.reltio.json` in the editor. |
+| `reltio.openL3` | Inline tree icon on tenants with L3, single-click on tenant row when `reltio.tenantSingleClickOpen` is true | Opens the tenant's `Business Config/BusinessConfig.json` in the editor. |
 | `reltio.quickSwitchEnvironment` | Command Palette | QuickPick across configured envs; focuses the tree and opens L3 if exactly one tenant has it. |
 | `reltio.fetchConfigFromGit` | Welcome view ("Connect your Repository"), Command Palette | Detects an already-cloned repo (`.git` + remote) and skips to discovery, or prompts for a remote URL and clones it into the open (empty) folder via system `git`. Discovers `BusinessConfig.json` files (auto-select, quick-pick, or file-dialog fallback), calls `EnvironmentManager.setGitSources(...)`, registers a sentinel auth token, and flips `reltio.workspaceSource` to `'git'`. Guarded against concurrent invocation and against a workspace that already has a connected tenant. |
 | `reltio.removeGitSource` | Tree context (environment, git mode only) + view title | **"Remove Repository"** — deletes the workspace folder contents and clears all git sources, the sentinel token, and `reltio.workspaceSource`, returning to the welcome screen. State is cleared even if deletion partially fails. |
@@ -243,37 +245,90 @@ Create actions use the **context menu** only (`3_insert@*` groups — no `inline
 
 ### Tenant folder files (`*.reltio.tenant/`)
 
-- **`L3.reltio.json`** — active tenant metadata being edited.
-- **`L3.remote-baseline.reltio.json`** — copy of the remote configuration **as of the last successful Fetch Configuration**; used with **Apply Configuration to Tenant** to detect server-side drift before **PUT**. Written beside `L3.reltio.json` (not under `history/`, which can be cleared when fetching API history).
+The tenant folder is the **git repository root** once bound to a remote. Everything git tracks lives in the component tree; everything the IDE maintains for itself lives in the gitignored `.reltio-ide/`. That split is what lets two tenants clone one repository on different branches and diff cleanly.
 
-## Configuration history (`history/`)
+```text
+{tenantId}.reltio.tenant/          <- git root (.git, .gitignore)
+├── .reltio-config-source.json     (gitignored) environment + tenant identity
+├── .reltio-ide/                   (gitignored) IDE working state
+│   ├── BusinessConfig.baseline.json
+│   ├── BusinessConfig.layout.json
+│   └── history/
+├── Business Config/
+│   └── BusinessConfig.json        <- tracked: the tenant metadata
+├── RDM/README.md
+├── Workflows/{BPMN,Custom Workflows}/README.md
+├── Data Validation Functions/README.md
+├── Metadata Permissions/README.md
+├── User Management/{Users,Roles,Groups}/README.md
+├── Data Loader/README.md
+├── Reltio Integration Hub/README.md
+├── LifeCycle Actions/README.md
+├── DTSS/README.md
+├── Connectors/README.md
+├── User Interface/README.md
+├── Custom Code/{Custom Cleansers,Utilities}/README.md
+└── Physical Configuration/README.md
+```
 
-- **Directory:** `{environment}.reltio.environment/{tenantId}.reltio.tenant/history/`
+- **`Business Config/BusinessConfig.json`** — active tenant metadata being edited. The only component the IDE currently fetches or applies.
+- **`.reltio-ide/BusinessConfig.baseline.json`** — copy of the remote configuration **as of the last successful Fetch Configuration**; used with **Apply Configuration to Tenant** to detect server-side drift before **PUT**. Kept out of the tracked tree so a drift baseline never shows up in a pull request.
+- **The other 17 component folders** are structural placeholders for components the IDE does not yet manage. Each carries a generated `README.md` naming the expected files and linking to `docs.reltio.com`, because git does not track empty directories. An existing `README.md` is never overwritten.
+- The tree definition, the documentation URL map, and `materializeTenantTree` live in **`src/workspace/tenantFolderStructure.ts`**, which is the single place any of these paths are named.
+
+## Configuration history (`.reltio-ide/history/`)
+
+- **Directory:** `{environment}.reltio.environment/{tenantId}.reltio.tenant/.reltio-ide/history/`
 - **Files:** `L3-<sanitizedUpdatedBy>---<timestamp>.reltio.json` — each file contains **only** the `configuration` object from the API row, pretty-printed with tabs (see `writeHistorySnapshot` in `src/workspace/configurationHistory.ts`).
 - **First fetch:** clears all files in `history/`, then requests `offset=0`, `max=10`, writes one file per row. **Fetch more:** does not clear; uses `offset` = number of valid snapshot files already on disk.
 - **Tree visibility:** History appears when there are snapshot files **or** when `workspaceState` contains `reltio.history.exposed::<environment>::<tenant>` (set after a successful first fetch so an empty API page still shows the folder). Snapshot nodes use `reltio.history.snapshot` for the chronologically oldest file on disk and `reltio.history.snapshot.hasOlder` when a strictly older snapshot exists in the same folder (drives **Compare with previous** in the context menu). Two-snapshot compare stores the first URI under `reltio.history.compareA.v1` until **Compare selected** runs.
 
 ### Manual verification (configuration history)
 
-Use a workspace with a tenant that has `L3.reltio.json` and a valid token: run **Fetch configuration history**, confirm `history/` files and tree nodes; reload the window and confirm History still lists disk snapshots; run **Fetch more** and confirm additional files; open a snapshot; **Compare with current**; **Compare with previous snapshot** on a non-oldest row (diff vs immediate older neighbor) and confirm the oldest row has no **Compare with previous** menu entry and shows the informational message if the command is run anyway; **Select for compare** then **Compare selected** on another snapshot of the same tenant; provoke **401** (bad token) and confirm the token is cleared and the user is prompted like other API flows.
+Use a workspace with a tenant that has `Business Config/BusinessConfig.json` and a valid token: run **Fetch configuration history**, confirm `history/` files and tree nodes; reload the window and confirm History still lists disk snapshots; run **Fetch more** and confirm additional files; open a snapshot; **Compare with current**; **Compare with previous snapshot** on a non-oldest row (diff vs immediate older neighbor) and confirm the oldest row has no **Compare with previous** menu entry and shows the informational message if the command is run anyway; **Select for compare** then **Compare selected** on another snapshot of the same tenant; provoke **401** (bad token) and confirm the token is cleared and the user is prompted like other API flows.
 
 ### Manual verification (fetch configuration overwrite guard)
 
-With a tenant that already has `L3.reltio.json` and a valid token: run **Fetch Configuration** once to establish a baseline, then edit `L3.reltio.json` locally (e.g. add an entity type) and run **Fetch Configuration** again — confirm a modal warning appears with **Review changes** / **Fetch anyway** / **Cancel**; **Cancel** must leave the local file untouched; **Fetch anyway** must overwrite immediately. **Review changes** must open a diff (remote vs local) and then show a second, non-modal prompt with **Fetch and overwrite** / **Apply my changes instead** / **Cancel**: **Cancel** (or dismissing it) must leave both the local file and the tenant untouched; **Fetch and overwrite** must replace the local file with the remote (left) version, same as **Fetch anyway**; **Apply my changes instead** must PUT the local file to the tenant with no further confirmation dialogs, refresh `L3.remote-baseline.reltio.json` on success, and leave the local file itself unchanged. Run **Fetch Configuration** again with no local edits since the last fetch and confirm it proceeds silently (no prompt). Delete `L3.remote-baseline.reltio.json` and run **Fetch Configuration** on a tenant with local edits — confirm the prompt still appears (missing baseline is treated as unverified, not safe).
+With a tenant that already has `Business Config/BusinessConfig.json` and a valid token: run **Fetch Configuration** once to establish a baseline, then edit `Business Config/BusinessConfig.json` locally (e.g. add an entity type) and run **Fetch Configuration** again — confirm a modal warning appears with **Review changes** / **Fetch anyway** / **Cancel**; **Cancel** must leave the local file untouched; **Fetch anyway** must overwrite immediately. **Review changes** must open a diff (remote vs local) and then show a second, non-modal prompt with **Fetch and overwrite** / **Apply my changes instead** / **Cancel**: **Cancel** (or dismissing it) must leave both the local file and the tenant untouched; **Fetch and overwrite** must replace the local file with the remote (left) version, same as **Fetch anyway**; **Apply my changes instead** must PUT the local file to the tenant with no further confirmation dialogs, refresh `.reltio-ide/BusinessConfig.baseline.json` on success, and leave the local file itself unchanged. Run **Fetch Configuration** again with no local edits since the last fetch and confirm it proceeds silently (no prompt). Delete `.reltio-ide/BusinessConfig.baseline.json` and run **Fetch Configuration** on a tenant with local edits — confirm the prompt still appears (missing baseline is treated as unverified, not safe).
 
 ### Manual verification (apply configuration)
 
-With a valid token: run **Fetch Configuration** and confirm `L3.remote-baseline.reltio.json` appears next to `L3.reltio.json`. Edit `L3.reltio.json` locally; run **Apply Configuration to Tenant** — when remote matches baseline, confirm **Yes** / **View changes** / **Cancel** and that **View changes** opens a diff (temp remote vs local). Optionally change the tenant on the server elsewhere, fetch in another session or skip fetch to simulate drift — **Apply** must require **Review changes** vs **Skip**. After a successful apply, confirm baseline refreshes (or run **Fetch Configuration** if the refresh warning appeared). Provoke **401** on apply and confirm token clearing matches other API flows. If **PUT** fails with **400**, confirm the error notification includes the API response body when present.
+With a valid token: run **Fetch Configuration** and confirm `.reltio-ide/BusinessConfig.baseline.json` appears next to `Business Config/BusinessConfig.json`. Edit `Business Config/BusinessConfig.json` locally; run **Apply Configuration to Tenant** — when remote matches baseline, confirm **Yes** / **View changes** / **Cancel** and that **View changes** opens a diff (temp remote vs local). Optionally change the tenant on the server elsewhere, fetch in another session or skip fetch to simulate drift — **Apply** must require **Review changes** vs **Skip**. After a successful apply, confirm baseline refreshes (or run **Fetch Configuration** if the refresh warning appeared). Provoke **401** on apply and confirm token clearing matches other API flows. If **PUT** fails with **400**, confirm the error notification includes the API response body when present.
+
+## Legacy layout migration
+
+Workspaces created before the `git-ready-tenant-folder-structure` change hold a flat tenant folder. On activation, in **tenant mode only** and off the critical path, `layoutMigration.ts` moves each such tenant onto the component tree without prompting, so a team never ends up running two layouts side by side.
+
+| From (tenant root) | To (tenant root) |
+|---|---|
+| `L3.reltio.json` | `Business Config/BusinessConfig.json` |
+| `L3.remote-baseline.reltio.json` | `.reltio-ide/BusinessConfig.baseline.json` |
+| `L3.reltio.layout.json` | `.reltio-ide/BusinessConfig.layout.json` |
+| `history/` | `.reltio-ide/history/` |
+
+Because it is unprompted, the safety is in the procedure:
+
+- **Backup first**, to `.reltio-ide-backup/{env}/{tenant}/` at the workspace root (outside the tenant folder so a later commit cannot capture it, inside the workspace so the user can find it). Added to the workspace-root `.gitignore` and retained after success.
+- **Stamp on full success only** (`reltio.layoutMigrated::{env}::{tenant}` in `workspaceState`), so an interrupted run is retried on the next activation rather than left half-done and marked complete.
+- **Refuses a dirty worktree.** Moving tracked files under uncommitted work would bury it in a large rename diff. The tenant is skipped, reported, and retried once the worktree is clean.
+- **Reports afterwards** with one non-blocking notification per workspace and a **Show details** action listing every move.
+- **`reltio.undoLayoutMigration`** restores from the backup and clears the stamps.
+
+Files are moved, not copied, so content is preserved byte-for-byte and no stale duplicate is left behind.
+
+### Manual verification (layout migration)
+
+Open a pre-upgrade workspace with two legacy tenants: confirm both migrate automatically, the summary notification appears, **Show details** lists each move, and the backup exists at `.reltio-ide-backup/`. Reload the window and confirm nothing re-migrates. Dirty the worktree of a legacy tenant that is a git repository, reload, and confirm it is skipped with a message and migrates on the next activation once clean. Run **Undo Layout Migration** and confirm the legacy layout is restored and the tenants are reconsidered on the next activation.
 
 ## Data Architecture
 
-Beyond the file system, the extension keeps **tokens only in memory** (`TokenStore`). It reads `*.reltio.json` files (including `L3.reltio.json` under tenant folders), maintains `UriIndex`, and writes layout sidecars (`*.reltio.layout.json`).
+Beyond the file system, the extension keeps **tokens only in memory** (`TokenStore`). It reads `*.reltio.json` files (including `Business Config/BusinessConfig.json` under tenant folders), maintains `UriIndex`, and writes the ontology layout sidecar to `.reltio-ide/BusinessConfig.layout.json` inside the tenant folder (a git-sourced repository that carries the component tree gets the same treatment; one with an arbitrary layout keeps its sidecar beside the config, as before).
 
 **In-memory / workspace data flow:**
 
 ```
-.reltio/{env}.reltio.environment/{tenant}.reltio.tenant/L3.reltio.json
-(or legacy {env}.reltio.environment/… at workspace root)
+{env}.reltio.environment/{tenant}.reltio.tenant/Business Config/BusinessConfig.json
+(environment dirs live at the workspace root; legacy ones under .reltio/ are still scanned)
     ↓ parseDocument()
 ReltioBusinessModel + AST
     ↓                          ↓

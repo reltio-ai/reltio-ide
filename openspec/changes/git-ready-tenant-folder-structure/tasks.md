@@ -80,10 +80,10 @@
 
 ## 10. Documentation
 
-- [ ] 10.1 Update `ARCHITECTURE.md`: the domain glossary entries for Environment and Tenant, the tenant folder files section, the configuration history section, and the data-flow diagram
-- [ ] 10.2 Document the two new commands in the `ARCHITECTURE.md` command table
-- [ ] 10.3 Document the new layout, the `.reltio-ide/` sidecar location, and the workspace-root default in the settings and file-system sections
-- [ ] 10.4 Add a release note covering the automatic migration, the backup location, the undo command, and the downgrade caveat
+- [x] 10.1 Update `ARCHITECTURE.md`: the domain glossary entries for Environment and Tenant, the tenant folder files section, the configuration history section, and the data-flow diagram
+- [x] 10.2 Document the two new commands in the `ARCHITECTURE.md` command table
+- [x] 10.3 Document the new layout, the `.reltio-ide/` sidecar location, and the workspace-root default in the settings and file-system sections
+- [x] 10.4 Add a release note covering the automatic migration, the backup location, the undo command, and the downgrade caveat
 
 ## 11. Manual QA
 
