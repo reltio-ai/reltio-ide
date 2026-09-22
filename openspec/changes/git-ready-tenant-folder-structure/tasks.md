@@ -105,4 +105,4 @@ host (`dev.reltio.com`), which every API call needs; only the directory name cha
 - [x] 12.8 Replace suffix parsing in `pathTenantLocFromL3Path` with a reverse index built during `scanEnvironments`, keeping the lookup synchronous for `getParent` and first-open tracking; legacy suffixed paths still parse
 - [x] 12.9 Extend the activation migration to rename suffixed folders to plain names, reusing the existing backup, stamp and dirty-worktree refusal
 - [x] 12.10 Tests: short-label derivation and collision fallback, marker-based discovery, legacy suffixed discovery still works, reverse-index lookup, folder-rename migration
-- [ ] 12.11 Update `ARCHITECTURE.md`, the specs and the release note for the new naming
+- [x] 12.11 Update `ARCHITECTURE.md`, the specs and the release note for the new naming

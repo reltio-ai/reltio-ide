@@ -7,13 +7,18 @@ Tenant configuration is now laid out so it can be pushed straight to Git and pro
 Each tenant folder becomes a **self-contained Git repository**, and nothing Git tracks contains the environment host or the tenant ID. That means a Dev tenant and a Prod tenant cloned from the same repository on different branches produce **identical paths**, so the branches diff and merge cleanly:
 
 ```
-{tenantId}.reltio.tenant/          <- git root
-├── Business Config/
-│   └── BusinessConfig.json        <- your tenant metadata (was L3.reltio.json)
-├── RDM/README.md
-├── Workflows/{BPMN,Custom Workflows}/README.md
-└── ... 13 more component folders
+dev/                               <- environment (was dev.reltio.com.reltio.environment)
+└── GrmSwAZFRAeVy1K/               <- tenant, and the git root
+    ├── Business Config/
+    │   └── BusinessConfig.json    <- your tenant metadata (was L3.reltio.json)
+    ├── RDM/README.md
+    ├── Workflows/{BPMN,Custom Workflows}/README.md
+    └── ... 13 more component folders
 ```
+
+Folder names are now plain: the environment is the first part of its host (`dev.reltio.com` becomes
+`dev`) and the tenant is just its ID. The host is still what the extension talks to; it is recorded
+in a hidden `.reltio-environment.json` rather than in the folder name.
 
 The 17 folders for components the IDE does not manage yet are placeholders, each with a `README.md` naming the expected files and linking to the Reltio docs. Git does not track empty directories, so without those files the structure would disappear on push.
 
@@ -27,6 +32,8 @@ The first time you open an existing workspace after updating, tenants on the old
 | `L3.remote-baseline.reltio.json` | `.reltio-ide/BusinessConfig.baseline.json` |
 | `L3.reltio.layout.json` | `.reltio-ide/BusinessConfig.layout.json` |
 | `history/` | `.reltio-ide/history/` |
+| `dev.reltio.com.reltio.environment/` | `dev/` |
+| `GrmSwAZFRAeVy1K.reltio.tenant/` | `GrmSwAZFRAeVy1K/` |
 
 Safeguards:
 

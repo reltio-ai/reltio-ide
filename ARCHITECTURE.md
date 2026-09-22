@@ -26,7 +26,7 @@ This is a **single-module** project — not a multi-module monorepo. All source 
 | Git-sourced environment | An alternative to a live-tenant environment: a single environment node (named after the repository folder) holding one tenant per `BusinessConfig.json` discovered in a cloned or already-present git repository. The rows beneath it mirror the repository's directory layout (`repo / DP / dp_lif`) via inert `GitFolderNode` rows; a config's `tenantId` is its own folder name, qualified with the folder path only when two would otherwise collide. Wired in via `EnvironmentManager.setGitSources(...)`. Reuses the tenant-mode tree/navigation/ontology pipeline unchanged. See the **`git-repository-source`** OpenSpec change and its `design-amendment-multi-tenant.md`. |
 | Workspace source | The `reltio.workspaceSource` context key (`'tenant' \| 'git' \| undefined`), independent of `reltio.uxState`, recording whether the workspace is connected to a live tenant or a git repository. Drives welcome-view button visibility and hides tenant-connectivity menu items in git mode. A workspace is one or the other, never both. |
 | Environment | A Reltio host (e.g. `361.reltio.com`) represented as a `{host}.reltio.environment/` directory under `.reltio/` (preferred) or, for legacy workspaces, at the workspace root. Validated with `GET /reltio/status` before creation. |
-| Tenant | A tenant ID under an environment, stored as `{tenantId}.reltio.tenant/`. The folder carries the **component tree** and is itself the **git repository root** when bound to a remote, so nothing git tracks contains the environment host or tenant ID. Holds `Business Config/BusinessConfig.json` (fetched L3 configuration) and `.reltio-ide/` (gitignored IDE state: drift baseline, ontology layout, history snapshots). |
+| Tenant | A tenant ID under an environment, stored as `{tenantId}/` (the bare id; identity is in the folder's marker, not its name). The folder carries the **component tree** and is itself the **git repository root** when bound to a remote, so nothing git tracks contains the environment host or tenant ID. Holds `Business Config/BusinessConfig.json` (fetched L3 configuration) and `.reltio-ide/` (gitignored IDE state: drift baseline, ontology layout, history snapshots). |
 | Token Store | In-memory map of environment name → Bearer token (and optional aliases). Never persisted; cleared on restart. For browser-OAuth environments it additionally holds the refresh token and access-token expiry alongside the in-memory access token. |
 | Session Store | Thin wrapper over `vscode.SecretStorage` (OS keychain) that persists OAuth **refresh tokens** per environment so sessions survive a window reload. Access tokens are never written to disk. |
 | OAuth credentials store | Per-environment OAuth **client ID**, **client secret**, and **SSO routing tenant ID** in `SecretStorage` (set via **Configure OAuth Client…**). The client pair can be shared across environments when only one pair is stored; the SSO routing tenant ID is always per-environment. Required for browser login and token refresh; never bundled in the extension. |
@@ -243,13 +243,13 @@ Create actions use the **context menu** only (`3_insert@*` groups — no `inline
 
 **Browser OAuth setup:** See `docs/browser-oauth-login.md`.
 
-### Tenant folder files (`*.reltio.tenant/`)
+### Tenant folder files (`{tenantId}/`)
 
 The tenant folder is the **git repository root** once bound to a remote. Everything git tracks lives in the component tree; everything the IDE maintains for itself lives in the gitignored `.reltio-ide/`. That split is what lets two tenants clone one repository on different branches and diff cleanly.
 
 ```text
-{tenantId}.reltio.tenant/          <- git root (.git, .gitignore)
-├── .reltio-config-source.json     (gitignored) environment + tenant identity
+{tenantId}/                        <- git root (.git, .gitignore)
+├── .reltio-config-source.json     (gitignored) environment host + tenant id
 ├── .reltio-ide/                   (gitignored) IDE working state
 │   ├── BusinessConfig.baseline.json
 │   ├── BusinessConfig.layout.json
@@ -278,7 +278,7 @@ The tenant folder is the **git repository root** once bound to a remote. Everyth
 
 ## Configuration history (`.reltio-ide/history/`)
 
-- **Directory:** `{environment}.reltio.environment/{tenantId}.reltio.tenant/.reltio-ide/history/`
+- **Directory:** `{environment}/{tenantId}/.reltio-ide/history/`
 - **Files:** `L3-<sanitizedUpdatedBy>---<timestamp>.reltio.json` — each file contains **only** the `configuration` object from the API row, pretty-printed with tabs (see `writeHistorySnapshot` in `src/workspace/configurationHistory.ts`).
 - **First fetch:** clears all files in `history/`, then requests `offset=0`, `max=10`, writes one file per row. **Fetch more:** does not clear; uses `offset` = number of valid snapshot files already on disk.
 - **Tree visibility:** History appears when there are snapshot files **or** when `workspaceState` contains `reltio.history.exposed::<environment>::<tenant>` (set after a successful first fetch so an empty API page still shows the folder). Snapshot nodes use `reltio.history.snapshot` for the chronologically oldest file on disk and `reltio.history.snapshot.hasOlder` when a strictly older snapshot exists in the same folder (drives **Compare with previous** in the context menu). Two-snapshot compare stores the first URI under `reltio.history.compareA.v1` until **Compare selected** runs.
@@ -295,6 +295,35 @@ With a tenant that already has `Business Config/BusinessConfig.json` and a valid
 
 With a valid token: run **Fetch Configuration** and confirm `.reltio-ide/BusinessConfig.baseline.json` appears next to `Business Config/BusinessConfig.json`. Edit `Business Config/BusinessConfig.json` locally; run **Apply Configuration to Tenant** — when remote matches baseline, confirm **Yes** / **View changes** / **Cancel** and that **View changes** opens a diff (temp remote vs local). Optionally change the tenant on the server elsewhere, fetch in another session or skip fetch to simulate drift — **Apply** must require **Review changes** vs **Skip**. After a successful apply, confirm baseline refreshes (or run **Fetch Configuration** if the refresh warning appeared). Provoke **401** on apply and confirm token clearing matches other API flows. If **PUT** fails with **400**, confirm the error notification includes the API response body when present.
 
+## Folder naming and identity
+
+Folder names carry no identity. `dev.reltio.com.reltio.environment/GrmSwAZFRAeVy1K.reltio.tenant/`
+is now `dev/GrmSwAZFRAeVy1K/`. What the extension needs lives in two gitignored markers:
+
+| Marker | Location | Holds |
+|---|---|---|
+| `.reltio-environment.json` | environment folder | the full host, e.g. `dev.reltio.com` |
+| `.reltio-config-source.json` | tenant folder | environment host + tenant id |
+
+**The host stays the environment's identity everywhere in code.** Only the directory name is
+shortened to the first DNS label, because every API call needs the host. Where two hosts want the
+same label (`dev.reltio.com` and `dev.uk.reltio.com`), the first keeps it and the second falls
+back to its full host. Tenant folders are the bare tenant id: unique and stable by definition, and
+unaffected by a tenant rename in Reltio.
+
+The environment marker sits *above* any tenant git root, so it is never committed. The tenant
+marker is inside the repository and therefore gitignored, and it is written at **tenant creation**
+rather than at git-bind time: with the suffixes gone it is the only thing identifying the folder.
+
+Two consequences for the code:
+
+- **Discovery is marker-based** (`collectEnvironmentDirs`, `scanTenants`), and still accepts
+  legacy `*.reltio.environment` / `*.reltio.tenant` folders so an un-renamed workspace works.
+- **Paths can no longer be parsed back into an identity.** `EnvironmentManager` keeps two maps
+  rebuilt on every scan: `tenantLocations` ((env, tenant) -> actual directory, because a legacy
+  folder is not named after its id) and `tenantPathIndex` (the reverse, so `getParent` and
+  first-open tracking stay synchronous). `locFromPath` is the public lookup.
+
 ## Legacy layout migration
 
 Workspaces created before the `git-ready-tenant-folder-structure` change hold a flat tenant folder. On activation, in **tenant mode only** and off the critical path, `layoutMigration.ts` moves each such tenant onto the component tree without prompting, so a team never ends up running two layouts side by side.
@@ -302,6 +331,8 @@ Workspaces created before the `git-ready-tenant-folder-structure` change hold a 
 | From (tenant root) | To (tenant root) |
 |---|---|
 | `L3.reltio.json` | `Business Config/BusinessConfig.json` |
+| `{host}.reltio.environment/` | `{short label}/` (e.g. `dev.reltio.com` -> `dev`) |
+| `{tenantId}.reltio.tenant/` | `{tenantId}/` |
 | `L3.remote-baseline.reltio.json` | `.reltio-ide/BusinessConfig.baseline.json` |
 | `L3.reltio.layout.json` | `.reltio-ide/BusinessConfig.layout.json` |
 | `history/` | `.reltio-ide/history/` |
@@ -327,7 +358,7 @@ Beyond the file system, the extension keeps **tokens only in memory** (`TokenSto
 **In-memory / workspace data flow:**
 
 ```
-{env}.reltio.environment/{tenant}.reltio.tenant/Business Config/BusinessConfig.json
+{env}/{tenant}/Business Config/BusinessConfig.json
 (environment dirs live at the workspace root; legacy ones under .reltio/ are still scanned)
     ↓ parseDocument()
 ReltioBusinessModel + AST
