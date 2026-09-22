@@ -522,6 +522,47 @@ const {
 	assert.deepStrictEqual(afterRename.map(e => e.name), ['old.reltio.com'], 'host identity survives the rename');
 	assert.strictEqual(afterRename[0].tenants[0].hasL3, true, 'config still resolves after the rename');
 
+	// ------------------------------------------------- 12.12 binding a tenant that already fetched
+
+	// `git clone` refuses a non-empty directory, so a tenant fetched before being connected has to
+	// take the adopt-in-place path instead. Guard the classification that routes between them.
+	const binding = importDist('workspace/tenantGitBinding');
+	mem = installMemoryFs();
+	const fresh = U('/wsB/env/t1');
+	await materializeTenantTree(fresh);
+	assert.strictEqual(
+		await binding.isTenantFolderCloneable(fresh),
+		true,
+		'a materialized but unfetched tenant is still cloneable: the tree is ours, not user content',
+	);
+
+	await vscode.workspace.fs.writeFile(U(`${fresh.fsPath}/${BUSINESS_CONFIG_FILE}`), Buffer.from('{}'));
+	assert.strictEqual(
+		await binding.isTenantFolderCloneable(fresh),
+		false,
+		'once a configuration is fetched the folder is no longer cloneable, so binding must adopt',
+	);
+
+	// A user file dropped into an unmanaged component folder also counts as content.
+	const fresh2 = U('/wsB/env/t2');
+	await materializeTenantTree(fresh2);
+	await vscode.workspace.fs.writeFile(U(`${fresh2.fsPath}/RDM/config.json`), Buffer.from('{}'));
+	assert.strictEqual(
+		await binding.isTenantFolderCloneable(fresh2),
+		false,
+		'a user file in a component folder makes the tenant non-cloneable',
+	);
+
+	// `.reltio-ide/` is IDE state, never user content, so it must not force the adopt path.
+	const fresh3 = U('/wsB/env/t3');
+	await materializeTenantTree(fresh3);
+	await vscode.workspace.fs.writeFile(U(`${fresh3.fsPath}/${LAYOUT_FILE}`), Buffer.from('{}'));
+	assert.strictEqual(
+		await binding.isTenantFolderCloneable(fresh3),
+		true,
+		'IDE state alone does not make a tenant non-cloneable',
+	);
+
 	// ---------------------------------------------------------------- 9.7 path predicate
 
 	assert.ok(isTenantConfigPath(`/x/${BUSINESS_CONFIG_FILE}`), 'component-tree config recognized');

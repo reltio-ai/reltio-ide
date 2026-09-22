@@ -106,3 +106,16 @@ host (`dev.reltio.com`), which every API call needs; only the directory name cha
 - [x] 12.9 Extend the activation migration to rename suffixed folders to plain names, reusing the existing backup, stamp and dirty-worktree refusal
 - [x] 12.10 Tests: short-label derivation and collision fallback, marker-based discovery, legacy suffixed discovery still works, reverse-index lookup, folder-rename migration
 - [x] 12.11 Update `ARCHITECTURE.md`, the specs and the release note for the new naming
+
+## 13. Round 3: bind a tenant that has already fetched
+
+Connect-before-fetch was an unnecessary ordering constraint, and it dead-ended a user who had
+already fetched: the command refused and there was no way forward short of deleting the config.
+
+- [x] 13.1 Drop the refusal in `reltio.connectTenantToGit`; a populated tenant folder is a normal case, not an error
+- [x] 13.2 Add an adopt-in-place path: `git init -b <branch>`, `remote add`, `fetch`, **mixed** `reset origin/<branch>`, `--set-upstream-to`. Never `--hard`, so no user file is touched
+- [x] 13.3 Handle an absent branch on the adopt path by basing on the remote default branch and publishing, same as the clone path; undo the `git init` when the user declines
+- [x] 13.4 Report the `adopted` outcome distinctly, saying the existing config is now staged as changes against the branch
+- [x] 13.5 Tests for the cloneable/adopt classification, including that `.reltio-ide/` alone does not force adoption
+- [x] 13.6 End-to-end check of the adopt sequence against real git: file byte-identical, branch tracking, config shown as a modification
+- [ ] 13.7 Update `design.md` D3 and the `tenant-git-binding` spec for the two binding paths

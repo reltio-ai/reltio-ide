@@ -98,7 +98,7 @@ import {
 	type MultiGitSourceMarker,
 } from './workspace/gitSourceMarker';
 import { isTenantConfigPath } from './workspace/tenantFolderStructure';
-import { bindTenantToGit, isTenantFolderCloneable } from './workspace/tenantGitBinding';
+import { bindTenantToGit } from './workspace/tenantGitBinding';
 import {
 	hasMigrationBackup,
 	migrateWorkspace,
@@ -1698,14 +1698,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				return;
 			}
 
-			// Cloning needs an empty folder, and the clone must happen before the first fetch.
-			if (!(await isTenantFolderCloneable(tenantRoot))) {
-				void vscode.window.showErrorMessage(
-					`Tenant "${node.tenantId}" already has configuration on disk. Connect a tenant to Git before fetching its configuration.`,
-				);
-				return;
-			}
-
 			// Every tenant in a promotion flow shares one remote, so remember it per workspace.
 			const lastRemote = context.workspaceState.get<string>(LAST_GIT_REMOTE_KEY, '');
 			const remoteUrl = await vscode.window.showInputBox({
@@ -1763,6 +1755,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				} else if (outcome.kind === 'branch-created') {
 					void vscode.window.showInformationMessage(
 						`Created and pushed branch "${outcome.branch}" for tenant "${node.tenantId}".`,
+					);
+				} else if (outcome.kind === 'adopted') {
+					// The config was already on disk, so it is now an uncommitted change against the
+					// branch. Say so, otherwise a full-looking diff in Source Control is a surprise.
+					void vscode.window.showInformationMessage(
+						`Tenant "${node.tenantId}" is connected to Git on branch "${outcome.branch}". Its existing configuration is staged as changes against that branch. Review and commit them in Source Control.`,
 					);
 				} else {
 					void vscode.window.showInformationMessage(
