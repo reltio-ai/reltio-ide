@@ -27,8 +27,52 @@ export interface TenantIdentityMarker {
 	tenantId: string;
 }
 
+const ENVIRONMENT_MARKER_FILENAME = '.reltio-environment.json';
+
+/**
+ * Identity of an environment folder.
+ *
+ * Folder names are short labels (`dev`), but every API call needs the full host
+ * (`dev.reltio.com`), so the host lives here rather than in the directory name. The marker sits in
+ * the environment folder, which is *above* any tenant git root, so it is never committed.
+ */
+export interface EnvironmentIdentityMarker {
+	kind: 'environment';
+	host: string;
+}
+
 function markerUri(root: vscode.Uri): vscode.Uri {
 	return vscode.Uri.joinPath(root, MARKER_FILENAME);
+}
+
+function environmentMarkerUri(root: vscode.Uri): vscode.Uri {
+	return vscode.Uri.joinPath(root, ENVIRONMENT_MARKER_FILENAME);
+}
+
+/** Reads an environment folder's marker, or undefined when absent or malformed. */
+export async function readEnvironmentIdentityMarker(
+	environmentRoot: vscode.Uri,
+): Promise<EnvironmentIdentityMarker | undefined> {
+	try {
+		const bytes = await vscode.workspace.fs.readFile(environmentMarkerUri(environmentRoot));
+		const parsed = JSON.parse(new TextDecoder().decode(bytes)) as Partial<EnvironmentIdentityMarker>;
+		return parsed?.kind === 'environment' && typeof parsed.host === 'string' && parsed.host
+			? (parsed as EnvironmentIdentityMarker)
+			: undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+export async function writeEnvironmentIdentityMarker(
+	environmentRoot: vscode.Uri,
+	host: string,
+): Promise<void> {
+	const marker: EnvironmentIdentityMarker = { kind: 'environment', host };
+	await vscode.workspace.fs.writeFile(
+		environmentMarkerUri(environmentRoot),
+		new TextEncoder().encode(JSON.stringify(marker, null, 2)),
+	);
 }
 
 function isTenantIdentityMarker(parsed: unknown): parsed is TenantIdentityMarker {

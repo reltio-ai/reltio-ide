@@ -37,8 +37,13 @@ export function historyExposedStorageKey(environmentName: string, tenantId: stri
 	return `reltio.history.exposed::${environmentName}::${tenantId}`;
 }
 
-export function tenantLocFromL3File(l3Uri: vscode.Uri): { environmentName: string; tenantId: string } | undefined {
-	return pathTenantLocFromL3Path(l3Uri.fsPath);
+export function tenantLocFromL3File(
+	l3Uri: vscode.Uri,
+	environmentManager?: EnvironmentManager | null,
+): { environmentName: string; tenantId: string } | undefined {
+	// Plain folder names carry no identity, so the scan-built index is the authority; legacy
+	// suffixed paths still parse, which keeps a pre-rename workspace working.
+	return environmentManager?.locFromPath(l3Uri.fsPath) ?? pathTenantLocFromL3Path(l3Uri.fsPath);
 }
 
 function escapeReltioFilterLiteral(value: string): string {
@@ -302,7 +307,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		}
 		const p = getConfigTreeItemParent(parsed.model, element);
 		if (p) return p;
-		const loc = tenantLocFromL3File(element.tenantL3Uri!);
+		const loc = tenantLocFromL3File(element.tenantL3Uri!, this.environmentManager);
 		if (!loc || element.jsonPath.length > 1) return undefined;
 		const ti = this.findTenantInfo(loc.environmentName, loc.tenantId);
 		return new TenantNode(
@@ -516,7 +521,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			item.label = 'Browse Entities (0)';
 			return;
 		}
-		const loc = tenantLocFromL3File(item.tenantL3Uri);
+		const loc = tenantLocFromL3File(item.tenantL3Uri, this.environmentManager);
 		if (!loc) return;
 		const token = this.tokenStore.getToken(loc.environmentName);
 		if (!token) return;

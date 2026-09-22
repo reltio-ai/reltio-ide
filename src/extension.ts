@@ -379,7 +379,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			console.error('Reltio layout migration failed:', e);
 			return;
 		}
-		if (report.migrated.length === 0 && report.skipped.length === 0) return;
+		if (report.migrated.length === 0 && report.skipped.length === 0 && report.renamedFolders.length === 0) return;
 
 		treeProvider.refresh();
 		uxBus.fire();
@@ -387,6 +387,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		const parts: string[] = [];
 		if (report.migrated.length > 0) {
 			parts.push(`${report.migrated.length} tenant(s) migrated to the Git-ready folder structure`);
+		}
+		if (report.renamedFolders.length > 0) {
+			parts.push(`${report.renamedFolders.length} folder(s) renamed`);
 		}
 		if (report.skipped.length > 0) {
 			parts.push(`${report.skipped.length} skipped`);
@@ -421,7 +424,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	/** Normalize legacy relative paths (root or `.reltio/`) to logical l3FileUri keys. */
 	function logicalOpenedL3Key(pathOrKey: string): string {
-		const loc = pathTenantLocFromL3Path(pathOrKey);
+		// Folder names no longer encode identity, so prefer the manager's scan-built reverse index
+		// and fall back to parsing legacy suffixed paths.
+		const loc =
+			environmentManager?.locFromPath(pathOrKey) ?? pathTenantLocFromL3Path(pathOrKey);
 		return loc ? l3FileUri(loc.environmentName, loc.tenantId) : pathOrKey;
 	}
 

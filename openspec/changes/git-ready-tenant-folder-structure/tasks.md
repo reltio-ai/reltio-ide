@@ -89,3 +89,20 @@
 
 - [ ] 11.1 Run the full Tier C pass from `design.md`, including the migration, migration-refusal, undo, coexistence and detached-HEAD cases
 - [ ] 11.2 Verify the end-to-end promotion scenario: two tenants bound to one remote on `dev` and `prod`, push both, confirm the branches diff cleanly with no path differences
+
+## 12. Round 2: plain folder names (from live testing)
+
+Dropping `.reltio.environment` / `.reltio.tenant` from folder names. Internal identity stays the
+host (`dev.reltio.com`), which every API call needs; only the directory name changes.
+
+- [x] 12.1 Fix: `createTenant` must write the tenant `.gitignore`, not only migration and git-bind, so `.reltio-ide/` is ignored even when the user runs **Initialize Repository** from the SCM panel
+- [x] 12.2 Add an environment marker (`.reltio-environment.json`, `{kind, host}`) written on `createEnvironment`; it sits above the tenant git root so it is never committed
+- [x] 12.3 Always write the tenant identity marker at `createTenant` time, not only on git-bind: with suffixes gone it is the only thing identifying the folder
+- [x] 12.4 `environmentDirName` returns the first DNS label (`dev.reltio.com` -> `dev`), falling back to the full host when another environment already holds that label
+- [x] 12.5 `tenantDirName` returns the bare tenant ID
+- [x] 12.6 `collectEnvironmentDirs` finds environments by marker, still accepting legacy `*.reltio.environment` dirs
+- [x] 12.7 `scanTenants` finds tenants by marker, still accepting legacy `*.reltio.tenant` dirs
+- [x] 12.8 Replace suffix parsing in `pathTenantLocFromL3Path` with a reverse index built during `scanEnvironments`, keeping the lookup synchronous for `getParent` and first-open tracking; legacy suffixed paths still parse
+- [x] 12.9 Extend the activation migration to rename suffixed folders to plain names, reusing the existing backup, stamp and dirty-worktree refusal
+- [x] 12.10 Tests: short-label derivation and collision fallback, marker-based discovery, legacy suffixed discovery still works, reverse-index lookup, folder-rename migration
+- [ ] 12.11 Update `ARCHITECTURE.md`, the specs and the release note for the new naming

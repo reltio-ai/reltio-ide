@@ -1,7 +1,13 @@
 import * as vscode from 'vscode';
 import type { EnvironmentManager } from './environmentManager';
-import { ensureGitignoreEntries, ensureMarkerGitignored } from './gitSourceMarker';
 import { hasUncommittedChanges } from './tenantGitBinding';
+import { environmentShortLabel } from './environmentManager';
+import {
+	ensureGitignoreEntries,
+	ensureMarkerGitignored,
+	writeEnvironmentIdentityMarker,
+	writeTenantIdentityMarker,
+} from './gitSourceMarker';
 import {
 	BASELINE_FILE,
 	BUSINESS_CONFIG_FILE,
@@ -54,6 +60,8 @@ export interface MigrationSkip {
 
 export interface MigrationReport {
 	migrated: TenantMigration[];
+	/** Suffixed folders renamed to plain names, as `from -> to` strings. */
+	renamedFolders: string[];
 	skipped: MigrationSkip[];
 	backupRoot?: vscode.Uri;
 }
@@ -184,6 +192,109 @@ export async function migrateTenant(
 	return undefined;
 }
 
+const ENV_SUFFIX = '.reltio.environment';
+const TENANT_SUFFIX = '.reltio.tenant';
+
+/**
+ * Renames `*.reltio.environment` / `*.reltio.tenant` folders to plain names.
+ *
+ * The suffixes used to be how folders were identified; markers do that now, so the names can be
+ * the short environment label and the bare tenant ID. Markers are written before the rename so a
+ * failure part-way still leaves every folder discoverable.
+ *
+ * A tenant with uncommitted Git changes is left alone: renaming its folder would move the
+ * repository out from under the user's work.
+ */
+export async function renameSuffixedFolders(
+	workspaceRoot: vscode.Uri,
+	environmentManager: EnvironmentManager,
+): Promise<{ renamed: string[]; skipped: MigrationSkip[] }> {
+	const renamed: string[] = [];
+	const skipped: MigrationSkip[] = [];
+
+	let entries: [string, vscode.FileType][];
+	try {
+		entries = await vscode.workspace.fs.readDirectory(workspaceRoot);
+	} catch {
+		return { renamed, skipped };
+	}
+
+	for (const [envDirName, envType] of entries) {
+		if (envType !== vscode.FileType.Directory || !envDirName.endsWith(ENV_SUFFIX)) continue;
+		const host = envDirName.slice(0, -ENV_SUFFIX.length);
+		const envDir = vscode.Uri.joinPath(workspaceRoot, envDirName);
+
+		// Rename tenants first: doing the parent first would invalidate these URIs.
+		let tenantEntries: [string, vscode.FileType][] = [];
+		try {
+			tenantEntries = await vscode.workspace.fs.readDirectory(envDir);
+		} catch {
+			continue;
+		}
+
+		let anyTenantSkipped = false;
+		for (const [tenantDirName, tenantType] of tenantEntries) {
+			if (tenantType !== vscode.FileType.Directory || !tenantDirName.endsWith(TENANT_SUFFIX)) continue;
+			const tenantId = tenantDirName.slice(0, -TENANT_SUFFIX.length);
+			const from = vscode.Uri.joinPath(envDir, tenantDirName);
+
+			if (await hasUncommittedChanges(from)) {
+				anyTenantSkipped = true;
+				skipped.push({ environmentName: host, tenantId, reason: 'dirty-worktree' });
+				continue;
+			}
+
+			try {
+				await writeTenantIdentityMarker(from, { kind: 'tenant', environmentName: host, tenantId });
+				await vscode.workspace.fs.rename(from, vscode.Uri.joinPath(envDir, tenantId), {
+					overwrite: false,
+				});
+				renamed.push(`${tenantDirName} -> ${tenantId}`);
+			} catch (e) {
+				anyTenantSkipped = true;
+				skipped.push({
+					environmentName: host,
+					tenantId,
+					reason: 'move-failed',
+					detail: e instanceof Error ? e.message : String(e),
+				});
+			}
+		}
+
+		// Leaving a tenant behind means the environment folder still has work to do; renaming it
+		// now would just have to be undone, so hold off until the next activation.
+		if (anyTenantSkipped) continue;
+
+		try {
+			await writeEnvironmentIdentityMarker(envDir, host);
+			const label = environmentShortLabel(host);
+			const target = vscode.Uri.joinPath(workspaceRoot, label);
+			// Another environment may already occupy the short label; keep the full host then.
+			const free = !(await exists(target));
+			const finalName = free ? label : host;
+			if (finalName !== envDirName) {
+				await vscode.workspace.fs.rename(envDir, vscode.Uri.joinPath(workspaceRoot, finalName), {
+					overwrite: false,
+				});
+				renamed.push(`${envDirName} -> ${finalName}`);
+			}
+		} catch (e) {
+			skipped.push({
+				environmentName: host,
+				tenantId: '(environment folder)',
+				reason: 'move-failed',
+				detail: e instanceof Error ? e.message : String(e),
+			});
+		}
+	}
+
+	if (renamed.length > 0) {
+		// Paths changed underneath the manager, so its caches are stale.
+		await environmentManager.scanEnvironments();
+	}
+	return { renamed, skipped };
+}
+
 /** Migrates every legacy tenant in the workspace. Safe to call on an already-migrated workspace. */
 export async function migrateWorkspace(
 	workspaceRoot: vscode.Uri,
@@ -200,7 +311,13 @@ export async function migrateWorkspace(
 		else migrated.push(m);
 	}
 
+	// File layout first, then folder names: the tenant migration above resolves paths through the
+	// manager, which still knows the suffixed locations at that point.
+	const rename = await renameSuffixedFolders(workspaceRoot, environmentManager);
+	skipped.push(...rename.skipped);
+
 	return {
+		renamedFolders: rename.renamed,
 		migrated,
 		skipped,
 		backupRoot: migrated.length > 0
@@ -215,6 +332,11 @@ export function renderMigrationDetail(report: MigrationReport): string {
 	for (const m of report.migrated) {
 		lines.push(`Migrated ${m.environmentName} / ${m.tenantId}`);
 		for (const move of m.moves) lines.push(`    ${move.legacy}  ->  ${move.destination}`);
+		lines.push('');
+	}
+	if (report.renamedFolders.length > 0) {
+		lines.push('Renamed folders (suffixes dropped):');
+		for (const r of report.renamedFolders) lines.push(`    ${r}`);
 		lines.push('');
 	}
 	for (const s of report.skipped) {

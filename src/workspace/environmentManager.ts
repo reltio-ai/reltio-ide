@@ -8,6 +8,13 @@ import {
 	materializeTenantTree,
 	tenantPath,
 } from './tenantFolderStructure';
+import {
+	ensureMarkerGitignored,
+	readEnvironmentIdentityMarker,
+	readTenantIdentityMarker,
+	writeEnvironmentIdentityMarker,
+	writeTenantIdentityMarker,
+} from './gitSourceMarker';
 
 const ENV_SUFFIX = '.reltio.environment';
 const TENANT_SUFFIX = '.reltio.tenant';
@@ -36,17 +43,71 @@ export interface GitSource {
 	l3Uri: vscode.Uri;
 }
 
-function environmentDirName(name: string): string {
-	return `${name}${ENV_SUFFIX}`;
+/**
+ * Folder label for an environment host: the first DNS label, so `dev.reltio.com` becomes `dev`.
+ *
+ * The host stays the environment's identity everywhere else (it is what every API call needs);
+ * only the directory name is shortened, and the host is recorded in the folder's marker.
+ */
+export function environmentShortLabel(host: string): string {
+	const first = host.split('.')[0];
+	return first && first.length > 0 ? first : host;
 }
 
+/** Tenant folders are named by the bare tenant ID: unique and stable by definition. */
 function tenantDirName(tenantId: string): string {
-	return `${tenantId}${TENANT_SUFFIX}`;
+	return tenantId;
+}
+
+function tenantKey(environment: string, tenantId: string): string {
+	return `${environment}/${tenantId}`;
+}
+
+/** Comparable form of a URI path: forward slashes, no trailing slash, lowercased on Windows. */
+function normalizePath(p: string): string {
+	const trimmed = p.replace(/\\/g, '/').replace(/\/+$/, '');
+	return process.platform === 'win32' ? trimmed.toLowerCase() : trimmed;
 }
 
 export class EnvironmentManager {
 	/** Resolved env dir URIs from the last scan (or create). Prefer `.reltio/` over legacy root. */
 	private readonly envLocations = new Map<string, vscode.Uri>();
+
+	/**
+	 * Tenant folder path -> (environment, tenant), rebuilt on every scan.
+	 *
+	 * Folder names no longer encode identity, so it cannot be parsed back out of a path.
+	 * Callers needing the reverse mapping (`getParent`, first-open tracking) are synchronous
+	 * and cannot read a marker on demand, so the scan records it here.
+	 */
+	private readonly tenantPathIndex = new Map<string, { environmentName: string; tenantId: string }>();
+
+	/**
+	 * (environment, tenant) -> the tenant's actual directory, recorded during a scan.
+	 *
+	 * A folder may still be legacy-suffixed (`t1.reltio.tenant`) while new ones are bare (`t1`),
+	 * so the name cannot be derived from the id alone. Mirrors `envLocations`, and is why an
+	 * un-renamed workspace keeps resolving correctly.
+	 */
+	private readonly tenantLocations = new Map<string, vscode.Uri>();
+
+	/**
+	 * Which (environment, tenant) a path belongs to, or undefined when it is outside every
+	 * known tenant folder. Matches the deepest containing tenant directory.
+	 */
+	locFromPath(fsPath: string): { environmentName: string; tenantId: string } | undefined {
+		const target = normalizePath(fsPath);
+		let best: { environmentName: string; tenantId: string } | undefined;
+		let bestLength = -1;
+		for (const [dir, loc] of this.tenantPathIndex) {
+			if (target !== dir && !target.startsWith(`${dir}/`)) continue;
+			if (dir.length > bestLength) {
+				bestLength = dir.length;
+				best = loc;
+			}
+		}
+		return best;
+	}
 
 	constructor(private readonly workspaceRoot: vscode.Uri) {}
 
@@ -58,7 +119,23 @@ export class EnvironmentManager {
 	 * and `collectEnvironmentDirs` keeps scanning both.
 	 */
 	private preferredEnvironmentUri(name: string): vscode.Uri {
-		return vscode.Uri.joinPath(this.workspaceRoot, environmentDirName(name));
+		return vscode.Uri.joinPath(this.workspaceRoot, this.environmentFolderName(name));
+	}
+
+	/**
+	 * Directory name for a host: the short label, unless another environment already holds it.
+	 *
+	 * `dev.reltio.com` and `dev.uk.reltio.com` both want `dev`. The first keeps it; the second
+	 * falls back to its full host, which is unique by construction.
+	 */
+	private environmentFolderName(host: string): string {
+		const label = environmentShortLabel(host);
+		for (const [otherHost, uri] of this.envLocations) {
+			if (otherHost === host) continue;
+			const basename = uri.path.slice(uri.path.lastIndexOf('/') + 1);
+			if (basename === label) return host;
+		}
+		return label;
 	}
 
 	private environmentUri(name: string): vscode.Uri {
@@ -66,7 +143,10 @@ export class EnvironmentManager {
 	}
 
 	private tenantUri(environment: string, tenantId: string): vscode.Uri {
-		return vscode.Uri.joinPath(this.environmentUri(environment), tenantDirName(tenantId));
+		return (
+			this.tenantLocations.get(tenantKey(environment, tenantId)) ??
+			vscode.Uri.joinPath(this.environmentUri(environment), tenantDirName(tenantId))
+		);
 	}
 
 	getL3Uri(environment: string, tenantId: string): vscode.Uri {
@@ -153,6 +233,8 @@ export class EnvironmentManager {
 			return [{ name: environmentName, tenants }];
 		}
 		this.envLocations.clear();
+		this.tenantPathIndex.clear();
+		this.tenantLocations.clear();
 		const preferredRoot = vscode.Uri.joinPath(this.workspaceRoot, RELTIO_WORKSPACE_DOTDIR);
 		await this.collectEnvironmentDirs(preferredRoot);
 		await this.collectEnvironmentDirs(this.workspaceRoot);
@@ -172,10 +254,23 @@ export class EnvironmentManager {
 			return;
 		}
 		for (const [n, t] of entries) {
-			if (t !== vscode.FileType.Directory || !n.endsWith(ENV_SUFFIX)) continue;
-			const name = n.slice(0, -ENV_SUFFIX.length);
-			if (this.envLocations.has(name)) continue;
-			this.envLocations.set(name, vscode.Uri.joinPath(base, n));
+			if (t !== vscode.FileType.Directory) continue;
+			const dir = vscode.Uri.joinPath(base, n);
+
+			// Legacy layout: the host was the directory name.
+			if (n.endsWith(ENV_SUFFIX)) {
+				const name = n.slice(0, -ENV_SUFFIX.length);
+				if (!this.envLocations.has(name)) this.envLocations.set(name, dir);
+				continue;
+			}
+
+			// `.reltio` holds agent assets, not environments; skip dotfolders entirely.
+			if (n.startsWith('.')) continue;
+
+			// Current layout: a short-labelled folder whose marker carries the host.
+			const marker = await readEnvironmentIdentityMarker(dir);
+			if (!marker) continue;
+			if (!this.envLocations.has(marker.host)) this.envLocations.set(marker.host, dir);
 		}
 	}
 
@@ -189,8 +284,22 @@ export class EnvironmentManager {
 		}
 		const out: TenantInfo[] = [];
 		for (const [n, t] of entries) {
-			if (t !== vscode.FileType.Directory || !n.endsWith(TENANT_SUFFIX)) continue;
-			const tenantId = n.slice(0, -TENANT_SUFFIX.length);
+			if (t !== vscode.FileType.Directory || n.startsWith('.')) continue;
+
+			// Legacy suffixed folder, or a plain folder identified by its tenant marker.
+			let tenantId: string | undefined;
+			if (n.endsWith(TENANT_SUFFIX)) {
+				tenantId = n.slice(0, -TENANT_SUFFIX.length);
+			} else {
+				tenantId = (await readTenantIdentityMarker(vscode.Uri.joinPath(root, n)))?.tenantId;
+			}
+			if (!tenantId) continue;
+
+			// Record before resolving paths: a legacy folder is not named after its id.
+			const tenantDir = vscode.Uri.joinPath(root, n);
+			this.tenantPathIndex.set(normalizePath(tenantDir.path), { environmentName: environment, tenantId });
+			this.tenantLocations.set(tenantKey(environment, tenantId), tenantDir);
+
 			const l3 = this.getL3Uri(environment, tenantId);
 			let hasL3 = false;
 			try {
@@ -209,10 +318,13 @@ export class EnvironmentManager {
 		const known = this.envLocations.get(name);
 		if (known) {
 			await vscode.workspace.fs.createDirectory(known);
+			await writeEnvironmentIdentityMarker(known, name);
 			return known;
 		}
 		const uri = this.preferredEnvironmentUri(name);
 		await vscode.workspace.fs.createDirectory(uri);
+		// The folder is named by a short label, so the host only survives in the marker.
+		await writeEnvironmentIdentityMarker(uri, name);
 		this.envLocations.set(name, uri);
 		return uri;
 	}
@@ -227,11 +339,24 @@ export class EnvironmentManager {
 		const uri = this.tenantUri(environment, tenantId);
 		await vscode.workspace.fs.createDirectory(uri);
 		await materializeTenantTree(uri);
+		// Folder names no longer carry identity, so the marker is written now rather than
+		// waiting for a git bind that may never happen. The `.gitignore` matters just as early:
+		// the user may run Initialize Repository from the Source Control panel, and without it
+		// `.reltio-ide/` would be staged as tracked content.
+		await writeTenantIdentityMarker(uri, { kind: 'tenant', environmentName: environment, tenantId });
+		await ensureMarkerGitignored(uri);
+		this.tenantPathIndex.set(normalizePath(uri.path), { environmentName: environment, tenantId });
+		this.tenantLocations.set(tenantKey(environment, tenantId), uri);
 		return uri;
 	}
 
 	async removeTenant(environment: string, tenantId: string): Promise<void> {
-		await this.deleteRecursive(this.tenantUri(environment, tenantId));
+		// Resolve the directory before forgetting where it is: a legacy-suffixed folder would
+		// otherwise fall back to the bare name and delete the wrong path (or nothing at all).
+		const uri = this.tenantUri(environment, tenantId);
+		await this.deleteRecursive(uri);
+		this.tenantLocations.delete(tenantKey(environment, tenantId));
+		this.tenantPathIndex.delete(normalizePath(uri.path));
 	}
 
 	/**

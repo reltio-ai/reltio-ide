@@ -227,8 +227,10 @@ const {
 
 	const { EnvironmentManager } = importDist('workspace/environmentManager');
 	const em = new EnvironmentManager(U('/ws'));
-	const envDir = '/ws/361.reltio.com.reltio.environment';
-	const tenantDir = `${envDir}/demo.reltio.tenant`;
+	// Folder names are the short environment label and the bare tenant id; the host survives
+	// in the environment marker, not the directory name.
+	const envDir = '/ws/361';
+	const tenantDir = `${envDir}/demo`;
 
 	assert.strictEqual(em.getTenantRootUri('361.reltio.com', 'demo').fsPath, tenantDir);
 	assert.strictEqual(em.getL3Uri('361.reltio.com', 'demo').fsPath, `${tenantDir}/${BUSINESS_CONFIG_FILE}`);
@@ -237,9 +239,10 @@ const {
 	assert.strictEqual(em.getHistoryDirectoryUri('361.reltio.com', 'demo').fsPath, `${tenantDir}/${HISTORY_DIR}`);
 
 	// New environments land at the workspace root, not under the hidden .reltio/ dir.
-	assert.ok(
-		!em.getTenantRootUri('new.reltio.com', 't').fsPath.includes('/.reltio/'),
-		'new environments are created at the workspace root',
+	assert.strictEqual(
+		em.getTenantRootUri('new.reltio.com', 't').fsPath,
+		'/ws/new/t',
+		'new environments are created at the workspace root, named by the short label',
 	);
 
 	// An environment already known under .reltio/ keeps its location and is never relocated.
@@ -414,6 +417,110 @@ const {
 	);
 	assert.strictEqual(skip2 && skip2.reason, 'backup-failed', 'backup failure is reported');
 	assert.strictEqual(state2.size, 0, 'no stamp on failure, so the run is retried');
+
+	// ---------------------------------------------------------------- 12.x plain folder names
+
+	const { environmentShortLabel } = importDist('workspace/environmentManager');
+	const migrationRenamer = importDist('workspace/layoutMigration');
+	assert.strictEqual(environmentShortLabel('dev.reltio.com'), 'dev');
+	assert.strictEqual(environmentShortLabel('361.reltio.com'), '361');
+	assert.strictEqual(environmentShortLabel('prod.uk.reltio.com'), 'prod');
+	assert.strictEqual(environmentShortLabel('localhost'), 'localhost', 'a label-less host is its own label');
+
+	// Creating an environment uses the short label and writes the host into the marker, because
+	// the directory name no longer carries it.
+	mem = installMemoryFs();
+	const emN = new EnvironmentManager(U('/wsN'));
+	const envUri = await emN.createEnvironment('dev.reltio.com');
+	assert.strictEqual(envUri.fsPath, '/wsN/dev', 'environment folder is the short label');
+	assert.deepStrictEqual(
+		JSON.parse(text(mem._files.get('/wsN/dev/.reltio-environment.json'))),
+		{ kind: 'environment', host: 'dev.reltio.com' },
+		'environment marker carries the full host',
+	);
+
+	// A second host wanting the same label falls back to its full host.
+	await emN.createEnvironment('dev.uk.reltio.com');
+	assert.ok(mem._dirs.has('/wsN/dev.uk.reltio.com'), 'colliding short label falls back to the host');
+
+	// Tenant folders are the bare id, and get a marker plus a .gitignore at creation time, so
+	// `.reltio-ide/` is ignored even if the user inits a repo from the SCM panel.
+	const tUri = await emN.createTenant('dev.reltio.com', 'GrmSwAZFRAeVy1K');
+	assert.strictEqual(tUri.fsPath, '/wsN/dev/GrmSwAZFRAeVy1K', 'tenant folder is the bare id');
+	assert.deepStrictEqual(
+		JSON.parse(text(mem._files.get('/wsN/dev/GrmSwAZFRAeVy1K/.reltio-config-source.json'))),
+		{ kind: 'tenant', environmentName: 'dev.reltio.com', tenantId: 'GrmSwAZFRAeVy1K' },
+		'tenant marker written at creation, not only on git bind',
+	);
+	const tenantIgnore = text(mem._files.get('/wsN/dev/GrmSwAZFRAeVy1K/.gitignore')).split(/\r?\n/);
+	assert.ok(tenantIgnore.includes('.reltio-ide/'), 'createTenant writes the tenant .gitignore');
+
+	// Marker-based discovery round-trips, and the reverse index resolves a file back to its tenant.
+	const discovered = await emN.scanEnvironments();
+	assert.deepStrictEqual(
+		discovered.map(e => e.name).sort(),
+		['dev.reltio.com', 'dev.uk.reltio.com'],
+		'environments discovered by marker, keyed by host',
+	);
+	assert.deepStrictEqual(
+		discovered.find(e => e.name === 'dev.reltio.com').tenants.map(t => t.tenantId),
+		['GrmSwAZFRAeVy1K'],
+		'tenant discovered by marker',
+	);
+	assert.deepStrictEqual(
+		emN.locFromPath(`/wsN/dev/GrmSwAZFRAeVy1K/${BUSINESS_CONFIG_FILE}`),
+		{ environmentName: 'dev.reltio.com', tenantId: 'GrmSwAZFRAeVy1K' },
+		'reverse index maps a config path back to its tenant',
+	);
+	assert.strictEqual(emN.locFromPath('/wsN/elsewhere/x.json'), undefined, 'paths outside a tenant resolve to undefined');
+
+	// Legacy suffixed folders stay discoverable, so a workspace works before it is renamed.
+	mem = installMemoryFs();
+	await vscode.workspace.fs.writeFile(
+		U(`/wsL/old.reltio.com.reltio.environment/t9.reltio.tenant/${BUSINESS_CONFIG_FILE}`),
+		Buffer.from('{}'),
+	);
+	const emL = new EnvironmentManager(U('/wsL'));
+	const legacyScan = await emL.scanEnvironments();
+	assert.deepStrictEqual(legacyScan.map(e => e.name), ['old.reltio.com'], 'legacy suffixed env still found');
+	assert.deepStrictEqual(legacyScan[0].tenants.map(t => t.tenantId), ['t9'], 'legacy suffixed tenant still found');
+
+	// Removing a legacy-named tenant must delete the folder that is actually on disk, not the
+	// bare name it would be called today. Resolving after forgetting the location deletes nothing.
+	assert.ok(mem._dirs.has('/wsL/old.reltio.com.reltio.environment/t9.reltio.tenant'), 'legacy dir present');
+	const emR = new EnvironmentManager(U('/wsL'));
+	await emR.scanEnvironments();
+	await emR.removeTenant('old.reltio.com', 't9');
+	assert.ok(
+		!mem._dirs.has('/wsL/old.reltio.com.reltio.environment/t9.reltio.tenant'),
+		'removeTenant deletes the legacy-suffixed folder actually on disk',
+	);
+	assert.ok(
+		!mem._files.has(`/wsL/old.reltio.com.reltio.environment/t9.reltio.tenant/${BUSINESS_CONFIG_FILE}`),
+		'its contents go with it',
+	);
+
+	// Rebuild the legacy workspace for the rename checks below.
+	mem = installMemoryFs();
+	await vscode.workspace.fs.writeFile(
+		U(`/wsL/old.reltio.com.reltio.environment/t9.reltio.tenant/${BUSINESS_CONFIG_FILE}`),
+		Buffer.from('{}'),
+	);
+	await emL.scanEnvironments();
+
+	// Renaming drops the suffixes and leaves markers behind.
+	const renameResult = await migrationRenamer.renameSuffixedFolders(U('/wsL'), emL);
+	assert.deepStrictEqual(renameResult.skipped, [], 'nothing skipped on a clean non-git workspace');
+	assert.ok(mem._dirs.has('/wsL/old'), 'environment folder renamed to the short label');
+	assert.ok(
+		mem._files.has(`/wsL/old/t9/${BUSINESS_CONFIG_FILE}`),
+		'tenant renamed to the bare id, config carried along',
+	);
+	assert.ok(mem._files.has('/wsL/old/.reltio-environment.json'), 'environment marker written before rename');
+	assert.ok(mem._files.has('/wsL/old/t9/.reltio-config-source.json'), 'tenant marker written before rename');
+	const afterRename = await emL.scanEnvironments();
+	assert.deepStrictEqual(afterRename.map(e => e.name), ['old.reltio.com'], 'host identity survives the rename');
+	assert.strictEqual(afterRename[0].tenants[0].hasL3, true, 'config still resolves after the rename');
 
 	// ---------------------------------------------------------------- 9.7 path predicate
 
