@@ -30,10 +30,21 @@ A `reltio.connectTenantToGit` command SHALL be available on a tenant node. It SH
 - **THEN** the remote URL prompt is pre-filled with the previously used remote
 - **AND** the branch prompt is empty
 
-#### Scenario: Connecting requires an empty tenant folder
-- **WHEN** the tenant folder already contains user content such as a fetched configuration
-- **THEN** the command refuses with a message explaining that Git must be connected before the first fetch
-- **AND** nothing on disk is modified
+#### Scenario: A tenant that has already fetched is adopted, not refused
+- **WHEN** the tenant folder already contains a fetched configuration
+- **THEN** the repository is created in place and the remote branch's history is adopted underneath the existing files
+- **AND** every file already on disk is byte-identical afterwards
+- **AND** the configuration is reported as an uncommitted change against that branch
+
+#### Scenario: Adoption never overwrites local work
+- **WHEN** the remote branch holds a different version of `Business Config/BusinessConfig.json`
+- **THEN** the local file is left exactly as it was and the difference appears as a modification
+- **AND** no `--hard` reset, checkout or merge touches the working tree
+
+#### Scenario: Declining branch creation during adoption leaves no trace
+- **WHEN** the branch is absent on the remote and the user declines to create it
+- **THEN** the repository initialized for the attempt is removed
+- **AND** the tenant folder is left exactly as it was found
 
 #### Scenario: The component tree is materialized after cloning
 - **WHEN** the clone completes and the cloned branch does not already contain the component tree

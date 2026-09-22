@@ -118,4 +118,4 @@ already fetched: the command refused and there was no way forward short of delet
 - [x] 13.4 Report the `adopted` outcome distinctly, saying the existing config is now staged as changes against the branch
 - [x] 13.5 Tests for the cloneable/adopt classification, including that `.reltio-ide/` alone does not force adoption
 - [x] 13.6 End-to-end check of the adopt sequence against real git: file byte-identical, branch tracking, config shown as a modification
-- [ ] 13.7 Update `design.md` D3 and the `tenant-git-binding` spec for the two binding paths
+- [x] 13.7 Update `design.md` D3 and the `tenant-git-binding` spec for the two binding paths

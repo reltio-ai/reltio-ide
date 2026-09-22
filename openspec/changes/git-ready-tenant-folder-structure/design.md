@@ -69,7 +69,16 @@ Repositories then sit at depth two in plain sight rather than depth three inside
 
 Branch names are promotion stages (`dev`, `test`, `prod`) that vary by team, so they cannot be derived from the tenant ID. The remote is shared across every tenant in a promotion flow, so it belongs at workspace scope; the branch differs per tenant, so it does not.
 
-Ordering matters. Connect runs **before** the first fetch, while the folder is still empty, so `git clone` works directly. The alternative (`git init` plus `remote add` plus `fetch` plus `checkout -b --track`, or an orphan branch when the branch does not exist yet) is materially more code and more failure modes. `isFolderEmpty` already tolerates `.reltio`, `.DS_Store`, `Thumbs.db` and `desktop.ini`; the emptiness check for a tenant folder additionally tolerates the component tree when it contains only generated `README.md` files.
+Binding works in either order, because requiring connect-before-fetch turned out to be a dead end: a user who fetched first had no way forward short of deleting their configuration. Two paths:
+
+| Tenant folder | Path |
+|---|---|
+| Empty | `git clone --branch <b> <remote> .` straight in |
+| Already holds a configuration | `git init -b <b>`, `remote add`, `fetch`, **mixed** `reset origin/<b>`, `--set-upstream-to` |
+
+The reset on the second path is mixed, never `--hard`. HEAD and the index move to the remote branch; the working tree is untouched, so not one byte of the user's configuration is overwritten. Their config then shows as an uncommitted change against the branch, which is precisely the diff they want to review and push. The notification says so, because an apparently large diff in Source Control is otherwise alarming.
+
+`isTenantFolderCloneable` decides between them. It tolerates `.reltio`, `.reltio-ide`, `.DS_Store`, `Thumbs.db`, `desktop.ini` and a component tree containing only generated `README.md` files, since all of those are ours rather than the user's work. A `BusinessConfig.json`, or any file the user put in a component folder, routes to the adopt path.
 
 Storing the branch would create a second source of truth that silently goes stale the moment a user checks out from a terminal. Reading `HEAD` cannot go stale.
 
