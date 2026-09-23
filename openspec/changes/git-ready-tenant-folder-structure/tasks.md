@@ -126,3 +126,14 @@ already fetched: the command refused and there was no way forward short of delet
 - [x] 14.2 Replace the thrown `EmptyRemoteError` on the clone path with the same outcome, so an empty remote never surfaces as an error
 - [x] 14.3 Reword the notification as the next step (commit and push from Source Control) rather than as something going wrong
 - [x] 14.4 End-to-end check against a real empty bare remote: branch set, origin set, config preserved, first commit pushes cleanly with no env/tenant in the tracked path
+
+## 15. Round 5: a new branch must not inherit another tenant's configuration
+
+Reported from testing: connecting a second tenant to a new branch left the first tenant's
+config in the second tenant's folder, because the branch forks from the remote default.
+
+- [x] 15.1 After forking a new branch from the default, drop the inherited `Business Config/BusinessConfig.json` from the index and working tree
+- [x] 15.2 Keep shared history rather than using `--orphan`: the user confirmed they raise dev -> test -> prod pull requests, which unrelated histories break
+- [x] 15.3 Leave component folders and generated READMEs alone; they are identical per tenant, and anything hand-placed is the user's content
+- [x] 15.4 Stage the deletion but do not commit it; the extension makes no commits on the user's behalf
+- [x] 15.5 End-to-end: two tenants, one remote, branches dev and test. Tenant B never sees tenant A's config, READMEs survive, history is shared, and merging dev into test produces a normal content conflict rather than 'unrelated histories'

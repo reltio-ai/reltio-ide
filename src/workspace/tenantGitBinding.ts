@@ -7,7 +7,7 @@ import {
 	describeGitFailure,
 	isGitRepo,
 } from './gitConfigSource';
-import { materializeTenantTree } from './tenantFolderStructure';
+import { BUSINESS_CONFIG_FILE, materializeTenantTree } from './tenantFolderStructure';
 import { writeTenantIdentityMarker } from './gitSourceMarker';
 
 const execFileAsync = promisify(execFile);
@@ -278,6 +278,30 @@ async function adoptExistingFolder(options: BindOptions): Promise<BindOutcome> {
 	return { kind: 'branch-created', branch };
 }
 
+/**
+ * Removes the configuration inherited from the branch this one was forked off.
+ *
+ * A new branch forks from the remote's default branch so that promotion pull requests
+ * (`dev` into `test` into `prod`) have a common ancestor. The side effect is that the default
+ * branch's configuration, which belongs to a *different* tenant, lands in this tenant's folder.
+ * Showing one tenant's data under another tenant is wrong, so it is dropped here and
+ * **Fetch Configuration** writes this tenant's own into a clean tree.
+ *
+ * Only the managed configuration file is removed. The component folders and their generated
+ * READMEs are identical for every tenant, and anything a user hand-placed in an unmanaged folder
+ * is their content, not inherited noise, so neither is touched.
+ *
+ * The deletion is staged but deliberately not committed: the extension does not make commits on
+ * the user's behalf. Their first commit carries both the removal and their own configuration.
+ */
+async function dropInheritedConfiguration(tenantRoot: vscode.Uri): Promise<void> {
+	try {
+		await git(tenantRoot, ['rm', '--quiet', '--', BUSINESS_CONFIG_FILE]);
+	} catch {
+		// The default branch had no configuration at that path. Nothing to drop.
+	}
+}
+
 /** Fetches the remote's default branch and returns its ref, or undefined when the remote is empty. */
 async function fetchDefaultBranch(
 	tenantRoot: vscode.Uri,
@@ -333,6 +357,7 @@ async function createBranchFromDefault(
 	}
 
 	await git(tenantRoot, ['checkout', '-b', branch]);
+	await dropInheritedConfiguration(tenantRoot);
 
 	try {
 		await git(tenantRoot, ['push', '-u', 'origin', branch]);
