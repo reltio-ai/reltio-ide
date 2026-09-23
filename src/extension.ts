@@ -1752,6 +1752,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					void vscode.window.showWarningMessage(
 						`Branch "${outcome.branch}" was created locally but could not be pushed: ${outcome.reason}`,
 					);
+				} else if (outcome.kind === 'initialized-empty-remote') {
+					// Not a failure: an unborn branch cannot be pushed, so the first commit is the
+					// user's to make. Phrase it as the next step rather than as something going wrong.
+					void vscode.window.showInformationMessage(
+						`Tenant "${node.tenantId}" is connected to Git on branch "${outcome.branch}". The remote is empty, so your configuration will be its first commit: commit and push from Source Control.`,
+					);
 				} else if (outcome.kind === 'branch-created') {
 					void vscode.window.showInformationMessage(
 						`Created and pushed branch "${outcome.branch}" for tenant "${node.tenantId}".`,

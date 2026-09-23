@@ -35,10 +35,18 @@ async function git(cwd: vscode.Uri, args: string[]): Promise<string> {
 	}
 }
 
-/** Raised when the remote has no commits, so there is no default branch to create a branch from. */
-export class EmptyRemoteError extends Error {
-	constructor(readonly url: string) {
-		super(`${url} has no commits yet. Push an initial commit, then connect this tenant.`);
+/**
+ * True when the repository has at least one commit.
+ *
+ * A freshly created remote has none, which makes its branch "unborn": it exists as a ref target
+ * but cannot be pushed until something is committed. That is a normal starting state, not an error.
+ */
+async function hasAnyCommit(root: vscode.Uri): Promise<boolean> {
+	try {
+		await git(root, ['rev-parse', '--verify', 'HEAD']);
+		return true;
+	} catch {
+		return false;
 	}
 }
 
@@ -141,6 +149,11 @@ export type BindOutcome =
 	/** The folder already held a configuration, so the branch was adopted underneath it. */
 	| { kind: 'adopted'; branch: string }
 	| { kind: 'branch-created'; branch: string }
+	/**
+	 * The remote has no commits yet. The repository is initialized on the requested branch with
+	 * `origin` set; the user's first commit starts the branch. Nothing failed.
+	 */
+	| { kind: 'initialized-empty-remote'; branch: string }
 	| { kind: 'branch-created-not-pushed'; branch: string; reason: string }
 	| { kind: 'declined'; branch: string };
 
@@ -237,8 +250,9 @@ async function adoptExistingFolder(options: BindOptions): Promise<BindOutcome> {
 		}
 		const defaultRef = await fetchDefaultBranch(tenantRoot, remoteUrl);
 		if (!defaultRef) {
-			// Nothing to base on. The branch is still valid locally; the first commit starts it.
-			return { kind: 'branch-created-not-pushed', branch, reason: `${remoteUrl} has no commits yet.` };
+			// Nothing to base on, and an unborn branch cannot be pushed. The repository is wired up
+			// on `branch` with `origin` set, so the user's first commit starts it.
+			return { kind: 'initialized-empty-remote', branch };
 		}
 		targetRef = defaultRef;
 		created = true;
@@ -310,11 +324,12 @@ async function createBranchFromDefault(
 		throw describeGitFailure(e);
 	}
 
-	// An empty remote clones successfully but has no commit, so there is nothing to branch from.
-	try {
-		await git(tenantRoot, ['rev-parse', '--verify', 'HEAD']);
-	} catch {
-		throw new EmptyRemoteError(remoteUrl);
+	// An empty remote clones fine but has no commit to branch from, and an unborn branch cannot be
+	// pushed. That is not a failure: the repository is wired up and the user's first commit starts
+	// the branch. Say so rather than reporting a push that was never possible.
+	if (!(await hasAnyCommit(tenantRoot))) {
+		await git(tenantRoot, ['checkout', '-b', branch]);
+		return { kind: 'initialized-empty-remote', branch };
 	}
 
 	await git(tenantRoot, ['checkout', '-b', branch]);

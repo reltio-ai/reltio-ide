@@ -119,3 +119,10 @@ already fetched: the command refused and there was no way forward short of delet
 - [x] 13.5 Tests for the cloneable/adopt classification, including that `.reltio-ide/` alone does not force adoption
 - [x] 13.6 End-to-end check of the adopt sequence against real git: file byte-identical, branch tracking, config shown as a modification
 - [x] 13.7 Update `design.md` D3 and the `tenant-git-binding` spec for the two binding paths
+
+## 14. Round 4: empty remote is a normal state, not a failure
+
+- [x] 14.1 Add an `initialized-empty-remote` outcome; an unborn branch cannot be pushed, so reporting a failed push was wrong on both the clone and adopt paths
+- [x] 14.2 Replace the thrown `EmptyRemoteError` on the clone path with the same outcome, so an empty remote never surfaces as an error
+- [x] 14.3 Reword the notification as the next step (commit and push from Source Control) rather than as something going wrong
+- [x] 14.4 End-to-end check against a real empty bare remote: branch set, origin set, config preserved, first commit pushes cleanly with no env/tenant in the tracked path
