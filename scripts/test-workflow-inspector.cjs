@@ -44,6 +44,8 @@ const { importDist } = require('./lib/import-dist.cjs');
 
 const {
 	listJarDeployments,
+	listAvailableJars,
+	registerJarDeployment,
 	listProcessDefinitions,
 	getProcessDefinitionXml,
 	WorkflowConnectionError,
@@ -60,7 +62,15 @@ const { EnvironmentManager } = importDist('workspace/environmentManager');
 const { TokenStore, GIT_SOURCE_TOKEN } = importDist('api/tokenStore');
 const { MultiTenantTreeProvider } = importDist('tree/multiTenantTreeProvider');
 const { BusinessConfigFolderNode } = importDist('tree/multiTenantNodes');
-const { WorkflowsFolderNode } = importDist('tree/workflowNodes');
+const {
+	WorkflowsFolderNode,
+	ProcessDefinitionNode,
+	JarDeploymentNode,
+	JarDeploymentsFolderNode,
+	UnregisteredJarsFolderNode,
+	UnregisteredJarNode,
+	jarModuleFileName,
+} = importDist('tree/workflowNodes');
 const { deriveTenantNamings } = importDist('workspace/l3Discovery');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -395,6 +405,250 @@ function textResponse(status, text) {
 		for (const cmd of ['reltio.fetchWorkflows', 'reltio.refreshWorkflows', 'reltio.editWorkflowAdapterUrl']) {
 			assert.ok(workflowMenuCommands.includes(cmd), `view/item/context must include menu entry for "${cmd}"`);
 		}
+	}
+
+	// ── 13. Row tooltips ────────────────────────────────────────────────────
+	// The hover is the only place a user learns whether a definition is Reltio's
+	// or their own before acting on it — redeploying an id that is already live
+	// replaces a running workflow — so it leads, in bold, and the fields below
+	// it degrade rather than printing "Invalid Date" or "undefined".
+	{
+		const definition = {
+			id: 'review:3:4001',
+			type: 'dataChangeRequestReview',
+			displayName: 'Data Change Request Review',
+			deployedBy: 'jane@acme.com',
+			deployTime: Date.UTC(2026, 5, 12, 9, 30),
+			generic: true,
+		};
+
+		const builtIn = new ProcessDefinitionNode('env', 'tenant', definition, 'none');
+		assert.ok(
+			builtIn.tooltip instanceof vscode.MarkdownString,
+			'the tooltip must be a MarkdownString, not a plain string',
+		);
+		const text = builtIn.tooltip.value;
+		assert.ok(text.startsWith('**Built-in workflow**'), `classification must lead in bold, got: ${text}`);
+		assert.ok(text.includes('Name: Data Change Request Review'));
+		assert.ok(text.includes('ID: dataChangeRequestReview'));
+		assert.ok(
+			!text.includes('Process ID:'),
+			'the field is labelled "ID"; "Process ID" is the old wording',
+		);
+		assert.ok(text.includes('Deployed by: jane@acme.com'));
+		assert.ok(/Deployed: \S/.test(text), 'a deploy timestamp must be rendered');
+		assert.ok(!text.includes('Invalid Date'));
+
+		// A trusted MarkdownString renders `command:` links, and every value here
+		// is server-supplied.
+		assert.strictEqual(builtIn.tooltip.isTrusted, false, 'tooltips must stay untrusted');
+
+		const custom = new ProcessDefinitionNode(
+			'env', 'tenant', { ...definition, generic: false }, 'none',
+		);
+		assert.ok(custom.tooltip.value.startsWith('**Custom workflow**'));
+
+		// Only `type` is guaranteed by the row guard, so every other field is
+		// genuinely optional at runtime and must be omitted, not rendered empty.
+		const sparse = new ProcessDefinitionNode('env', 'tenant', { type: 'bare' }, 'none');
+		const sparseText = sparse.tooltip.value;
+		assert.ok(sparseText.includes('ID: bare'));
+		assert.ok(!sparseText.includes('Process ID:'));
+		assert.ok(sparseText.includes('Name: bare'), 'the id stands in for a missing name');
+		assert.ok(!sparseText.includes('Deployed by:'), 'a missing field must be omitted entirely');
+		assert.ok(!sparseText.includes('Invalid Date'));
+		assert.ok(!sparseText.includes('undefined'));
+
+		// Markdown metacharacters in a customer-authored process name must not
+		// reformat the rest of the tooltip.
+		const hostile = new ProcessDefinitionNode(
+			'env', 'tenant', { type: 'x', displayName: '_italic_ *bold* [link](x)' }, 'none',
+		);
+		assert.ok(
+			!hostile.tooltip.value.includes('_italic_'),
+			'markdown metacharacters must be escaped',
+		);
+		assert.ok(hostile.tooltip.value.includes('\\_italic\\_'));
+
+		// …but escaping must stay inline-only. A full CommonMark escape set takes
+		// `.` and `-`, which renders an email as `jane@acme\.com` — legal markdown
+		// and a value the user can no longer copy out of the hover.
+		// (The JAR module path below is the other half of this check.)
+		assert.ok(
+			text.includes('jane@acme.com'),
+			'an email address must survive escaping unmodified',
+		);
+
+		// Local state is still reported, below the identity rather than inside it.
+		const changed = new ProcessDefinitionNode('env', 'tenant', definition, 'changed');
+		assert.ok(changed.tooltip.value.includes('local changes'));
+
+		const jar = new JarDeploymentNode('env', 'tenant', {
+			name: 'acme-workflow',
+			module: 'com.acme:workflow:1.2.0',
+			createdBy: 'build@acme.com',
+			createTime: Date.UTC(2026, 5, 12, 9, 30),
+		});
+		assert.ok(jar.tooltip instanceof vscode.MarkdownString);
+		assert.ok(jar.tooltip.value.startsWith('**Custom JAR**'));
+		assert.ok(jar.tooltip.value.includes('Module: com.acme:workflow:1.2.0'));
+		assert.ok(!jar.tooltip.value.includes('Description:'), 'an absent description is omitted');
+	}
+
+	// ── 14. listAvailableJars: envelope unwrap ────────────────────────────────
+	{
+		const sampleJars = [{ module: 'reltio.workflow-custom-jars/Acme/my-1.0.0.jar', updateTime: 123, size: 456 }];
+		const { result } = await withFetch(
+			() => jsonResponse(200, { limitExceeded: false, total: 1, jars: sampleJars }),
+			() => listAvailableJars('demo-01-workflow.reltio.com', 'T1', 'https://demo-01.reltio.com', 'tok'),
+		);
+		assert.deepStrictEqual(result, { kind: 'ok', jars: sampleJars });
+	}
+
+	// ── 15. listAvailableJars: POST with a JSON body, never omitted ──────────
+	{
+		let capturedInit = null;
+		const { result } = await withFetch(
+			(url, init) => { capturedInit = init; return jsonResponse(200, { jars: [] }); },
+			() => listAvailableJars('demo-01-workflow.reltio.com', 'T1', 'https://demo-01.reltio.com', 'tok'),
+		);
+		assert.strictEqual(capturedInit.method, 'POST', 'listJars must be a POST');
+		assert.strictEqual(capturedInit.body, '{}', 'listJars must always send a JSON body, even when empty');
+		assert.deepStrictEqual(result, { kind: 'ok', jars: [] });
+	}
+
+	// ── 16. listAvailableJars: malformed rows dropped, not thrown ────────────
+	{
+		const good = { module: 'ok.jar', updateTime: 1, size: 1 };
+		const { result } = await withFetch(
+			() => jsonResponse(200, { jars: [null, { module: 42 }, { module: '' }, good] }),
+			() => listAvailableJars('demo-01-workflow.reltio.com', 'T1', 'https://demo-01.reltio.com', 'tok'),
+		);
+		assert.deepStrictEqual(result, { kind: 'ok', jars: [good] });
+	}
+
+	// ── 17. listAvailableJars: errorCode 10089 → notConfigured, not thrown ───
+	// This is the specific failure mode confirmed on a real tenant (`SunilTst`)
+	// that has working registered JARs but no `jarsLocation` config — must read
+	// as "not available here," not as a broken refresh.
+	{
+		const { result } = await withFetch(
+			() => jsonResponse(400, { errorCode: 10089, error: 'Tenant has no configuration for JAR files location' }),
+			() => listAvailableJars('demo-01-workflow.reltio.com', 'T1', 'https://demo-01.reltio.com', 'tok'),
+		);
+		assert.deepStrictEqual(result, { kind: 'notConfigured' });
+	}
+
+	// ── 18. listAvailableJars: any other error still throws ReltioApiError ───
+	{
+		await assert.rejects(
+			() => withFetch(
+				() => jsonResponse(500, { errorCode: 99999, error: 'boom' }),
+				() => listAvailableJars('demo-01-workflow.reltio.com', 'T1', 'https://demo-01.reltio.com', 'tok'),
+			),
+			e => e instanceof ReltioApiError && e.statusCode === 500,
+			'an error code other than 10089 must still throw ReltioApiError',
+		);
+		// Same for a body that isn't JSON at all.
+		await assert.rejects(
+			() => withFetch(
+				() => textResponse(500, 'internal server error'),
+				() => listAvailableJars('demo-01-workflow.reltio.com', 'T1', 'https://demo-01.reltio.com', 'tok'),
+			),
+			e => e instanceof ReltioApiError && e.statusCode === 500,
+			'a non-JSON error body must still throw ReltioApiError, not be mistaken for notConfigured',
+		);
+	}
+
+	// ── 19. registerJarDeployment: request shape and success/error paths ─────
+	{
+		let capturedUrl = null;
+		let capturedInit = null;
+		const { result } = await withFetch(
+			(url, init) => { capturedUrl = url; capturedInit = init; return jsonResponse(200, { status: 'OK' }); },
+			() => registerJarDeployment(
+				'demo-01-workflow.reltio.com', 'T1', 'https://demo-01.reltio.com', 'tok',
+				{ module: 'a/b.jar', name: 'My JAR', description: 'desc' },
+			),
+		);
+		assert.strictEqual(result, undefined, 'a successful registration resolves with no value');
+		assert.ok(capturedUrl.endsWith('/jarDeployments'), `register URL must end with /jarDeployments, got: ${capturedUrl}`);
+		assert.strictEqual(capturedInit.method, 'POST');
+		assert.deepStrictEqual(
+			JSON.parse(capturedInit.body),
+			{ module: 'a/b.jar', name: 'My JAR', description: 'desc' },
+		);
+
+		// Optional description defaults to '', never omitted or undefined on the wire.
+		let capturedInit2 = null;
+		await withFetch(
+			(url, init) => { capturedInit2 = init; return jsonResponse(200, { status: 'OK' }); },
+			() => registerJarDeployment(
+				'demo-01-workflow.reltio.com', 'T1', 'https://demo-01.reltio.com', 'tok',
+				{ module: 'a/b.jar', name: 'My JAR' },
+			),
+		);
+		assert.strictEqual(JSON.parse(capturedInit2.body).description, '');
+
+		await assert.rejects(
+			() => withFetch(
+				() => jsonResponse(400, { errorCode: 10055, error: 'name already exists' }),
+				() => registerJarDeployment(
+					'demo-01-workflow.reltio.com', 'T1', 'https://demo-01.reltio.com', 'tok',
+					{ module: 'a/b.jar', name: 'dup' },
+				),
+			),
+			e => e instanceof ReltioApiError && e.statusCode === 400 && e.message.includes('name already exists'),
+			'a name collision must surface the Adapter\'s own message',
+		);
+	}
+
+	// ── 20. Unregistered-JAR tree nodes ───────────────────────────────────────
+	{
+		const available = [{ module: 'reltio.workflow-custom-jars/Acme/new-1.0.0.jar', updateTime: Date.UTC(2026, 5, 1), size: 2048 }];
+
+		// Folder count / collapsible state react to `unregistered`, independent of `deployments`.
+		const emptyBoth = new JarDeploymentsFolderNode('env', 'tenant', [], undefined);
+		assert.strictEqual(emptyBoth.collapsibleState, vscode.TreeItemCollapsibleState.None);
+		const withUnregisteredOnly = new JarDeploymentsFolderNode('env', 'tenant', [], available);
+		assert.strictEqual(withUnregisteredOnly.collapsibleState, vscode.TreeItemCollapsibleState.Expanded);
+		assert.strictEqual(withUnregisteredOnly.label, 'JAR Deployments (0)', 'the folder count reflects registered JARs only');
+
+		const subfolder = new UnregisteredJarsFolderNode('env', 'tenant', available);
+		assert.strictEqual(subfolder.label, 'Unregistered (1)');
+		assert.strictEqual(subfolder.collapsibleState, vscode.TreeItemCollapsibleState.Expanded);
+
+		const emptySubfolder = new UnregisteredJarsFolderNode('env', 'tenant', []);
+		assert.strictEqual(emptySubfolder.collapsibleState, vscode.TreeItemCollapsibleState.None);
+
+		const leaf = new UnregisteredJarNode('env', 'tenant', available[0]);
+		assert.strictEqual(leaf.label, 'new-1.0.0.jar', 'label is the file name, not the full module path');
+		assert.ok(leaf.tooltip.value.startsWith('**Not yet registered**'));
+		assert.ok(leaf.tooltip.value.includes('Module: reltio.workflow-custom-jars/Acme/new-1.0.0.jar'));
+		assert.ok(leaf.tooltip.value.includes('Size: 2.0 KB'));
+		assert.strictEqual(leaf.command.command, 'reltio.registerJarDeployment', 'clicking a row must start registration');
+		assert.strictEqual(leaf.contextValue, 'reltio.workflows.unregisteredJar');
+
+		assert.strictEqual(jarModuleFileName('a/b/c.jar'), 'c.jar');
+		assert.strictEqual(jarModuleFileName('nofolder.jar'), 'nofolder.jar', 'a bare module with no slash is its own file name');
+	}
+
+	// ── 21. Tier B: registerJarDeployment command + context menu declared ────
+	{
+		const pkgPath = path.join(__dirname, '..', 'package.json');
+		const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+		const commandIds = (pkg.contributes.commands ?? []).map(c => c.command);
+		assert.ok(commandIds.includes('reltio.registerJarDeployment'), 'package.json must declare reltio.registerJarDeployment');
+
+		const menuItems = pkg.contributes.menus?.['view/item/context'] ?? [];
+		assert.ok(
+			menuItems.some(m => m.command === 'reltio.registerJarDeployment' && m.when?.includes('reltio.workflows.unregisteredJar')),
+			'view/item/context must offer Register JAR on an unregistered-JAR row',
+		);
+		assert.ok(
+			menuItems.some(m => m.command === 'reltio.refreshJarDeployments' && m.when?.includes('reltio.workflows.unregisteredJars.folder')),
+			'view/item/context must offer Refresh JARs on the Unregistered subfolder too',
+		);
 	}
 
 	console.log('test-workflow-inspector: OK');

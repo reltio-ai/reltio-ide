@@ -23,12 +23,14 @@ import {
 	JarDeploymentsFolderNode,
 	ProcessDefinitionNode,
 	JarDeploymentNode,
+	UnregisteredJarsFolderNode,
+	UnregisteredJarNode,
 	WorkflowDraftsFolderNode,
 	WorkflowDraftNode,
 } from './workflowNodes';
 import { loadWorkflowAdapterUrl } from '../workspace/workflowAdapterConfig';
 import { bpmnFileName, listLocalBpmnFiles } from '../workspace/workflowBpmnFiles';
-import type { ProcessDefinition, JarDeployment } from '../api/workflowAdapterClient';
+import type { ProcessDefinition, JarDeployment, AvailableJar } from '../api/workflowAdapterClient';
 import type { EState, TState, UxState } from '../ux/uxState';
 import { ConfigTreeItem } from './treeNodes';
 import {
@@ -54,11 +56,22 @@ export type MultiTenantTreeElement =
 	| JarDeploymentsFolderNode
 	| ProcessDefinitionNode
 	| JarDeploymentNode
+	| UnregisteredJarsFolderNode
+	| UnregisteredJarNode
 	| WorkflowDraftsFolderNode
 	| WorkflowDraftNode;
 
+/** Shared by the key builder and the by-environment sweep in `removeEnvironment`. */
+const HISTORY_EXPOSED_PREFIX = 'reltio.history.exposed::';
+
+/**
+ * Key for the "history has been fetched for this tenant" marker.
+ *
+ * Still a `::`-joined string because it keys `historyExposedThisSession` below,
+ * which is a flat set rather than a two-level structure.
+ */
 export function historyExposedStorageKey(environmentName: string, tenantId: string): string {
-	return `reltio.history.exposed::${environmentName}::${tenantId}`;
+	return `${HISTORY_EXPOSED_PREFIX}${environmentName}::${tenantId}`;
 }
 
 export function tenantLocFromL3File(
@@ -121,7 +134,16 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 	 */
 	private readonly workflowCache = new Map<
 		string,
-		{ definitions: ProcessDefinition[]; jars: JarDeployment[] }
+		{
+			definitions: ProcessDefinition[];
+			jars: JarDeployment[];
+			/**
+			 * JARs on S3 not yet registered, or `undefined` when that discovery
+			 * hasn't been attempted this session or isn't available for this
+			 * tenant (missing `jarsLocation` config) — see `listAvailableJars()`.
+			 */
+			unregisteredJars: AvailableJar[] | undefined;
+		}
 	>();
 
 	constructor(
@@ -168,9 +190,23 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		);
 	}
 
+	/**
+	 * Tenants whose history was fetched during this window session.
+	 *
+	 * Deliberately in memory rather than in `workspaceState`. The marker exists so
+	 * that a fetch which legitimately returns zero rows still shows the folder —
+	 * otherwise the command looks like it did nothing. Persisting it made that
+	 * courtesy permanent: once history had been fetched for a tenant, an empty
+	 * History folder reappeared on every later window, and on reconnecting the
+	 * same tenant, with nothing in it and no way to dismiss it. Session scope
+	 * keeps the feedback and drops the residue — a folder that outlives the
+	 * action it was reporting on is just clutter.
+	 */
+	private readonly historyExposedThisSession = new Set<string>();
+
 	/** Call after a successful history fetch so the History folder appears even when the API returned zero rows. */
 	markHistoryExposed(environmentName: string, tenantId: string): void {
-		void this.workspaceState.update(historyExposedStorageKey(environmentName, tenantId), true);
+		this.historyExposedThisSession.add(historyExposedStorageKey(environmentName, tenantId));
 		this.scheduleTreeRefresh();
 	}
 
@@ -184,8 +220,9 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		tenantId: string,
 		definitions: ProcessDefinition[],
 		jars: JarDeployment[],
+		unregisteredJars: AvailableJar[] | undefined = undefined,
 	): void {
-		this.workflowCache.set(`${environmentName}/${tenantId}`, { definitions, jars });
+		this.workflowCache.set(`${environmentName}/${tenantId}`, { definitions, jars, unregisteredJars });
 		this.scheduleTreeRefresh();
 	}
 
@@ -204,25 +241,50 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 	): void {
 		const key = `${environmentName}/${tenantId}`;
 		const existing = this.workflowCache.get(key);
-		this.workflowCache.set(key, { definitions, jars: existing?.jars ?? [] });
+		this.workflowCache.set(key, {
+			definitions,
+			jars: existing?.jars ?? [],
+			unregisteredJars: existing?.unregisteredJars,
+		});
 		this.scheduleTreeRefresh();
 	}
 
-	/** Replace only the JAR half of a tenant's cache. */
+	/**
+	 * Replace only the JAR half of a tenant's cache.
+	 *
+	 * `unregisteredJars` defaults to `undefined` (discovery not attempted /
+	 * unavailable), matching `listAvailableJars()`'s best-effort contract — the
+	 * caller fetches it separately from `jars` and must not fail this refresh if
+	 * that half fails.
+	 */
 	markJarDeploymentsLoaded(
 		environmentName: string,
 		tenantId: string,
 		jars: JarDeployment[],
+		unregisteredJars: AvailableJar[] | undefined = undefined,
 	): void {
 		const key = `${environmentName}/${tenantId}`;
 		const existing = this.workflowCache.get(key);
-		this.workflowCache.set(key, { definitions: existing?.definitions ?? [], jars });
+		this.workflowCache.set(key, { definitions: existing?.definitions ?? [], jars, unregisteredJars });
 		this.scheduleTreeRefresh();
 	}
 
 	/** Cached JAR deployments for one tenant, or an empty list when unfetched. */
 	getCachedJarDeployments(environmentName: string, tenantId: string): JarDeployment[] {
 		return this.workflowCache.get(`${environmentName}/${tenantId}`)?.jars ?? [];
+	}
+
+	/**
+	 * JARs on S3 not yet registered, cached for one tenant.
+	 *
+	 * `undefined` is distinct from an empty list here (unlike the getters above):
+	 * it means discovery hasn't been attempted this session, or isn't available
+	 * for this tenant at all (missing `jarsLocation` config — see
+	 * `listAvailableJars()`'s `notConfigured` case). A caller offering to pick
+	 * from this list needs to tell those two apart to give a useful error.
+	 */
+	getCachedUnregisteredJars(environmentName: string, tenantId: string): readonly AvailableJar[] | undefined {
+		return this.workflowCache.get(`${environmentName}/${tenantId}`)?.unregisteredJars;
 	}
 
 	/**
@@ -300,6 +362,13 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		for (const key of this.workflowCache.keys()) {
 			if (key.startsWith(`${name}/`)) this.workflowCache.delete(key);
 		}
+		// Same reasoning as the workflow cache: a removed environment's markers
+		// must not decide what a re-added one shows.
+		for (const key of this.historyExposedThisSession) {
+			if (key.startsWith(`${HISTORY_EXPOSED_PREFIX}${name}::`)) {
+				this.historyExposedThisSession.delete(key);
+			}
+		}
 		this.invalidate();
 	}
 
@@ -309,6 +378,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 
 	removeTenant(env: string, tenantId: string): void {
 		this.clearWorkflowCache(env, tenantId);
+		this.historyExposedThisSession.delete(historyExposedStorageKey(env, tenantId));
 		this.invalidate();
 	}
 
@@ -428,6 +498,24 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 				element.environmentName,
 				element.tenantId,
 				cached?.jars ?? [],
+				cached?.unregisteredJars,
+			);
+		}
+		if (element instanceof UnregisteredJarsFolderNode) {
+			const cached = this.workflowCache.get(`${element.environmentName}/${element.tenantId}`);
+			return new JarDeploymentsFolderNode(
+				element.environmentName,
+				element.tenantId,
+				cached?.jars ?? [],
+				cached?.unregisteredJars,
+			);
+		}
+		if (element instanceof UnregisteredJarNode) {
+			const cached = this.workflowCache.get(`${element.environmentName}/${element.tenantId}`);
+			return new UnregisteredJarsFolderNode(
+				element.environmentName,
+				element.tenantId,
+				cached?.unregisteredJars ?? [],
 			);
 		}
 		if (element instanceof WorkflowDraftNode) {
@@ -604,7 +692,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		const dir = this.environmentManager.getHistoryDirectoryUri(environmentName, tenantId);
 		const snaps = await listLocalHistorySnapshots(dir);
 		if (snaps.length > 0) return true;
-		return this.workspaceState.get<boolean>(historyExposedStorageKey(environmentName, tenantId)) === true;
+		return this.historyExposedThisSession.has(historyExposedStorageKey(environmentName, tenantId));
 	}
 
 	async getChildren(element?: MultiTenantTreeElement): Promise<MultiTenantTreeElement[]> {
@@ -710,6 +798,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 					element.environmentName,
 					element.tenantId,
 					cached.jars,
+					cached.unregisteredJars,
 				),
 			];
 			// Drafts appear only when at least one exists — same rule as History.
@@ -739,8 +828,23 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			));
 		}
 		if (element instanceof JarDeploymentsFolderNode) {
-			return element.deployments.map(
+			const children: MultiTenantTreeElement[] = element.deployments.map(
 				d => new JarDeploymentNode(element.environmentName, element.tenantId, d),
+			);
+			if ((element.unregistered?.length ?? 0) > 0) {
+				children.push(
+					new UnregisteredJarsFolderNode(
+						element.environmentName,
+						element.tenantId,
+						element.unregistered ?? [],
+					),
+				);
+			}
+			return children;
+		}
+		if (element instanceof UnregisteredJarsFolderNode) {
+			return element.jars.map(
+				j => new UnregisteredJarNode(element.environmentName, element.tenantId, j),
 			);
 		}
 		if (element instanceof HistoryFolderNode) {
