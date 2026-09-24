@@ -11,6 +11,12 @@ Normative product context: `openspec/changes/workflow-skills-library/design.md` 
 
 Custom Java has to be proven before it goes into a pull request. Reltio IDE does not run this for you — it is a separate service on the developer's own machine — so this playbook is the guided version of a setup that is otherwise figure-it-out-yourself.
 
+**Sample prompts**
+
+1. Walk me through setting up a local Workflow Adapter so I can test a new listener before opening a PR.
+2. My local adapter starts but the BPMN I deployed to it doesn't show up as a process definition — why?
+3. How do I attach a debugger to step through my custom class while a local process instance runs?
+
 ## Inputs
 
 1. JDK 17, Maven, and a local MariaDB — the adapter will not start against a database it cannot reach.

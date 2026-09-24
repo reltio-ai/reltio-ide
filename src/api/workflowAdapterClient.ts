@@ -65,6 +65,67 @@ export interface JarDeployment {
 	createTime: number;
 }
 
+/**
+ * One entry from `POST .../listJars` → `jars[]` — a JAR found in the tenant's
+ * S3 location, whether or not it has been registered.
+ *
+ * Shares the `module` identity space with `JarDeployment.module`: diffing the
+ * two lists on that field is how the "not yet registered" set is computed.
+ */
+export interface AvailableJar {
+	/** S3 path, e.g. `reltio.workflow-custom-jars/Acme/my-1.0.0.jar`. */
+	module: string;
+	/** Epoch-millisecond last-modified time of the S3 object. */
+	updateTime: number;
+	/** Size in bytes. */
+	size: number;
+}
+
+/**
+ * Outcome of `listAvailableJars()`.
+ *
+ * `notConfigured` is a distinct, expected outcome rather than a thrown error:
+ * confirmed live that a tenant can have working registered JARs (`jarDeployments`)
+ * while lacking the `jarsLocation` config `listJars` depends on (Adapter
+ * `errorCode 10089`, "Tenant has no configuration for JAR files location") — not
+ * every tenant supports this discovery, and that must read as "not available
+ * here," not as a broken refresh.
+ */
+export type AvailableJarsResult =
+	| { readonly kind: 'ok'; readonly jars: AvailableJar[] }
+	| { readonly kind: 'notConfigured' };
+
+/** The Adapter's own error code for a missing `jarsLocation` tenant config. */
+const JARS_LOCATION_NOT_CONFIGURED_ERROR_CODE = 10089;
+
+function isAvailableJar(v: unknown): v is AvailableJar {
+	return (
+		typeof v === 'object' &&
+		v !== null &&
+		typeof (v as Record<string, unknown>).module === 'string' &&
+		((v as Record<string, unknown>).module as string).length > 0
+	);
+}
+
+/**
+ * Best-effort extraction of `errorCode` from a Adapter error body, without
+ * throwing on non-JSON text. Kept separate from `adapterHttpError()`: that
+ * function's job is "turn this into a message," this one's is "recognize one
+ * specific, known code before that message is even built."
+ */
+function errorCodeFromBody(text: string): number | undefined {
+	try {
+		const parsed = JSON.parse(text) as unknown;
+		if (parsed !== null && typeof parsed === 'object') {
+			const code = (parsed as Record<string, unknown>).errorCode;
+			if (typeof code === 'number') return code;
+		}
+	} catch {
+		// Not JSON — not this shape, so not this code either.
+	}
+	return undefined;
+}
+
 /** One entry from `GET .../processDefinitions` → `data[]`. */
 export interface ProcessDefinition {
 	/** Composite key, e.g. `dataChangeRequestReview:3:70513367`. */
@@ -83,6 +144,11 @@ export interface ProcessDefinition {
 	/**
 	 * `true` = Reltio's out-of-the-box workflow, not customised.
 	 * `false` = custom BPMN deployed by someone on this tenant.
+	 *
+	 * Confirmed correct with engineering. `SunilTst` (a staging tenant with a
+	 * lot of ad-hoc manual deployment activity) looked inconsistent under this
+	 * reading, but a second tenant (`ceEW27DYnQ6TaSY`) checked out fine — the
+	 * apparent mismatches were staging-tenant noise, not a field-semantics bug.
 	 */
 	generic: boolean;
 	fileName: string;
@@ -340,6 +406,156 @@ export async function listJarDeployments(
 	const base = toHttpsBase(adapterUrl);
 	const url = `${workflowBase(base, tenantId)}/jarDeployments`;
 	return fetchList<JarDeployment>(url, token, environmentUrl, isJarDeployment);
+}
+
+/**
+ * Enumerates every JAR sitting in the tenant's S3 location, registered or not —
+ * confirmed against the Adapter's own OpenAPI spec: "Searches the tenant
+ * specific folder on S3 for the list of JARs that could be deployed on the
+ * tenant." Diff the result against `listJarDeployments()` (by `module`) to find
+ * the ones that are not yet registered.
+ *
+ * A POST with a JSON body, unlike the sibling list endpoints — confirmed live
+ * that an empty body (`{}`) is accepted and a missing body is rejected with a
+ * distinct error code, so this always sends `{}` rather than omitting the body.
+ *
+ * @param adapterUrl    User-supplied Workflow Adapter base URL.
+ * @param tenantId      Reltio tenant ID.
+ * @param environmentUrl Platform environment URL (`EnvironmentURL` header).
+ * @param token         Bearer token.
+ * @returns `{kind:'notConfigured'}` when the tenant lacks the `jarsLocation`
+ *          config this endpoint depends on — a known, expected gap, not every
+ *          tenant has it — rather than throwing.
+ * @throws {UntrustedHostError}     Adapter URL host is outside the allowlist.
+ * @throws {WorkflowConnectionError} Network-level failure.
+ * @throws {ReltioApiError}         Any other HTTP 4xx/5xx from the Adapter.
+ */
+export async function listAvailableJars(
+	adapterUrl: string,
+	tenantId: string,
+	environmentUrl: string,
+	token: string,
+): Promise<AvailableJarsResult> {
+	const base = toHttpsBase(adapterUrl);
+	const url = `${workflowBase(base, tenantId)}/listJars`;
+
+	let response: Response;
+	try {
+		response = await fetchWithTimeout(
+			url,
+			{
+				method: 'POST',
+				headers: { ...workflowHeaders(token, environmentUrl), 'Content-Type': 'application/json' },
+				body: '{}',
+			},
+			WORKFLOW_TIMEOUT_MS,
+		);
+	} catch (e) {
+		throw new WorkflowConnectionError(e as Error);
+	}
+
+	if (!response.ok) {
+		let text = '';
+		try {
+			text = await response.text();
+		} catch {
+			// best-effort: if reading the body fails, fall through with empty text
+		}
+		if (errorCodeFromBody(text) === JARS_LOCATION_NOT_CONFIGURED_ERROR_CODE) {
+			return { kind: 'notConfigured' };
+		}
+		let detail = text.trim();
+		if (detail.length > MAX_ERROR_DETAIL_CHARS) {
+			detail = `${detail.slice(0, MAX_ERROR_DETAIL_CHARS)}…`;
+		}
+		throw new ReltioApiError(
+			`Workflow Adapter returned ${response.status}${detail ? `: ${detail}` : ''}.`,
+			response.status,
+		);
+	}
+
+	let body: unknown;
+	try {
+		body = await response.json() as unknown;
+	} catch {
+		return { kind: 'ok', jars: [] };
+	}
+	if (
+		body !== null &&
+		typeof body === 'object' &&
+		'jars' in body &&
+		Array.isArray((body as Record<string, unknown>).jars)
+	) {
+		return {
+			kind: 'ok',
+			jars: ((body as Record<string, unknown>).jars as unknown[]).filter(isAvailableJar),
+		};
+	}
+	return { kind: 'ok', jars: [] };
+}
+
+/** Input to `registerJarDeployment()`. `name` is mandatory to the Adapter; `description` is not. */
+export interface RegisterJarInput {
+	/** S3 path — the `module` field from an `AvailableJar`. */
+	readonly module: string;
+	readonly name: string;
+	readonly description?: string;
+}
+
+/**
+ * Registers a JAR already sitting on S3 so it becomes a live `JarDeployment`.
+ *
+ * Undocumented in the Adapter's OpenAPI spec but confirmed real and working via
+ * live probing: `POST /{tenantId}/jarDeployments`, body `{module, name,
+ * description}`. Known Adapter error codes: `10016` missing name, `10055` name
+ * collision, `10056` module already registered (the tenant already has this
+ * exact module under a different name — delete-then-re-register to "replace").
+ * Errors can arrive as HTTP 400 or 500 depending on cause; both are surfaced as
+ * a `ReltioApiError` here, message text intact, rather than special-cased —
+ * unlike `listAvailableJars()`'s `notConfigured` case, none of these codes
+ * change what the caller should *do*, only what it should *say*.
+ *
+ * @param adapterUrl    User-supplied Workflow Adapter base URL.
+ * @param tenantId      Reltio tenant ID.
+ * @param environmentUrl Platform environment URL (`EnvironmentURL` header).
+ * @param token         Bearer token.
+ * @param input         The module to register and the name/description to give it.
+ * @throws {UntrustedHostError}     Adapter URL host is outside the allowlist.
+ * @throws {WorkflowConnectionError} Network-level failure.
+ * @throws {ReltioApiError}         HTTP 4xx/5xx from the Adapter.
+ */
+export async function registerJarDeployment(
+	adapterUrl: string,
+	tenantId: string,
+	environmentUrl: string,
+	token: string,
+	input: RegisterJarInput,
+): Promise<void> {
+	const base = toHttpsBase(adapterUrl);
+	const url = `${workflowBase(base, tenantId)}/jarDeployments`;
+
+	let response: Response;
+	try {
+		response = await fetchWithTimeout(
+			url,
+			{
+				method: 'POST',
+				headers: { ...workflowHeaders(token, environmentUrl), 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					module: input.module,
+					name: input.name,
+					description: input.description ?? '',
+				}),
+			},
+			WORKFLOW_TIMEOUT_MS,
+		);
+	} catch (e) {
+		throw new WorkflowConnectionError(e as Error);
+	}
+
+	if (!response.ok) {
+		throw await adapterHttpError(response);
+	}
 }
 
 /**
