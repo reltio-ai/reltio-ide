@@ -443,7 +443,6 @@ const CRLF = '\r\n';
 			'reltio.deployWorkflow',
 			'reltio.deleteWorkflowDraft',
 			'reltio.refreshWorkflows',
-			'reltio.openWorkflowBpmn',
 			'reltio.copyJarModulePath',
 		];
 		for (const id of mustBeRightClickable) {
@@ -460,6 +459,30 @@ const CRLF = '\r\n';
 					`"${id}" when-clause must be scoped to the tree view, got: ${entry.when}`,
 				);
 			}
+		}
+
+		// `openWorkflowBpmn` is deliberately the exception: it is what a plain row
+		// click already runs (ProcessDefinitionNode.command), with the same
+		// argument, so a menu entry for it was a duplicate of the row itself. The
+		// command stays declared and registered because the click binding needs it.
+		assert.ok(
+			declared.has('reltio.openWorkflowBpmn'),
+			'the command must stay declared — the row click binding resolves it',
+		);
+		assert.strictEqual(
+			menu.filter(m => m.command === 'reltio.openWorkflowBpmn').length,
+			0,
+			'"Open BPMN" duplicates a plain row click, so it must not be in the context menu',
+		);
+		// …and the diagram, now the only action on those rows, takes first slot.
+		const diagramEntries = menu.filter(m => m.command === 'reltio.previewWorkflowDiagram');
+		assert.ok(diagramEntries.length > 0, 'the diagram action must be right-clickable');
+		for (const entry of diagramEntries) {
+			assert.strictEqual(
+				entry.group,
+				'navigation@1',
+				'with "Open BPMN" gone the diagram action leads the navigation group',
+			);
 		}
 
 		// Every workflow tree row should offer something on right-click.
@@ -510,6 +533,27 @@ const CRLF = '\r\n';
 				`command "${id}" is declared in package.json but never registered in src/`,
 			);
 		}
+
+		// The new-draft flow asks two questions back to back, and the only thing
+		// distinguishing them is their prompt text. "Process ID" followed by
+		// "Display name" reads as the same question twice to anyone who does not
+		// already know Activiti, so each prompt has to say what its value is for.
+		assert.ok(
+			/prompt: 'ID \u2014 the technical identifier/.test(rawSource),
+			'the id prompt must lead with "ID" and say it is the technical identifier',
+		);
+		assert.ok(
+			!/prompt: 'Process ID/.test(rawSource),
+			'"Process ID" is the old wording',
+		);
+		assert.ok(
+			/prompt: 'Business-friendly name shown to reviewers/.test(rawSource),
+			'the name prompt must frame the value as the business-friendly one',
+		);
+		assert.ok(
+			/not the technical ID/.test(rawSource),
+			'the name prompt must contrast itself with the id to be worth re-wording',
+		);
 	}
 
 	// ── 14. Tier B: the test runner actually runs this script ─────────────────
