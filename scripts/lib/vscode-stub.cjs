@@ -60,16 +60,96 @@ class TreeItem {
 }
 
 class ThemeIcon {
+	constructor(id, color) {
+		this.id = id;
+		this.color = color;
+	}
+}
+
+class ThemeColor {
 	constructor(id) {
 		this.id = id;
 	}
+}
+
+/**
+ * `isTrusted` defaults to false in the real API, and that default is a security
+ * property worth being able to assert: a trusted MarkdownString renders
+ * `command:` links, and tree tooltips are built from server-supplied strings.
+ */
+class MarkdownString {
+	constructor(value = '') {
+		this.value = value;
+		this.isTrusted = false;
+		this.supportThemeIcons = false;
+	}
+	appendMarkdown(value) {
+		this.value += value;
+		return this;
+	}
+	appendText(value) {
+		this.value += value;
+		return this;
+	}
+}
+
+class Position {
+	constructor(line, character) {
+		this.line = line;
+		this.character = character;
+	}
+}
+
+class Range {
+	constructor(start, end) {
+		this.start = start;
+		this.end = end;
+	}
+}
+
+class Diagnostic {
+	constructor(range, message, severity) {
+		this.range = range;
+		this.message = message;
+		this.severity = severity;
+	}
+}
+
+/**
+ * Backed by a `Map` keyed on the URI string, so a test can read back what was
+ * set — which is the only observable behaviour of a real collection.
+ */
+class DiagnosticCollection {
+	constructor(name) {
+		this.name = name;
+		this.entries = new Map();
+	}
+	set(uri, diagnostics) {
+		this.entries.set(uri.toString(), diagnostics);
+	}
+	get(uri) {
+		return this.entries.get(uri.toString());
+	}
+	delete(uri) {
+		this.entries.delete(uri.toString());
+	}
+	clear() {
+		this.entries.clear();
+	}
+	dispose() {}
 }
 
 module.exports = {
 	Uri,
 	EventEmitter,
 	TreeItem,
+	Position,
+	Range,
+	Diagnostic,
+	DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
 	ThemeIcon,
+	ThemeColor,
+	MarkdownString,
 	TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
 	FileType: { Unknown: 0, File: 1, Directory: 2, SymbolicLink: 64 },
 	ProgressLocation: { Notification: 15 },
@@ -88,7 +168,10 @@ module.exports = {
 		},
 		textDocuments: [],
 		workspaceFolders: [],
-		getConfiguration: () => ({ get: () => undefined, update: async () => {} }),
+		// `get(key, fallback)` returns the fallback for an unset key in the real
+		// API. Returning `undefined` instead would make every setting read in
+		// `dist/` behave as if it were explicitly set to nothing.
+		getConfiguration: () => ({ get: (_key, fallback) => fallback, update: async () => {} }),
 		onDidChangeTextDocument: () => ({ dispose() {} }),
 		onDidChangeActiveTextEditor: () => ({ dispose() {} }),
 		onDidChangeWindowState: () => ({ dispose() {} }),
@@ -137,5 +220,6 @@ module.exports = {
 		registerDefinitionProvider: () => ({ dispose() {} }),
 		registerReferenceProvider: () => ({ dispose() {} }),
 		registerCompletionItemProvider: () => ({ dispose() {} }),
+		createDiagnosticCollection: name => new DiagnosticCollection(name),
 	},
 };

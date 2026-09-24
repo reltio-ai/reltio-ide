@@ -26,6 +26,10 @@ import { ReltioDocumentLinkProvider } from './navigation/documentLinkProvider';
 import { ReltioDefinitionProvider } from './navigation/definitionProvider';
 import { ReltioReferenceProvider } from './navigation/referenceProvider';
 import { DiagnosticsManager } from './navigation/diagnosticsManager';
+import {
+	BpmnDiagnosticsManager,
+	bpmnProcessIdForDocument,
+} from './workflow/bpmnDiagnosticsManager';
 import { ReltioUriCompletionProvider } from './navigation/uriCompletionProvider';
 import { OntologyPanelManager } from './ontology/ontologyPanel';
 import { EnvironmentManager, type GitSource } from './workspace/environmentManager';
@@ -85,18 +89,26 @@ import {
 	ProcessDefinitionNode,
 	JarDeploymentsFolderNode,
 	JarDeploymentNode,
+	UnregisteredJarNode,
+	jarModuleFileName,
 	WorkflowDraftsFolderNode,
 	WorkflowDraftNode,
 } from './tree/workflowNodes';
 import {
 	listJarDeployments,
+	listAvailableJars,
+	registerJarDeployment,
 	listProcessDefinitions,
 	getProcessDefinitionXml,
 	deployProcessDefinition,
 	guessWorkflowAdapterUrl,
 	WorkflowConnectionError,
 } from './api/workflowAdapterClient';
-import type { ProcessDefinition, JarDeployment, DeploymentResult } from './api/workflowAdapterClient';
+import { lookupWorkflowAdapterUrl } from './workflow/workflowAdapterRegistry';
+import { hasDiagramSection } from './workflow/bpmnModel';
+import { withGeneratedDiagram } from './workflow/bpmnLayout';
+import { BpmnPanelManager } from './workflow/bpmnPanel';
+import type { ProcessDefinition, JarDeployment, AvailableJar, DeploymentResult } from './api/workflowAdapterClient';
 import {
 	loadWorkflowAdapterUrl,
 	saveWorkflowAdapterUrl,
@@ -753,8 +765,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const defProvider = new ReltioDefinitionProvider();
 	const refProvider = new ReltioReferenceProvider();
 	const diagnosticsManager = new DiagnosticsManager();
+	const bpmnDiagnosticsManager = new BpmnDiagnosticsManager();
 	const uriCompletionProvider = new ReltioUriCompletionProvider();
 	const ontologyManager = new OntologyPanelManager();
+	const bpmnManager = new BpmnPanelManager();
+	context.subscriptions.push({ dispose: () => bpmnManager.dispose() });
 
 	const treeView = vscode.window.createTreeView('reltioConfigTree', {
 		treeDataProvider: treeProvider,
@@ -789,6 +804,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		vscode.languages.registerReferenceProvider(RELTIO_SELECTOR, refProvider),
 		vscode.languages.registerCompletionItemProvider(RELTIO_SELECTOR, uriCompletionProvider, '"', '/'),
 		diagnosticsManager,
+		bpmnDiagnosticsManager,
 	);
 
 	context.subscriptions.push(
@@ -2564,7 +2580,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	 */
 	async function reportWorkflowError(
 		e: unknown,
-		ctx: { environmentName: string; tenantId: string; operation: 'fetch' | 'open' | 'deploy' },
+		ctx: { environmentName: string; tenantId: string; operation: 'fetch' | 'open' | 'deploy' | 'register' },
 	): Promise<boolean> {
 		if (e instanceof ReltioApiError && e.statusCode === 401) {
 			await handle401(ctx.environmentName);
@@ -2578,7 +2594,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			void vscode.window.showErrorMessage(
 				ctx.operation === 'deploy'
 					? `Deploy refused (403). Deploying a workflow requires the ROLE_WORKFLOW_MANAGER role on tenant "${ctx.tenantId}". Your draft is saved and unchanged — ask a tenant admin to grant the role, then deploy again.`
-					: `Access denied (403). Your account may not have sufficient permissions on tenant "${ctx.tenantId}". Ask a tenant admin to grant access.`,
+					: ctx.operation === 'register'
+						? `Registration refused (403). Registering a JAR requires the ROLE_WORKFLOW_MANAGER role on tenant "${ctx.tenantId}". Ask a tenant admin to grant the role, then try again.`
+						: `Access denied (403). Your account may not have sufficient permissions on tenant "${ctx.tenantId}". Ask a tenant admin to grant access.`,
 			);
 			return true;
 		}
@@ -2612,6 +2630,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	}
 
 	/**
+	 * The half of the JAR refresh that is allowed to fail silently.
+	 *
+	 * `listAvailableJars()` depends on a `jarsLocation` tenant config that not
+	 * every tenant has — confirmed live on a tenant with 6 working registered
+	 * JARs and no S3 discovery at all. Any failure here (the known
+	 * `notConfigured` case, an unexpected error code, or a network failure) must
+	 * not fail the surrounding "refresh JARs" action, which is why this is a
+	 * standalone function with its own catch rather than inline in the two
+	 * callers: getting that swallow-everything behaviour right once, here, beats
+	 * re-deriving it at each call site.
+	 *
+	 * @returns The JARs on S3 that are not already in `registeredJars` (by
+	 *          `module`), or `undefined` when discovery isn't available.
+	 */
+	async function fetchUnregisteredJars(
+		adapterUrl: string,
+		tenantId: string,
+		environmentUrl: string,
+		token: string,
+		registeredJars: readonly JarDeployment[],
+	): Promise<AvailableJar[] | undefined> {
+		try {
+			const result = await listAvailableJars(adapterUrl, tenantId, environmentUrl, token);
+			if (result.kind !== 'ok') return undefined;
+			const registeredModules = new Set(registeredJars.map(j => j.module));
+			return result.jars.filter(j => !registeredModules.has(j.module));
+		} catch {
+			return undefined;
+		}
+	}
+
+	/**
 	 * Core fetch helper — shared by fetchWorkflows and refreshWorkflows.
 	 * Returns `false` and shows an appropriate error message on failure so the
 	 * command handler can abort without duplicating error-display logic.
@@ -2627,6 +2677,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			return false;
 		}
 		let result: [ProcessDefinition[], JarDeployment[]] | undefined;
+		let unregisteredJars: AvailableJar[] | undefined;
 
 		try {
 			// environmentName is stored as a bare hostname (e.g. demo-01.reltio.com) after
@@ -2648,6 +2699,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 						listProcessDefinitions(adapterUrl, tenantId, environmentUrl, token),
 						listJarDeployments(adapterUrl, tenantId, environmentUrl, token),
 					]);
+					unregisteredJars = await fetchUnregisteredJars(
+						adapterUrl, tenantId, environmentUrl, token, result[1],
+					);
 				},
 			);
 		} catch (e) {
@@ -2657,7 +2711,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 		if (!result) return false; // withProgress was cancelled (shouldn't happen; cancellable: false)
 		const [definitions, jars] = result;
-		treeProvider.markWorkflowsLoaded(environmentName, tenantId, definitions, jars);
+		treeProvider.markWorkflowsLoaded(environmentName, tenantId, definitions, jars, unregisteredJars);
 		return true;
 	}
 
@@ -2711,6 +2765,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			return false;
 		}
 		let jars: JarDeployment[] | undefined;
+		let unregisteredJars: AvailableJar[] | undefined;
 		try {
 			const environmentUrl = toHttpsBase(environmentName);
 			await vscode.window.withProgress(
@@ -2721,6 +2776,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				},
 				async () => {
 					jars = await listJarDeployments(adapterUrl, tenantId, environmentUrl, token);
+					unregisteredJars = await fetchUnregisteredJars(
+						adapterUrl, tenantId, environmentUrl, token, jars,
+					);
 				},
 			);
 		} catch (e) {
@@ -2728,7 +2786,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			return false;
 		}
 		if (!jars) return false;
-		treeProvider.markJarDeploymentsLoaded(environmentName, tenantId, jars);
+		treeProvider.markJarDeploymentsLoaded(environmentName, tenantId, jars, unregisteredJars);
 		return true;
 	}
 
@@ -2764,6 +2822,77 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			`Found the Workflow Adapter URL for "${tenantId}" automatically: ${guessed}`,
 		);
 		return guessed;
+	}
+
+	/**
+	 * Ask which of the bundled candidates to use for an environment the source
+	 * mapping answers two ways (see `AMBIGUOUS_ADAPTERS`).
+	 *
+	 * Deliberately a question rather than a default. Both candidate hosts are
+	 * real and answer like an Adapter, so `guessWorkflowAdapterUrl()` would
+	 * confirm whichever it tried first and the user would never learn that the
+	 * other one existed.
+	 */
+	async function pickAmbiguousAdapterHost(
+		environmentName: string,
+		candidates: readonly string[],
+	): Promise<string | undefined> {
+		return vscode.window.showQuickPick([...candidates], {
+			title: `Workflow Adapter for ${environmentName}`,
+			placeHolder: 'Two adapters are documented for this environment — choose the one it uses.',
+			ignoreFocusOut: true,
+		});
+	}
+
+	/**
+	 * Resolve and persist a tenant's Workflow Adapter URL.
+	 *
+	 * Order is bundled registry, then the naming-convention guess, then asking.
+	 * The registry comes first because it is instant, needs no token, and is
+	 * right about the cases the guess is wrong about — shared adapters serving
+	 * several environments, and hosts that use `-workflow-adapter` or a
+	 * different domain.
+	 *
+	 * A bundled host is passed through `toHttpsBase()` like any hand-typed one,
+	 * so shipping a host grants it no trust. When the allowlist refuses it (the
+	 * `reltiocn.cn` entries, until an operator extends
+	 * `reltio.trustedHostSuffixes`) the prompt opens pre-filled with that host,
+	 * so the message and the value it refers to are on screen together.
+	 */
+	async function resolveAndSaveAdapterUrl(
+		environmentName: string,
+		tenantId: string,
+		configUri: vscode.Uri,
+	): Promise<string | undefined> {
+		const known = lookupWorkflowAdapterUrl(environmentName);
+		const knownHost = known === undefined
+			? undefined
+			: known.kind === 'url'
+				? known.host
+				: await pickAmbiguousAdapterHost(environmentName, known.candidates);
+
+		if (knownHost) {
+			try {
+				const validated = toHttpsBase(knownHost);
+				await saveWorkflowAdapterUrl(configUri, validated);
+				void vscode.window.showInformationMessage(
+					`Using the documented Workflow Adapter for "${environmentName}": ${validated}`,
+				);
+				return validated;
+			} catch (e) {
+				void vscode.window.showErrorMessage((e as Error).message);
+				return promptAndSaveAdapterUrl(environmentName, tenantId, knownHost);
+			}
+		}
+
+		// Not on the table, or ambiguous and the user dismissed the choice. Only
+		// try the guess in the former case: an ambiguous environment is precisely
+		// where a confirmed-but-wrong guess does damage.
+		if (known === undefined) {
+			const guessed = await discoverAndSaveAdapterUrl(environmentName, tenantId, configUri);
+			if (guessed) return guessed;
+		}
+		return promptAndSaveAdapterUrl(environmentName, tenantId);
 	}
 
 	/** Prompt for the Adapter URL when none is saved, then validate and persist it. */
@@ -2825,10 +2954,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 				let adapterUrl = await loadWorkflowAdapterUrl(configUri);
 				if (!adapterUrl) {
-					adapterUrl = await discoverAndSaveAdapterUrl(node.environmentName, node.tenantId, configUri);
-					if (!adapterUrl) {
-						adapterUrl = await promptAndSaveAdapterUrl(node.environmentName, node.tenantId);
-					}
+					adapterUrl = await resolveAndSaveAdapterUrl(
+						node.environmentName,
+						node.tenantId,
+						configUri,
+					);
 					if (!adapterUrl) return;
 					// Refresh the tree now that a URL has been saved (folder becomes collapsible).
 					treeProvider.invalidate();
@@ -2925,23 +3055,147 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		),
 
 		/**
+		 * reltio.registerJarDeployment
+		 * Turns an S3 JAR the "Unregistered" subfolder found into a live
+		 * `JarDeployment`. This is the step `workflow-repo-contribution`'s SKILL
+		 * used to describe as "either you via the registration API or Reltio's
+		 * workflow team" — now doable from the tree without a hand-built request.
+		 *
+		 * Takes a tree node or a `WorkflowCommandArgs` object (`module`, `name`,
+		 * `description`), so the same command serves a click and an agent that
+		 * already knows which JAR to register and what to call it.
+		 */
+		vscode.commands.registerCommand(
+			'reltio.registerJarDeployment',
+			async (arg?: UnregisteredJarNode | WorkflowCommandArgs) => {
+				if (!environmentManager) return;
+
+				let environmentName: string;
+				let tenantId: string;
+				let jarModule: string;
+				let prefilledName: string | undefined;
+				let prefilledDescription: string | undefined;
+
+				if (arg instanceof UnregisteredJarNode) {
+					({ environmentName, tenantId } = arg);
+					jarModule = arg.jar.module;
+				} else {
+					const args = workflowCommandArgs(arg);
+					if (!args) return;
+					const target = await resolveWorkflowTenant(args);
+					if (!target) return;
+					({ environmentName, tenantId } = target);
+
+					const jar = await pickUnregisteredJar(environmentName, tenantId, args.module);
+					if (!jar) return;
+					jarModule = jar.module;
+					prefilledName = args.name;
+					prefilledDescription = args.description;
+				}
+
+				const adapterUrl = await loadWorkflowAdapterUrl(
+					environmentManager.getWorkflowAdapterConfigUri(environmentName, tenantId),
+				);
+				if (!adapterUrl) {
+					void vscode.window.showErrorMessage('No Workflow Adapter URL saved. Run "Fetch Workflows" first.');
+					return;
+				}
+				const token = tokenStore.getToken(environmentName);
+				if (!token) {
+					void vscode.window.showErrorMessage('Provide a token for this environment before registering a JAR.');
+					return;
+				}
+
+				// A supplied name is still validated, not trusted outright — an
+				// agent's guess is as capable of colliding (errorCode 10055) or being
+				// blank after trimming as one typed by hand.
+				const name = prefilledName?.trim()
+					? prefilledName.trim()
+					: await vscode.window.showInputBox({
+						title: `Register JAR on ${tenantId}`,
+						prompt: 'Name — how this JAR will be identified under JAR Deployments.',
+						value: jarModuleFileName(jarModule),
+						ignoreFocusOut: true,
+						validateInput(value) {
+							return value.trim() ? undefined : 'A name is required.';
+						},
+					});
+				if (!name) return;
+				// Optional field: unlike `name` above, an empty or cancelled entry here
+				// is not a reason to abort — registration proceeds either way.
+				const description = prefilledDescription !== undefined
+					? prefilledDescription
+					: await vscode.window.showInputBox({
+						title: `Register JAR on ${tenantId}`,
+						prompt: 'Description (optional)',
+						ignoreFocusOut: true,
+					});
+
+				try {
+					const environmentUrl = toHttpsBase(environmentName);
+					await vscode.window.withProgress(
+						{
+							location: vscode.ProgressLocation.Notification,
+							title: `Registering "${name.trim()}" on ${tenantId}…`,
+							cancellable: false,
+						},
+						() => registerJarDeployment(adapterUrl, tenantId, environmentUrl, token, {
+							module: jarModule,
+							name: name.trim(),
+							description: description?.trim() || undefined,
+						}),
+					);
+				} catch (e) {
+					await reportWorkflowError(e, { environmentName, tenantId, operation: 'register' });
+					return;
+				}
+
+				await doFetchJarDeployments(environmentName, tenantId, adapterUrl);
+				void vscode.window.showInformationMessage(`Registered "${name.trim()}" on ${tenantId}.`);
+			},
+		),
+
+		/**
 		 * reltio.editWorkflowAdapterUrl
 		 * Context-menu recovery action: lets the user correct a wrong Adapter URL
 		 * without hunting through settings. Pre-fills the current saved value.
+		 *
+		 * Also accepts a `WorkflowCommandArgs` object with `adapterUrl`, so an
+		 * agent that already knows the correct URL (from a prior error message
+		 * naming it, or from being told directly) can save it without opening a
+		 * prompt only a human can answer.
 		 */
 		vscode.commands.registerCommand(
 			'reltio.editWorkflowAdapterUrl',
-			async (node?: WorkflowsFolderNode | { environmentName: string; tenantId: string }) => {
-				if (!node || !environmentManager) return;
-				const configUri = environmentManager.getWorkflowAdapterConfigUri(
-					node.environmentName,
-					node.tenantId,
-				);
+			async (arg?: WorkflowsFolderNode | WorkflowCommandArgs) => {
+				if (!environmentManager) return;
+				const args = workflowCommandArgs(arg);
+				if (!args) return;
+				const target = await resolveWorkflowTenant(args);
+				if (!target) return;
+				const { environmentName, tenantId } = target;
+
+				const configUri = environmentManager.getWorkflowAdapterConfigUri(environmentName, tenantId);
 				const current = await loadWorkflowAdapterUrl(configUri);
-				const newUrl = await promptAndSaveAdapterUrl(node.environmentName, node.tenantId, current);
+
+				let newUrl: string | undefined;
+				if (args.adapterUrl?.trim()) {
+					// Supplied outright: still validated and still saved through the
+					// same allowlist check a typed value takes, not trusted just
+					// because it did not come from a prompt.
+					try {
+						newUrl = toHttpsBase(args.adapterUrl.trim());
+						await saveWorkflowAdapterUrl(configUri, newUrl);
+					} catch (e) {
+						void vscode.window.showErrorMessage((e as Error).message);
+						return;
+					}
+				} else {
+					newUrl = await promptAndSaveAdapterUrl(environmentName, tenantId, current);
+				}
 				if (!newUrl) return;
 				// Immediately re-fetch with the corrected URL.
-				await doFetchWorkflows(node.environmentName, node.tenantId, newUrl);
+				await doFetchWorkflows(environmentName, tenantId, newUrl);
 			},
 		),
 
@@ -3070,13 +3324,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 		const processId = await vscode.window.showInputBox({
 			title: `New workflow on ${tenantId}`,
-			prompt: 'Process ID — the workflow’s identity on the tenant, and the file name.',
+			prompt: 'ID — the technical identifier the system uses: it becomes the file name and the workflow’s identity on the tenant.',
 			value: defaultValue,
 			ignoreFocusOut: true,
 			validateInput(value) {
 				const message = processIdValidationMessage(value);
 				if (message) return message;
-				if (takenByDraft.has(value.trim())) return 'A draft with this process ID already exists.';
+				if (takenByDraft.has(value.trim())) return 'A draft with this ID already exists.';
 				return undefined;
 			},
 		});
@@ -3453,28 +3707,253 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		return true;
 	}
 
+	/**
+	 * What an agent can pass in place of a tree node.
+	 *
+	 * The authoring commands were reachable only from the tree, which meant their
+	 * only argument was a `TreeItem` subclass instance — something
+	 * `vscode.commands.executeCommand` cannot produce from a chat session. An
+	 * agent asked to "create a new approval workflow" could describe the steps
+	 * and not take them. A plain object is the missing entry point.
+	 *
+	 * Every field is optional and every missing field is prompted for, so one
+	 * implementation serves a fully-specified agent call, a half-specified one,
+	 * and a bare click from the tree.
+	 */
+	interface WorkflowCommandArgs {
+		readonly environmentName?: string;
+		readonly tenantId?: string;
+		readonly processId?: string;
+		readonly displayName?: string;
+		/** Duplicate only: the deployed definition to copy from. */
+		readonly sourceProcessId?: string;
+		/** Register only: the S3 module path of the JAR to register (see `AvailableJar.module`). */
+		readonly module?: string;
+		/** Register only: the name to give the JAR under JAR Deployments. */
+		readonly name?: string;
+		/** Register only: optional description for the JAR. */
+		readonly description?: string;
+		/** Edit-adapter-url only: the new Workflow Adapter base URL, saved without prompting. */
+		readonly adapterUrl?: string;
+	}
+
+	/**
+	 * Read a command argument that may be a tree node, an args object, or absent.
+	 *
+	 * A tree node satisfies `WorkflowCommandArgs` structurally — it carries
+	 * `environmentName` and `tenantId` — so both shapes are handled by reading
+	 * the same two fields rather than by branching on the class.
+	 */
+	function workflowCommandArgs(
+		arg: unknown,
+	): WorkflowCommandArgs | undefined {
+		if (arg === undefined || arg === null) return {};
+		if (typeof arg !== 'object') return undefined;
+		const candidate = arg as { environmentName?: unknown; tenantId?: unknown };
+		if (typeof candidate.environmentName === 'string' && typeof candidate.tenantId === 'string') {
+			return arg as WorkflowCommandArgs;
+		}
+		return undefined;
+	}
+
+	/**
+	 * Settle which tenant a workflow command acts on.
+	 *
+	 * Asks only when it has to. With one connected tenant there is nothing to
+	 * ask, and a needless "which tenant?" in front of every agent-driven create
+	 * is the kind of prompt that trains people to stop reading prompts.
+	 */
+	async function resolveWorkflowTenant(
+		args: WorkflowCommandArgs,
+	): Promise<{ environmentName: string; tenantId: string } | undefined> {
+		if (args.environmentName && args.tenantId) {
+			return { environmentName: args.environmentName, tenantId: args.tenantId };
+		}
+		if (!environmentManager) return undefined;
+
+		const environments = await environmentManager.scanEnvironments();
+		const candidates = environments.flatMap(env =>
+			env.tenants.map(tenant => ({ environmentName: env.name, tenantId: tenant.tenantId })),
+		);
+
+		if (candidates.length === 0) {
+			void vscode.window.showErrorMessage(
+				'No tenant is connected yet. Add an environment and a tenant first, then create a workflow.',
+			);
+			return undefined;
+		}
+		if (candidates.length === 1) return candidates[0];
+
+		const picked = await vscode.window.showQuickPick(
+			candidates.map(candidate => ({
+				label: candidate.tenantId,
+				description: candidate.environmentName,
+				candidate,
+			})),
+			{ title: 'Which tenant?', placeHolder: 'Choose the tenant this workflow belongs to.', ignoreFocusOut: true },
+		);
+		return picked?.candidate;
+	}
+
+	/**
+	 * Confirm a deploy before anything leaves the machine.
+	 *
+	 * Modal and unconditional. Deploying writes to a live tenant, and the two
+	 * cases read very differently to the person approving: a new id adds a
+	 * workflow, while an id that already exists deploys the *next version* of a
+	 * running one, so the wording names which is happening. There is no flag to
+	 * skip it — an agent that could suppress this would remove the only
+	 * checkpoint between a chat message and a change on a customer's tenant.
+	 *
+	 * Distinct from the drift check inside `deployBpmnFile`, which asks a
+	 * different question: whether the tenant moved since the last fetch.
+	 */
+	async function confirmDeploy(
+		processId: string,
+		tenantId: string,
+		replacesLive: boolean,
+	): Promise<boolean> {
+		const detail = replacesLive
+			? `"${processId}" is already deployed on ${tenantId}. This uploads a new version of it, which is the one new process instances will use.`
+			: `This uploads "${processId}" to ${tenantId} as a new workflow.`;
+		const choice = await vscode.window.showWarningMessage(
+			`Deploy "${processId}" to ${tenantId}?`,
+			{ modal: true, detail },
+			replacesLive ? 'Deploy new version' : 'Deploy',
+		);
+		return choice !== undefined;
+	}
+
+	/**
+	 * Settle which deployed definition to copy.
+	 *
+	 * `requested` is matched against the process id case-sensitively, because that
+	 * is how the Adapter identifies a definition. A name that does not match is a
+	 * fall-through to the picker rather than an error: an agent working from a
+	 * user's wording ("the data change request one") will approximate, and showing
+	 * the real list is more useful than refusing.
+	 */
+	async function pickProcessDefinition(
+		environmentName: string,
+		tenantId: string,
+		requested: string | undefined,
+	): Promise<ProcessDefinition | undefined> {
+		const definitions = treeProvider.getCachedProcessDefinitions(environmentName, tenantId);
+		if (!definitions || definitions.length === 0) {
+			void vscode.window.showErrorMessage(
+				`No workflows have been listed for ${tenantId} yet. Open the Workflows folder to fetch them, then try again.`,
+			);
+			return undefined;
+		}
+
+		if (requested) {
+			const exact = definitions.find(definition => definition.type === requested);
+			if (exact) return exact;
+		}
+
+		const picked = await vscode.window.showQuickPick(
+			definitions.map(definition => ({
+				label: definition.type,
+				description: definition.displayName,
+				// Naming Reltio's own definitions matters here: copying one is the
+				// normal way to start, whereas copying a custom one may duplicate
+				// work the customer already owns.
+				detail: definition.generic ? 'Reltio built-in' : 'Custom workflow',
+				definition,
+			})),
+			{
+				title: `Which workflow should be copied?`,
+				placeHolder: requested
+					? `No workflow called "${requested}" on ${tenantId} — pick from the list.`
+					: `Workflows deployed on ${tenantId}`,
+				ignoreFocusOut: true,
+			},
+		);
+		return picked?.definition;
+	}
+
+	/**
+	 * Settle which unregistered JAR to register.
+	 *
+	 * `requested` is matched against the module path exactly, since that is the
+	 * Adapter's own identity for a JAR — same reasoning as `pickProcessDefinition`.
+	 * A module that doesn't match anything cached is a fall-through to the
+	 * picker rather than an error: an agent working from a file name someone
+	 * typed will approximate, and showing the real list is more useful than
+	 * refusing outright.
+	 */
+	async function pickUnregisteredJar(
+		environmentName: string,
+		tenantId: string,
+		requested: string | undefined,
+	): Promise<AvailableJar | undefined> {
+		const jars = treeProvider.getCachedUnregisteredJars(environmentName, tenantId);
+		if (!jars || jars.length === 0) {
+			void vscode.window.showErrorMessage(
+				`No unregistered JARs are known for ${tenantId} yet. Open the JAR Deployments folder to fetch them, then try again.`,
+			);
+			return undefined;
+		}
+
+		if (requested) {
+			const exact = jars.find(jar => jar.module === requested);
+			if (exact) return exact;
+		}
+
+		const picked = await vscode.window.showQuickPick(
+			jars.map(jar => ({
+				label: jarModuleFileName(jar.module),
+				description: jar.module,
+				jar,
+			})),
+			{
+				title: 'Which JAR should be registered?',
+				placeHolder: requested
+					? `No unregistered JAR matches "${requested}" — pick from the list.`
+					: `Unregistered JARs on ${tenantId}`,
+				ignoreFocusOut: true,
+			},
+		);
+		return picked?.jar;
+	}
+
 	context.subscriptions.push(
 		/**
 		 * reltio.newWorkflowDraft
 		 * Boilerplate → editable draft. Prompts for the process id first (see
 		 * promptForProcessId) and never writes a placeholder.
+		 *
+		 * Takes a tree node or a `WorkflowCommandArgs` object, so the same command
+		 * serves a click and an agent that already knows the id and name.
 		 */
 		vscode.commands.registerCommand(
 			'reltio.newWorkflowDraft',
-			async (node?: ProcessDefinitionsFolderNode | WorkflowsFolderNode | WorkflowDraftsFolderNode) => {
-				if (!node || !environmentManager) return;
-				const { environmentName, tenantId } = node;
+			async (
+				arg?: ProcessDefinitionsFolderNode | WorkflowsFolderNode | WorkflowDraftsFolderNode | WorkflowCommandArgs,
+			) => {
+				if (!environmentManager) return;
+				const args = workflowCommandArgs(arg);
+				if (!args) return;
+				const target = await resolveWorkflowTenant(args);
+				if (!target) return;
+				const { environmentName, tenantId } = target;
 
 				// Not `node.definitions` — that only exists on the Process Definitions
 				// folder, and this command is also reachable from Workflows and Drafts.
 				// The deployed-id collision warning has to fire from every entry point.
 				const deployed = treeProvider.getCachedProcessDefinitions(environmentName, tenantId);
-				const processId = await promptForProcessId(environmentName, tenantId, '', deployed);
+				// A supplied id is still validated and still checked for collisions —
+				// it is pre-filled into the same prompt rather than trusted. An agent
+				// inventing an id that versions a live workflow is exactly the mistake
+				// this prompt exists to catch.
+				const processId = await promptForProcessId(
+					environmentName, tenantId, args.processId ?? '', deployed,
+				);
 				if (!processId) return;
 
-				const displayName = await vscode.window.showInputBox({
+				const displayName = args.displayName ?? await vscode.window.showInputBox({
 					title: `Display name for ${processId}`,
-					prompt: 'Shown in the Reltio console and in this tree. Free text.',
+					prompt: 'Business-friendly name shown to reviewers in the Reltio console and in this tree (not the technical ID).',
 					value: processId,
 					ignoreFocusOut: true,
 				});
@@ -3492,9 +3971,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		 */
 		vscode.commands.registerCommand(
 			'reltio.duplicateWorkflowDraft',
-			async (node?: ProcessDefinitionNode) => {
-				if (!node || !environmentManager) return;
-				const { environmentName, tenantId } = node;
+			async (arg?: ProcessDefinitionNode | WorkflowCommandArgs) => {
+				if (!environmentManager) return;
+				const args = workflowCommandArgs(arg);
+				if (!args) return;
+				const target = await resolveWorkflowTenant(args);
+				if (!target) return;
+				const { environmentName, tenantId } = target;
+
+				const source = arg instanceof ProcessDefinitionNode
+					? arg.definition
+					: await pickProcessDefinition(environmentName, tenantId, args.sourceProcessId);
+				if (!source) return;
+
 				const ctx = await workflowCallContext(environmentName, tenantId);
 				if (!ctx) return;
 
@@ -3503,7 +3992,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					await vscode.window.withProgress(
 						{
 							location: vscode.ProgressLocation.Notification,
-							title: `Copying ${node.definition.type}…`,
+							title: `Copying ${source.type}…`,
 							cancellable: false,
 						},
 						async () => {
@@ -3512,7 +4001,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 								tenantId,
 								ctx.environmentUrl,
 								ctx.token,
-								node.definition.type,
+								source.type,
 							);
 						},
 					);
@@ -3525,15 +4014,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				const processId = await promptForProcessId(
 					environmentName,
 					tenantId,
-					`${node.definition.type}Copy`,
-					[node.definition],
+					args.processId ?? `${source.type}Copy`,
+					[source],
 				);
 				if (!processId) return;
 
-				const displayName = await vscode.window.showInputBox({
+				const displayName = args.displayName ?? await vscode.window.showInputBox({
 					title: `Display name for ${processId}`,
-					prompt: 'Shown in the Reltio console and in this tree. Free text.',
-					value: `${node.definition.displayName || node.definition.type} (copy)`,
+					prompt: 'Business-friendly name shown to reviewers in the Reltio console and in this tree (not the technical ID).',
+					value: `${source.displayName || source.type} (copy)`,
 					ignoreFocusOut: true,
 				});
 				if (displayName === undefined) return;
@@ -3545,7 +4034,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					);
 					return;
 				}
-				await createDraft(environmentName, tenantId, processId, xml);
+
+				// A definition deployed before diagram interchange was written into
+				// authored BPMNs has no shapes to copy, so the draft would open as a
+				// blank canvas in every viewer. Lay one out now — the copy is new
+				// authored content, unlike the fetched original, which is left as its
+				// author laid it out.
+				const withDiagram = hasDiagramSection(xml) ? xml : await withGeneratedDiagram(xml);
+				await createDraft(environmentName, tenantId, processId, withDiagram);
 			},
 		),
 
@@ -3558,7 +4054,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		 */
 		vscode.commands.registerCommand(
 			'reltio.deployWorkflow',
-			async (arg?: ProcessDefinitionNode | WorkflowDraftNode | vscode.Uri) => {
+			async (arg?: ProcessDefinitionNode | WorkflowDraftNode | vscode.Uri | WorkflowCommandArgs) => {
 				if (!environmentManager) return;
 
 				// A deployed definition carries its own identity; a draft and an editor
@@ -3573,15 +4069,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 						);
 						return;
 					}
+					if (!(await confirmDeploy(arg.definition.type, arg.tenantId, true))) return;
 					await deployBpmnFile(arg.environmentName, arg.tenantId, arg.definition.type, fileUri);
 					return;
 				}
 
-				const fileUri = arg instanceof WorkflowDraftNode
-					? arg.draft.fileUri
-					: arg instanceof vscode.Uri
-						? arg
-						: vscode.window.activeTextEditor?.document.uri;
+				// An args object names a tenant and a process id; the file is then the
+				// draft that id maps to, which is how an agent refers to a draft it has
+				// never had a Uri for.
+				const objectArgs = arg instanceof WorkflowDraftNode || arg instanceof vscode.Uri
+					? undefined
+					: workflowCommandArgs(arg);
+
+				let fileUri: vscode.Uri | undefined;
+				if (objectArgs?.processId) {
+					const target = await resolveWorkflowTenant(objectArgs);
+					if (!target) return;
+					fileUri = environmentManager.getWorkflowBpmnUri(
+						target.environmentName, target.tenantId, objectArgs.processId,
+					);
+					if ((await readTextFile(fileUri)) === undefined) {
+						void vscode.window.showErrorMessage(
+							`No BPMN called "${objectArgs.processId}" exists under ${target.tenantId}. Create it as a draft first.`,
+						);
+						return;
+					}
+				} else {
+					fileUri = arg instanceof WorkflowDraftNode
+						? arg.draft.fileUri
+						: arg instanceof vscode.Uri
+							? arg
+							: vscode.window.activeTextEditor?.document.uri;
+				}
+
 				if (!fileUri) {
 					void vscode.window.showErrorMessage('Open a BPMN, or run this from the Workflows tree.');
 					return;
@@ -3593,7 +4113,85 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					);
 					return;
 				}
+
+				const deployed = treeProvider.getCachedProcessDefinitions(
+					draftCtx.environmentName, draftCtx.tenantId,
+				);
+				const replacesLive = deployed?.some(d => d.type === draftCtx.processId) === true;
+				if (!(await confirmDeploy(draftCtx.processId, draftCtx.tenantId, replacesLive))) return;
+
 				await deployBpmnFile(draftCtx.environmentName, draftCtx.tenantId, draftCtx.processId, fileUri);
+			},
+		),
+
+		/**
+		 * reltio.previewWorkflowDiagram
+		 * Read-only diagram for a draft, a deployed definition, or the BPMN in the
+		 * active editor. Same argument-resolution shape as `reltio.deployWorkflow`,
+		 * with one deliberate difference: a definition that has not been downloaded
+		 * yet is fetched rather than refused. "Show me this diagram" is a read, and
+		 * making the user run Open BPMN first to satisfy a precondition they cannot
+		 * see would be a worse answer than doing it for them.
+		 *
+		 * Also accepts a `WorkflowCommandArgs` object (`processId`, resolved via
+		 * `resolveWorkflowTenant`), so an agent that knows a process id — deployed
+		 * or draft-only — can ask for the diagram without first finding a tree row.
+		 */
+		vscode.commands.registerCommand(
+			'reltio.previewWorkflowDiagram',
+			async (arg?: ProcessDefinitionNode | WorkflowDraftNode | vscode.Uri | WorkflowCommandArgs) => {
+				let fileUri: vscode.Uri | undefined;
+
+				if (arg instanceof ProcessDefinitionNode) {
+					if (!environmentManager) return;
+					const { environmentName, tenantId } = arg;
+					const processId = arg.definition.type;
+					fileUri = environmentManager.getWorkflowBpmnUri(environmentName, tenantId, processId);
+					if ((await readTextFile(fileUri)) === undefined) {
+						const ctx = await workflowCallContext(environmentName, tenantId);
+						if (!ctx) return;
+						fileUri = await downloadBpmn(environmentName, tenantId, processId, ctx);
+					}
+				} else if (arg instanceof WorkflowDraftNode || arg instanceof vscode.Uri) {
+					fileUri = arg instanceof WorkflowDraftNode ? arg.draft.fileUri : arg;
+				} else {
+					const objectArgs = workflowCommandArgs(arg);
+					if (objectArgs?.processId && environmentManager) {
+						const target = await resolveWorkflowTenant(objectArgs);
+						if (!target) return;
+						const { environmentName, tenantId } = target;
+						const { processId } = objectArgs;
+
+						fileUri = environmentManager.getWorkflowBpmnUri(environmentName, tenantId, processId);
+						if ((await readTextFile(fileUri)) === undefined) {
+							// Same convenience as the tree-node path: a deployed definition
+							// not yet downloaded is fetched rather than refused — but only
+							// when it actually is deployed; a name that matches neither a
+							// draft on disk nor a deployed definition is a real "not found",
+							// not something a fetch would resolve.
+							const deployed = treeProvider.getCachedProcessDefinitions(environmentName, tenantId);
+							if (!deployed.some(d => d.type === processId)) {
+								void vscode.window.showErrorMessage(
+									`No BPMN called "${processId}" exists under ${tenantId}. Create it as a draft first, or check the spelling of a deployed one.`,
+								);
+								return;
+							}
+							const ctx = await workflowCallContext(environmentName, tenantId);
+							if (!ctx) return;
+							fileUri = await downloadBpmn(environmentName, tenantId, processId, ctx);
+						}
+					} else {
+						fileUri = vscode.window.activeTextEditor?.document.uri;
+					}
+				}
+
+				if (!fileUri) {
+					void vscode.window.showErrorMessage('Open a BPMN, or run this from the Workflows tree.');
+					return;
+				}
+
+				const document = await vscode.workspace.openTextDocument(fileUri);
+				await bpmnManager.showPreview(document, context.extensionUri);
 			},
 		),
 
@@ -3738,8 +4336,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	}
 
 	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+	let bpmnDebounceTimer: ReturnType<typeof setTimeout> | undefined;
 	context.subscriptions.push(
 		vscode.workspace.onDidChangeTextDocument(e => {
+			// A sibling branch, not a widening of the one above it: `isReltioDocument`
+			// answers "is this Business Config JSON", which a BPMN is not. The BPMN
+			// preview panel has a debounce of its own, but it only exists while a
+			// diagram is open and these findings have to work with no diagram at all.
+			if (bpmnProcessIdForDocument(e.document)) {
+				if (bpmnDebounceTimer) clearTimeout(bpmnDebounceTimer);
+				bpmnDebounceTimer = setTimeout(() => {
+					bpmnDiagnosticsManager.update(e.document);
+				}, DEBOUNCE_MS);
+				return;
+			}
 			if (!isReltioDocument(e.document)) return;
 			treeProvider.onL3DocumentChanged(e.document);
 			if (debounceTimer) clearTimeout(debounceTimer);
@@ -3754,14 +4364,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			if (isReltioDocument(doc)) {
 				diagnosticsManager.clear(doc.uri);
 			}
+			if (bpmnProcessIdForDocument(doc)) {
+				bpmnDiagnosticsManager.clear(doc.uri);
+			}
 		}),
 	);
 
 	context.subscriptions.push(
 		vscode.window.onDidChangeActiveTextEditor(editor => {
-			if (editor && isReltioDocument(editor.document)) {
+			if (!editor) return;
+			if (isReltioDocument(editor.document)) {
 				rebuildUriIndex(editor.document);
 			}
+			// Unconditional rather than `else`: activating a BPMN is the moment a user
+			// expects the Problems panel to be about the file in front of them, and it
+			// is also the only chance to report on a file opened before this listener
+			// existed — one downloaded from the tenant and never edited since.
+			bpmnDiagnosticsManager.update(editor.document);
 		}),
 	);
 
@@ -3779,6 +4398,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const activeEditor = vscode.window.activeTextEditor;
 	if (activeEditor && isReltioDocument(activeEditor.document)) {
 		rebuildUriIndex(activeEditor.document);
+	}
+	if (activeEditor) {
+		bpmnDiagnosticsManager.update(activeEditor.document);
 	}
 
 	// Restore OAuth sessions from SecretStorage for all known environments

@@ -2,7 +2,7 @@
   "name": "reltio-ide",
   "displayName": "Reltio IDE",
   "description": "Use the Reltio IDE to review and update the business configuration of your Reltio tenant.",
-  "version": "1.0.17",
+  "version": "1.0.21",
   "publisher": "Reltio",
   "icon": "resources/icons/reltio-icon.png",
   "license": "SEE LICENSE IN LICENSE",
@@ -409,6 +409,16 @@
         "command": "reltio.copyJarModulePath",
         "title": "Copy JAR Module Path",
         "icon": "$(copy)"
+      },
+      {
+        "command": "reltio.registerJarDeployment",
+        "title": "Register JAR...",
+        "icon": "$(add)"
+      },
+      {
+        "command": "reltio.previewWorkflowDiagram",
+        "title": "Show BPMN Diagram",
+        "icon": "$(type-hierarchy)"
       }
     ],
     "configuration": {
@@ -425,6 +435,18 @@
           ],
           "default": "warning",
           "description": "Severity for unresolved URI references in Reltio configuration files"
+        },
+        "reltio.bpmnDiagnosticsSeverity": {
+          "type": "string",
+          "enum": [
+            "warning",
+            "error",
+            "information",
+            "hint",
+            "off"
+          ],
+          "default": "warning",
+          "description": "Lowest severity used when reporting BPMN rule violations in *.bpmn20.xml files. A rule Activiti rejects outright is always reported as an error; this sets the floor for the rest. Use \"off\" to disable BPMN checking."
         },
         "reltio.autoSaveOnEditorSwitch": {
           "type": "boolean",
@@ -526,6 +548,11 @@
         },
         {
           "command": "reltio.deployWorkflow",
+          "when": "resourceFilename =~ /\\.bpmn20\\.xml$/",
+          "group": "navigation"
+        },
+        {
+          "command": "reltio.previewWorkflowDiagram",
           "when": "resourceFilename =~ /\\.bpmn20\\.xml$/",
           "group": "navigation"
         }
@@ -803,11 +830,6 @@
           "group": "inline@2"
         },
         {
-          "command": "reltio.openWorkflowBpmn",
-          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.processDefinition(\\.changed)?$/",
-          "group": "navigation@1"
-        },
-        {
           "command": "reltio.duplicateWorkflowDraft",
           "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.processDefinition(\\.changed)?$/",
           "group": "5_insert@01"
@@ -858,6 +880,26 @@
           "group": "inline@1"
         },
         {
+          "command": "reltio.refreshJarDeployments",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.unregisteredJars.folder",
+          "group": "1_refresh@1"
+        },
+        {
+          "command": "reltio.refreshJarDeployments",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.unregisteredJars.folder",
+          "group": "inline@1"
+        },
+        {
+          "command": "reltio.registerJarDeployment",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.unregisteredJar",
+          "group": "5_insert@01"
+        },
+        {
+          "command": "reltio.registerJarDeployment",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.unregisteredJar",
+          "group": "inline@1"
+        },
+        {
           "command": "reltio.refreshProcessDefinitions",
           "when": "view == reltioConfigTree && viewItem == reltio.workflows.drafts.folder",
           "group": "1_refresh@1"
@@ -886,6 +928,16 @@
           "command": "reltio.deleteWorkflowDraft",
           "when": "view == reltioConfigTree && viewItem == reltio.workflows.draft",
           "group": "9_delete@01"
+        },
+        {
+          "command": "reltio.previewWorkflowDiagram",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.draft",
+          "group": "navigation@1"
+        },
+        {
+          "command": "reltio.previewWorkflowDiagram",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.processDefinition(\\.changed)?$/",
+          "group": "navigation@1"
         }
       ],
       "explorer/context": [
@@ -962,9 +1014,10 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "build": "npm run build:ext && npm run build:webview",
+    "build": "npm run build:ext && npm run build:webview && npm run build:bpmnview",
     "build:ext": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --main-fields=module,main",
     "build:webview": "esbuild src/webview/ontologyView.ts --bundle --outfile=dist/webview.js --format=iife --platform=browser && node -e \"require('fs').copyFileSync('src/webview/ontologyView.css','dist/webview.css')\"",
+    "build:bpmnview": "esbuild src/webview/bpmnView.ts --bundle --outfile=dist/bpmnView.js --format=iife --platform=browser && node -e \"require('fs').copyFileSync('src/webview/bpmnView.css','dist/bpmnView.css')\"",
     "build:watch": "npm run build:ext -- --watch",
     "clean": "node -e \"['dist','target'].forEach(d=>{try{require('fs').rmSync(d,{recursive:true,force:true})}catch(e){}})\"",
     "package": "npm run clean && npm run build && node -e \"require('fs').mkdirSync('target',{recursive:true})\" && npx vsce package --out target/ --baseContentUrl https://github.com/reltio-ai/reltio-ide/blob/main/ --baseImagesUrl https://raw.githubusercontent.com/reltio-ai/reltio-ide/main/",
