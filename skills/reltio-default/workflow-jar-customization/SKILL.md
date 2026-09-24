@@ -11,6 +11,12 @@ Normative product context: `openspec/changes/workflow-skills-library/design.md` 
 
 The requirement cannot be expressed as ordering: a clarification loop back to the requester, N-of-M quorum, custom notification content, a call to another system, or a validation rule. Anything expressible as ordering belongs in `workflow-bpmn-authoring` instead — it is self-service, this is not.
 
+**Sample prompts**
+
+1. When a DCR is approved, we need to call an external inventory API before the change commits — can this be a service task?
+2. Write a task listener that blocks assignment to anyone outside the requester's own region.
+3. Our custom class works alone but fails intermittently under load — could it be a statefulness bug?
+
 ## Inputs
 
 1. The existing Java in the tenant's provisioned Bitbucket repository — the samples there are the most reliable pattern source.

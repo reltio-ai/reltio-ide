@@ -55,6 +55,39 @@ test.
 Descriptive mentions of S3 stay — a customer should understand where their JAR comes from. What is
 excluded is instruction to act on it.
 
+## D6. Confidence-labeled ambiguities, sourced against the public Reltio Workflow repository
+
+**Decision.** Add `bpmn-rules.md` §12 "Known Ambiguities / Needs Verification" and §13 "Official
+Reltio documentation — precedence", plus a new `references/reltio-doc-portal-reference.md`. §12
+separates rules into three tiers — confirmed against Reltio's own source or the doc portal, this
+team's inference from observed deploy behavior, and genuinely unresolved — rather than presenting all
+of §§1–11 with uniform confidence.
+
+**Rationale.** A colleague's LCA assistant skill (built independently, merged, then reverted for
+being out of that release's scope — not for quality) used exactly this pattern in its knowledge
+base's §7, and it is a real content-quality gap here: `bpmn-rules.md` states error codes and failure
+modes as flatly as it states namespace requirements, but the two rest on very different evidence.
+Checking against the public `github.com/reltio-ai/workflow` repository (the workflow domain's
+equivalent of the LCA framework's own interface source) surfaced two genuine, previously-unknown
+discrepancies rather than only confirming existing rules: a Reltio-shipped OOTB file
+(`dcrTwoApprovals.bpmn20.xml`) that omits the type task listener entirely, contradicting §3's
+"every user task" framing; and a validator class package name that differs between what OOTB
+form-property values actually reference and what the public repo's own source tree uses for the
+same class names. Neither is resolvable by picking a side — both are stated as open, with what to do
+in the meantime and what would resolve them.
+
+Official docs.reltio.com pages for Workflow/BPMN customization **do exist** (confirmed by search, not
+assumed) — this is not the "no doc-portal presence" case the initial framing allowed for. The pages
+found are narrative/customization guides, not a request/response contract, so §12.5 is explicit that
+the error-code and mandatory-listener rules are still this team's own inference, not a documented
+platform guarantee, even after this pass.
+
+**Not addressed by this decision — flagged as an open risk, not a task item:** `bpmn-rules.md` has
+never had review sign-off from a Reltio Workflow-platform SME. The LCA assistant's own knowledge base
+required exactly this kind of sign-off (`PROVENANCE.md`, tracked on its Jira) before shipping to
+partners; this file has shipped without an equivalent. This decision closes the citation/confidence
+gap that content review would need as an input, but it is not a substitute for that review.
+
 ## Test plan
 
 **Automated — Tier B (structural)**
