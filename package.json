@@ -206,6 +206,18 @@
         "icon": "$(git-branch)"
       },
       {
+        "command": "reltio.tenantNewBranch",
+        "title": "Connect to a New Branch",
+        "category": "Reltio",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "reltio.disconnectTenantFromGit",
+        "title": "Disconnect from Git",
+        "category": "Reltio",
+        "icon": "$(debug-disconnect)"
+      },
+      {
         "command": "reltio.undoLayoutMigration",
         "title": "Undo Layout Migration",
         "category": "Reltio"
@@ -582,7 +594,17 @@
         },
         {
           "command": "reltio.connectTenantToGit",
-          "when": "viewItem =~ /^reltio\\.tenant/ && reltio.workspaceSource != 'git'",
+          "when": "viewItem =~ /^reltio\\.tenant/ && !(viewItem =~ /gitbound/) && reltio.workspaceSource != 'git'",
+          "group": "3_tenant"
+        },
+        {
+          "command": "reltio.tenantNewBranch",
+          "when": "viewItem =~ /gitbound/ && reltio.workspaceSource != 'git'",
+          "group": "3_tenant"
+        },
+        {
+          "command": "reltio.disconnectTenantFromGit",
+          "when": "viewItem =~ /gitbound/ && reltio.workspaceSource != 'git'",
           "group": "3_tenant"
         },
         {

@@ -129,6 +129,10 @@ function installMemoryFs() {
 }
 
 const text = s => Buffer.from(s).toString('utf8');
+let pkgCache;
+const pkgJson = () => (pkgCache ??= JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')));
+const pkgCommands = () => pkgJson().contributes.commands;
+const pkgMenus = () => pkgJson().contributes.menus['view/item/context'];
 const U = p => vscode.Uri.file(p);
 
 const structure = importDist('workspace/tenantFolderStructure');
@@ -687,6 +691,46 @@ const {
 	assert.ok(isTenantConfigPath('/x/L3.reltio.json'), 'legacy config still recognized (migration may skip a tenant)');
 	assert.ok(isTenantConfigPath('C:\\x\\Business Config\\BusinessConfig.json'), 'windows separators handled');
 	assert.ok(!isTenantConfigPath('/x/Business Config/Other.json'), 'unrelated file rejected');
+
+	// ------------------------------------ 19.x tenant Git menu depends on whether it is bound
+
+	// Before binding the row offers Connect; after binding it offers New Branch and Disconnect.
+	// That switch is driven entirely by the contextValue suffix, so both halves are asserted.
+	const { TenantNode } = importDist('tree/multiTenantNodes');
+	const unbound = new TenantNode('e', 't', true, false, true, 'T_READY', false, undefined, undefined, false);
+	const bound = new TenantNode('e', 't', true, false, true, 'T_READY', false, undefined, 'dev', true);
+	assert.ok(!/gitbound/.test(unbound.contextValue), 'an unbound tenant carries no gitbound marker');
+	assert.ok(/gitbound/.test(bound.contextValue), 'a bound tenant is marked gitbound');
+	assert.ok(
+		unbound.contextValue.startsWith('reltio.tenant'),
+		'the existing tenant menu entries still match',
+	);
+
+	// A detached HEAD has no branch but is still a repository: Disconnect must stay reachable.
+	const detached = new TenantNode('e', 't', true, false, true, 'T_READY', false, undefined, undefined, true);
+	assert.ok(
+		/gitbound/.test(detached.contextValue),
+		'a detached HEAD is still gitbound, so Disconnect is still offered',
+	);
+
+	const menus = pkgMenus();
+	const whenFor = cmd => menus.filter(m => m.command === cmd).map(m => m.when);
+	assert.deepStrictEqual(
+		whenFor('reltio.connectTenantToGit').map(w => /!\(viewItem =~ \/gitbound\/\)/.test(w)),
+		[true],
+		'Connect to Git is hidden once the tenant is bound',
+	);
+	for (const cmd of ['reltio.tenantNewBranch', 'reltio.disconnectTenantFromGit']) {
+		const whens = whenFor(cmd);
+		assert.strictEqual(whens.length, 1, `${cmd} has one context-menu entry`);
+		assert.ok(/viewItem =~ \/gitbound\//.test(whens[0]), `${cmd} only shows when bound`);
+		assert.ok(/workspaceSource != 'git'/.test(whens[0]), `${cmd} is hidden in git-source mode`);
+	}
+	// Titles are what the user actually reads, so pin them.
+	const titleOf = cmd => pkgCommands().find(c => c.command === cmd)?.title;
+	assert.strictEqual(titleOf('reltio.connectTenantToGit'), 'Connect to Git');
+	assert.strictEqual(titleOf('reltio.tenantNewBranch'), 'Connect to a New Branch');
+	assert.strictEqual(titleOf('reltio.disconnectTenantFromGit'), 'Disconnect from Git');
 
 	// --------------------------------------------- 18.x activation must survive the rename
 

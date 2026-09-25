@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { parseDocument, type ParsedDocument } from '../parser/configParser';
 import { EnvironmentManager, type TenantInfo } from '../workspace/environmentManager';
 import { getCurrentBranch } from '../workspace/tenantGitBinding';
+import { isGitRepo } from '../workspace/gitConfigSource';
 import { readTenantIdentityMarker } from '../workspace/gitSourceMarker';
 import { TokenStore, GIT_SOURCE_TOKEN } from '../api/tokenStore';
 import { countEntities } from '../api/reltioClient';
@@ -68,7 +69,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 	 * process per tenant per render. Cleared by `refresh()`, which is also what picks up a
 	 * checkout the user made from a terminal.
 	 */
-	private readonly branchCache = new Map<string, string | undefined>();
+	private readonly branchCache = new Map<string, { bound: boolean; branch?: string }>();
 
 	/** Marker-sourced identity per `env/tenant`, cached for the same window as `branchCache`. */
 	private readonly identityCache = new Map<
@@ -354,18 +355,24 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 	 * Returns undefined for an unbound tenant, a detached HEAD, or when git cannot be reached:
 	 * the row then simply shows no branch rather than an error.
 	 */
-	private async branchFor(env: string, tenantId: string): Promise<string | undefined> {
-		if (!this.environmentManager) return undefined;
+	private async gitStateFor(
+		env: string,
+		tenantId: string,
+	): Promise<{ bound: boolean; branch?: string }> {
+		if (!this.environmentManager) return { bound: false };
 		const key = `${env}/${tenantId}`;
-		if (this.branchCache.has(key)) return this.branchCache.get(key);
-		let branch: string | undefined;
+		const cached = this.branchCache.get(key);
+		if (cached) return cached;
+		const root = this.environmentManager.getTenantRootUri(env, tenantId);
+		let state: { bound: boolean; branch?: string };
 		try {
-			branch = await getCurrentBranch(this.environmentManager.getTenantRootUri(env, tenantId));
+			const bound = await isGitRepo(root);
+			state = { bound, branch: bound ? await getCurrentBranch(root) : undefined };
 		} catch {
-			branch = undefined;
+			state = { bound: false };
 		}
-		this.branchCache.set(key, branch);
-		return branch;
+		this.branchCache.set(key, state);
+		return state;
 	}
 
 	private findTenantInfo(env: string, tid: string): TenantInfo | undefined {
@@ -419,7 +426,8 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 					this.uxState?.perTenant.get(`${element.environmentName}/${t.tenantId}`) ?? 'T_NO_L3',
 					isGitSource,
 					(await this.identityFor(element.environmentName, t.tenantId))?.tenantId,
-					await this.branchFor(element.environmentName, t.tenantId),
+					(await this.gitStateFor(element.environmentName, t.tenantId)).branch,
+					(await this.gitStateFor(element.environmentName, t.tenantId)).bound,
 				)),
 			);
 		}

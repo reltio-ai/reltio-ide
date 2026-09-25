@@ -149,6 +149,79 @@ async function containsOnlyGeneratedReadmes(dir: vscode.Uri): Promise<boolean> {
 	return true;
 }
 
+/**
+ * Moves the tenant onto an existing remote branch.
+ *
+ * Unlike creating a branch, this replaces tracked files with that branch's content, so a dirty
+ * worktree is refused rather than silently carried across. Git would refuse anyway; catching it
+ * here means a readable message instead of raw git output.
+ */
+export async function switchToExistingBranch(
+	tenantRoot: vscode.Uri,
+	branch: string,
+): Promise<void> {
+	if (await hasUncommittedChanges(tenantRoot)) {
+		throw new Error(
+			`This tenant has uncommitted changes. Commit or stash them before switching to "${branch}".`,
+		);
+	}
+	await git(tenantRoot, ['fetch', 'origin', branch]);
+	const localExists = await branchExistsLocally(tenantRoot, branch);
+	await git(
+		tenantRoot,
+		localExists ? ['checkout', branch] : ['checkout', '-b', branch, '--track', `origin/${branch}`],
+	);
+}
+
+async function branchExistsLocally(tenantRoot: vscode.Uri, branch: string): Promise<boolean> {
+	try {
+		await git(tenantRoot, ['rev-parse', '--verify', `refs/heads/${branch}`]);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Creates a branch from the current HEAD and publishes it.
+ *
+ * This is the feature-branch case: fork off whatever the tenant is on, keep working. `checkout -b`
+ * leaves the working tree alone, so uncommitted edits come along rather than blocking, and the new
+ * branch shares history with its parent so a pull request back into it merges normally.
+ *
+ * Publishing immediately means the branch exists on the remote from the outset, even with no new
+ * commits, so a pull request can be opened as soon as there is something to review.
+ */
+export async function createAndPublishBranch(
+	tenantRoot: vscode.Uri,
+	branch: string,
+): Promise<{ published: boolean; reason?: string }> {
+	if (await branchExistsLocally(tenantRoot, branch)) {
+		throw new Error(`Branch "${branch}" already exists in this tenant.`);
+	}
+	await git(tenantRoot, ['checkout', '-b', branch]);
+	try {
+		await git(tenantRoot, ['push', '-u', 'origin', branch]);
+		return { published: true };
+	} catch (e) {
+		// The branch is valid locally and the user's work is safe; only publishing failed.
+		return { published: false, reason: e instanceof Error ? e.message : String(e) };
+	}
+}
+
+/**
+ * Removes the repository from a tenant folder, keeping every file.
+ *
+ * Only `.git` goes. The configuration, the component tree and `.reltio-ide/` are untouched, so the
+ * tenant carries on working exactly as an unbound one.
+ */
+export async function disconnectFromGit(tenantRoot: vscode.Uri): Promise<void> {
+	await vscode.workspace.fs.delete(vscode.Uri.joinPath(tenantRoot, '.git'), {
+		recursive: true,
+		useTrash: false,
+	});
+}
+
 /** Everything the caller needs to move the tenant folder onto a remote branch. */
 export interface BindOptions {
 	tenantRoot: vscode.Uri;

@@ -87,6 +87,7 @@ import { registerReltioAutoSave } from './workspace/reltioAutoSave';
 import {
 	isGitRepo,
 	findEnclosingGitRepository,
+	getRemoteUrl,
 	isGitRepoWithRemote,
 	isFolderEmpty,
 	isPathContainedIn,
@@ -99,7 +100,15 @@ import {
 	type MultiGitSourceMarker,
 } from './workspace/gitSourceMarker';
 import { isTenantConfigPath } from './workspace/tenantFolderStructure';
-import { bindTenantToGit, listRemoteBranches } from './workspace/tenantGitBinding';
+import {
+	bindTenantToGit,
+	createAndPublishBranch,
+	disconnectFromGit,
+	getCurrentBranch,
+	hasUncommittedChanges,
+	listRemoteBranches,
+	switchToExistingBranch,
+} from './workspace/tenantGitBinding';
 import { ensureGitignoreEntries, ensureWorkspaceGitignored } from './workspace/gitSourceMarker';
 import {
 	hasMigrationBackup,
@@ -341,6 +350,7 @@ async function pickBranch(
 	tenantId: string,
 	remoteBranches: string[],
 	listFailed: boolean,
+	currentBranch?: string,
 ): Promise<string | undefined> {
 	const askFreeText = async (prompt: string): Promise<string | undefined> => {
 		const typed = await vscode.window.showInputBox({
@@ -365,16 +375,25 @@ async function pickBranch(
 		return askFreeText(`Branch for tenant "${tenantId}" (could not read the remote's branches)`);
 	}
 	if (remoteBranches.length === 0) {
-		return askFreeText(`Branch for tenant "${tenantId}" (the remote has no branches yet)`);
+		return askFreeText(
+			currentBranch
+				? `New branch for tenant "${tenantId}" (no other branches on origin)`
+				: `Branch for tenant "${tenantId}" (the remote has no branches yet)`,
+		);
 	}
 
 	const picked = await vscode.window.showQuickPick(
 		[
-			...remoteBranches.map(name => ({ label: name, description: 'existing branch' })),
-			{ label: CREATE_BRANCH_ITEM, description: 'type a new name' },
+			...remoteBranches.map(name => ({ label: name, description: 'existing branch on origin' })),
+			{
+				label: CREATE_BRANCH_ITEM,
+				description: currentBranch
+					? `branch off "${currentBranch}", keeping your changes`
+					: 'type a new name',
+			},
 		],
 		{
-			title: 'Connect to Git',
+			title: currentBranch ? `Connect to a New Branch (on "${currentBranch}")` : 'Connect to Git',
 			placeHolder: `Branch for tenant "${tenantId}"`,
 			ignoreFocusOut: true,
 		},
@@ -1868,6 +1887,88 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				);
 			} catch (e) {
 				void vscode.window.showErrorMessage(`Undo failed: ${(e as Error).message}`);
+			}
+		}),
+		vscode.commands.registerCommand('reltio.tenantNewBranch', async (node?: TenantNode) => {
+			if (!node || !environmentManager) return;
+			const tenantRoot = environmentManager.getTenantRootUri(node.environmentName, node.tenantId);
+
+			const remoteUrl = await getRemoteUrl(tenantRoot);
+			if (!remoteUrl) {
+				void vscode.window.showErrorMessage(
+					`Tenant "${node.tenantId}" has no "origin" remote configured.`,
+				);
+				return;
+			}
+
+			let remoteBranches: string[] = [];
+			let listFailed = false;
+			try {
+				remoteBranches = await vscode.window.withProgress(
+					{ location: vscode.ProgressLocation.Notification, title: 'Reading branches…' },
+					() => listRemoteBranches(tenantRoot, remoteUrl),
+				);
+			} catch {
+				listFailed = true;
+			}
+
+			const current = await getCurrentBranch(tenantRoot);
+			// The branch it is already on is not a useful thing to switch to.
+			const selectable = remoteBranches.filter(b => b !== current);
+			const branch = await pickBranch(node.tenantId, selectable, listFailed, current);
+			if (!branch) return;
+
+			const isExisting = remoteBranches.includes(branch);
+			try {
+				if (isExisting) {
+					await vscode.window.withProgress(
+						{ location: vscode.ProgressLocation.Notification, title: `Switching to ${branch}…` },
+						() => switchToExistingBranch(tenantRoot, branch),
+					);
+					treeProvider.refresh();
+					void vscode.window.showInformationMessage(
+						`Tenant "${node.tenantId}" is now on branch "${branch}". Its configuration reflects that branch; fetch again to pull the tenant's current state from Reltio.`,
+					);
+					return;
+				}
+
+				const result = await vscode.window.withProgress(
+					{ location: vscode.ProgressLocation.Notification, title: `Creating ${branch}…` },
+					() => createAndPublishBranch(tenantRoot, branch),
+				);
+				treeProvider.refresh();
+				if (result.published) {
+					void vscode.window.showInformationMessage(
+						`Created and published branch "${branch}" from "${current ?? 'the current commit'}". Your configuration is unchanged and comes with you.`,
+					);
+				} else {
+					void vscode.window.showWarningMessage(
+						`Branch "${branch}" was created locally but could not be published: ${result.reason}`,
+					);
+				}
+			} catch (e) {
+				void vscode.window.showErrorMessage((e as Error).message);
+			}
+		}),
+		vscode.commands.registerCommand('reltio.disconnectTenantFromGit', async (node?: TenantNode) => {
+			if (!node || !environmentManager) return;
+			const tenantRoot = environmentManager.getTenantRootUri(node.environmentName, node.tenantId);
+
+			const dirty = await hasUncommittedChanges(tenantRoot);
+			const warning = dirty
+				? `Disconnect tenant "${node.tenantId}" from Git? It has uncommitted changes. Your files stay exactly as they are, but the repository and its local history are removed and unpushed commits are lost.`
+				: `Disconnect tenant "${node.tenantId}" from Git? Your files stay exactly as they are; the repository and its local history are removed.`;
+			const pick = await vscode.window.showWarningMessage(warning, { modal: true }, 'Disconnect');
+			if (pick !== 'Disconnect') return;
+
+			try {
+				await disconnectFromGit(tenantRoot);
+				treeProvider.refresh();
+				void vscode.window.showInformationMessage(
+					`Tenant "${node.tenantId}" is no longer connected to Git. Its files are untouched.`,
+				);
+			} catch (e) {
+				void vscode.window.showErrorMessage(`Failed to disconnect: ${(e as Error).message}`);
 			}
 		}),
 		vscode.commands.registerCommand('reltio.connectTenantToGit', async (node?: TenantNode) => {

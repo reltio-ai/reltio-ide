@@ -175,3 +175,19 @@ the extension was never activating.
 - [x] 18.1 Add `workspaceContains` triggers for `BusinessConfig.json`, `.reltio-environment.json` and `.reltio-config-source.json`; dropping the folder suffixes and renaming the config file had removed every filesystem trigger
 - [x] 18.2 Keep the legacy `*.reltio.environment` and `*.reltio.json` triggers so an un-migrated workspace still activates
 - [x] 18.3 Test asserting a trigger exists for each artifact the current layout puts on disk, mutation-checked against the old list
+
+## 19. Round 9: feature branches from a connected tenant
+
+The original model assumed branch = promotion stage, one per tenant. Real work has two axes:
+long-lived stage branches (dev/test/prod) and short-lived feature branches spawned off them.
+Nothing stored the branch, so supporting this was additive.
+
+- [x] 19.1 Tenant rows carry a `.gitbound` contextValue suffix, derived from whether the folder is a repository rather than from whether a branch is readable, so a detached HEAD still counts
+- [x] 19.2 **Connect to Git** is hidden once bound; **Connect to a New Branch** and **Disconnect from Git** appear instead
+- [x] 19.3 **Connect to a New Branch** lists the remote's branches, excluding the current one, with free text for a new name
+- [x] 19.4 A new branch forks from the current HEAD (`checkout -b`), so the working tree and any uncommitted edits come along, and is published immediately with `push -u`
+- [x] 19.5 Switching to an existing branch refuses on a dirty worktree with a readable message rather than raw git output, and warns that the configuration now reflects that branch
+- [x] 19.6 **Disconnect from Git** removes only `.git`, keeps every file, and confirms modally, naming the loss of local history and any unpushed commits
+- [x] 19.7 One git call per tenant per refresh answers both bound-ness and branch
+- [x] 19.8 Tests for the contextValue switch (including detached HEAD), the menu gating, and the command titles
+- [ ] 19.9 Update `ARCHITECTURE.md`, the spec and the release note
