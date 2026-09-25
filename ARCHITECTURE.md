@@ -198,7 +198,7 @@ Precedence: **`skills/workspace/`** overrides the same logical playbook under **
 | `reltio.provideToken` / `reltio.useTokenFrom` | Tree context (environment) | Store or alias Bearer token in memory |
 | `reltio.applyDefaultEnvironments` | Command Palette | Scaffold `reltio.defaultEnvironments` (host/tenant folders) and load bearers from optional workspace-relative `tokenFile` paths into memory (same as Provide Token). Never reads inline secrets from settings. Optional Fetch L3 when `reltio.fetchL3AfterApplyDefaults` is true; never auto-PUT. |
 | `reltio.addTenant` | Tree context (authorized environment) | List tenants from API, create `*.reltio.tenant` directory and materialize the component tree |
-| `reltio.connectTenantToGit` | Tree context (tenant), hidden in git-source mode | Prompt for a remote (remembered per workspace) and a branch (never pre-filled), `git clone --branch` into the still-empty tenant folder so the folder becomes the repository root. A branch absent on the remote is offered for creation from the default branch (`checkout -b` + `push -u`, never `--orphan`, so promotion branches share history). Writes the identity marker and `.gitignore`. |
+| `reltio.connectTenantToGit` (**Connect to Git**) | Tree context (tenant), hidden in git-source mode | Prompt for a remote (remembered per workspace), then pick a branch from the remote's existing branches (`git ls-remote --heads`, no clone needed) or create one as free text. Binds the tenant folder as the repository root: **clone** when the folder is empty, **adopt in place** when it already holds a configuration. A branch absent on the remote is offered for creation from the default branch (never `--orphan`, so promotion branches share history) with the inherited configuration dropped. Writes the identity marker and `.gitignore`. Warns modally when another repository encloses the tenant. |
 | `reltio.undoLayoutMigration` | Command Palette | Restore the legacy flat layout from `.reltio-ide-backup/` and clear the migration stamps |
 | `reltio.removeTenant` | Tree context (tenant with or without L3) | Delete tenant directory |
 | `reltio.copyTenantId` | Tree context (`reltio.tenant` / `reltio.tenant.l3`) | Copy tenant ID to the system clipboard |
@@ -257,23 +257,15 @@ The tenant folder is the **git repository root** once bound to a remote. Everyth
 ├── Business Config/
 │   └── BusinessConfig.json        <- tracked: the tenant metadata
 ├── RDM/README.md
-├── Workflows/{BPMN,Custom Workflows}/README.md
-├── Data Validation Functions/README.md
-├── Metadata Permissions/README.md
-├── User Management/{Users,Roles,Groups}/README.md
-├── Data Loader/README.md
-├── Reltio Integration Hub/README.md
-├── LifeCycle Actions/README.md
-├── DTSS/README.md
-├── Connectors/README.md
-├── User Interface/README.md
-├── Custom Code/{Custom Cleansers,Utilities}/README.md
-└── Physical Configuration/README.md
+└── Workflows/
+    ├── BPMN/README.md
+    └── Custom Workflows/README.md
 ```
 
 - **`Business Config/BusinessConfig.json`** — active tenant metadata being edited. The only component the IDE currently fetches or applies.
 - **`.reltio-ide/BusinessConfig.baseline.json`** — copy of the remote configuration **as of the last successful Fetch Configuration**; used with **Apply Configuration to Tenant** to detect server-side drift before **PUT**. Kept out of the tracked tree so a drift baseline never shows up in a pull request.
-- **The other 17 component folders** are structural placeholders for components the IDE does not yet manage. Each carries a generated `README.md` naming the expected files and linking to `docs.reltio.com`, because git does not track empty directories. An existing `README.md` is never overwritten.
+- **The other three component folders** (`RDM`, `Workflows/BPMN`, `Workflows/Custom Workflows`) are structural placeholders for components the IDE does not yet manage. Each carries a generated `README.md` naming the expected files and linking to `docs.reltio.com`, because git does not track empty directories. An existing `README.md` is never overwritten.
+- **Retired folders.** Earlier builds materialized fourteen more components (`Data Validation Functions`, `Metadata Permissions`, `User Management/*`, `Data Loader`, `Reltio Integration Hub`, `LifeCycle Actions`, `DTSS`, `Connectors`, `User Interface`, `Custom Code/*`, `Physical Configuration`). They are listed in **`RETIRED_COMPONENT_FOLDERS`** and removed during the activation migration, but only when a folder holds nothing except a README this extension generated, matched on content. One user file, or a README the user rewrote, keeps the folder.
 - The tree definition, the documentation URL map, and `materializeTenantTree` live in **`src/workspace/tenantFolderStructure.ts`**, which is the single place any of these paths are named.
 
 ## Configuration history (`.reltio-ide/history/`)
@@ -323,6 +315,33 @@ Two consequences for the code:
   rebuilt on every scan: `tenantLocations` ((env, tenant) -> actual directory, because a legacy
   folder is not named after its id) and `tenantPathIndex` (the reverse, so `getParent` and
   first-open tracking stay synchronous). `locFromPath` is the public lookup.
+
+## A Git repository above the tenant folders
+
+Each tenant folder is meant to be its own repository. One rooted above them breaks the layout in
+one of two ways, both observed:
+
+| Situation | What happens |
+|---|---|
+| Tenants not bound | The outer repository tracks `{env}/{tenantId}/Business Config/BusinessConfig.json`, putting environment and tenant back into every path. Branches can no longer be compared, which is the whole point of the layout. |
+| A tenant bound | The outer repository stores the tenant as a **gitlink** (mode `160000`): a commit pointer whose files it does not hold. Cloning it yields an empty tenant folder. |
+
+The extension **cannot prevent this**. `git init` and Source Control's **Initialize Repository**
+belong to the built-in git extension, and an extension cannot intercept another extension's
+command. So the handling is to make it harmless and to report it:
+
+- **`ensureWorkspaceGitignored`** writes a workspace-root `.gitignore` covering `.reltio/`,
+  `.reltio-ide/`, `.reltio-ide-backup/` and both marker filenames. Without it an outer repository
+  commits the synced Velocity Packs (megabytes) and the environment marker, which sits above the
+  tenant and so escapes the tenant's own ignore file.
+- Environment folders are **deliberately not ignored**. One repository for the whole workspace is
+  a legitimate choice; it just should not happen by accident.
+- **`findEnclosingGitRepository`** (`gitConfigSource.ts`) walks up to the filesystem root and
+  reports the nearest repository, including one at the start directory itself.
+- Activation warns once per workspace (dismissal in `workspaceState`), offering **Ignore Tenant
+  Folders** (adds each environment folder to the outer `.gitignore`), **Show Details** (a
+  generated markdown explainer) and **Don't Show Again**.
+- **Connect to Git** warns modally before creating a repository inside another one.
 
 ## Legacy layout migration
 

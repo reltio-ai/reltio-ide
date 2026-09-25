@@ -27,7 +27,7 @@ Users also need several tenants on disk at once, to compare Dev against Prod.
 **Goals:**
 
 - Each tenant folder is a self-contained Git repository whose tracked paths contain no environment host or tenant ID, so branches from different tenants diff and merge cleanly.
-- A fixed component tree per tenant (18 leaf component folders, 21 directories on disk), with the fetched configuration at `Business Config/BusinessConfig.json`.
+- A fixed component tree per tenant (`Business Config`, `RDM`, `Workflows/BPMN`, `Workflows/Custom Workflows`; five directories), with the fetched configuration at `Business Config/BusinessConfig.json`.
 - IDE working state isolated from the tracked tree and ignored by Git.
 - Several tenants usable side by side, each on its own branch.
 - Existing daily users land on the new layout without manual work and without losing data.
@@ -35,7 +35,7 @@ Users also need several tenants on disk at once, to compare Dev against Prod.
 
 **Non-Goals:**
 
-- Fetching or applying any component other than Business Config. The other 17 component folders are structural placeholders.
+- Fetching or applying any component other than Business Config. The other three component folders are structural placeholders.
 - The CI/CD pipeline that consumes the pushed branches.
 - Commit, push, PR, merge or conflict-resolution UI inside the extension. Users use VS Code's Source Control panel.
 - Multi-root workspace support.
@@ -166,6 +166,55 @@ URLs verified against `docs.reltio.com` at authoring time:
 | `Custom Code/Utilities` | [Developer resources at a glance](https://docs.reltio.com/en/developer-resources/about-developer-resources/developer-resources-at-a-glance) |
 | `Physical Configuration` | [Tenant Configuration Parameters Reference](https://docs.reltio.com/en/developer-resources/about-developer-resources/developer-resources-at-a-glance/tenant-configuration-parameters-reference) |
 
+### D11. The tree covers only the components teams version today
+
+**Decision:** `Business Config`, `RDM` and `Workflows` (with `BPMN` and `Custom Workflows`). Five
+directories, down from twenty-one.
+
+The original tree mirrored the full product surface, which read as aspirational rather than
+useful: fourteen folders that would never hold anything were noise in every pull request that
+added a tenant. The removed paths stay in `RETIRED_COMPONENT_FOLDERS` so a tenant created by an
+earlier build is cleaned up rather than left with orphans.
+
+Pruning deletes user-visible directories, so the guard is strict: a folder goes only when
+everything under it is a README this extension generated, matched on the sentence every generated
+README carries. One user file, or a README they rewrote, keeps the folder. Both halves of that
+guard are mutation-checked, because a false positive destroys someone's work.
+
+Adding a component back later is a one-entry change to `COMPONENT_FOLDERS` plus removing it from
+the retired list.
+
+### D12. Branches are picked from the remote, not recalled
+
+**Decision:** list the remote's branches with `git ls-remote --heads` and offer them as a quick
+pick, with **Create a new branch…** as free text.
+
+A branch name is something the team already agreed on; making the user recall it exactly is
+needless friction and a typo silently offers to create a branch. `ls-remote` needs no local
+repository, so the list is available before anything touches disk and backing out at the picker
+leaves the folder untouched.
+
+A remote with no branches, or one that cannot be listed (unreachable, credentials the helper
+cannot supply), falls straight through to free text rather than showing an empty picker. The bind
+itself then reports the real failure, so a listing problem never blocks the command.
+
+### D13. A repository above the tenants is defused, not blocked
+
+**Decision:** keep extension state out of it, detect it, warn. Do not attempt to prevent it.
+
+`git init` and Source Control's **Initialize Repository** belong to the built-in git extension,
+and an extension cannot intercept another extension's command. Anyone with a terminal can do it
+regardless, so a block would be both impossible and dishonest.
+
+What it costs when it happens was measured, not assumed: with tenants unbound the outer
+repository tracks `{env}/{tenantId}/Business Config/BusinessConfig.json`, defeating the layout;
+with a tenant bound it stores a gitlink (mode `160000`) whose files it does not hold, so cloning
+gives an empty tenant folder.
+
+Environment folders are deliberately not ignored by default. One repository for the whole
+workspace is a legitimate choice, and **Ignore Tenant Folders** on the warning makes it explicit
+rather than accidental.
+
 ## Risks / Trade-offs
 
 | Risk | Mitigation |
@@ -205,9 +254,9 @@ URLs verified against `docs.reltio.com` at authoring time:
 
 | Tier | Script / Method | What it covers |
 |------|------------------|-----------------|
-| A (automated) | `scripts/test-git-ready-tenant-folder-structure.cjs` | Component-tree definition materializes the exact 21 directories (18 declared leaf paths plus the implied `Workflows`, `User Management` and `Custom Code` parents); `README.md` written to every unmanaged folder and not to `Business Config/`; an existing `README.md` is not overwritten; re-materializing is non-destructive; every unmanaged folder has a non-empty `docs.reltio.com` URL in the map and the generated README contains it (map asserted offline, no network dependency). All five `EnvironmentManager` accessors resolve to the component-tree paths; `preferredEnvironmentUri` resolves to the workspace root; an environment already known under `.reltio/` keeps its location. Marker round-trip carries environment and tenant, and the tree label prefers the marker with folder-name fallback. `.gitignore` generation adds `.reltio-ide/` and the marker, preserves unrelated entries, and never duplicates. Migration plan computation maps each legacy file to its new path, omits absent files, is a no-op on an already-migrated folder, and is refused on a dirty worktree. Backup path resolves to `.reltio-ide-backup/{env}/{tenant}/` and the workspace-root `.gitignore` gains the entry without duplication. Stamp is not written on a simulated partial failure. Branch-creation flow builds the argument sequence clone-default, `checkout -b`, `push -u` and never `--orphan`; a declined confirmation issues no Git invocation. Grep invariant: no `L3.reltio.json` literal outside `EnvironmentManager`. |
+| A (automated) | `scripts/test-git-ready-tenant-folder-structure.cjs` | Component-tree definition materializes the exact five directories (four declared leaf paths plus the implied `Workflows` parent); `README.md` written to each of the three unmanaged folders and not to `Business Config/`; the retired-folder prune removes a folder holding only a generated README and keeps one holding a user file or a rewritten README; an existing `README.md` is not overwritten; re-materializing is non-destructive; every unmanaged folder has a non-empty `docs.reltio.com` URL in the map and the generated README contains it (map asserted offline, no network dependency). All five `EnvironmentManager` accessors resolve to the component-tree paths; `preferredEnvironmentUri` resolves to the workspace root; an environment already known under `.reltio/` keeps its location. Marker round-trip carries environment and tenant, and the tree label prefers the marker with folder-name fallback. `.gitignore` generation adds `.reltio-ide/` and the marker, preserves unrelated entries, and never duplicates. Migration plan computation maps each legacy file to its new path, omits absent files, is a no-op on an already-migrated folder, and is refused on a dirty worktree. Backup path resolves to `.reltio-ide-backup/{env}/{tenant}/` and the workspace-root `.gitignore` gains the entry without duplication. Stamp is not written on a simulated partial failure. Branch-creation flow builds the argument sequence clone-default, `checkout -b`, `push -u` and never `--orphan`; a declined confirmation issues no Git invocation. Grep invariant: no `L3.reltio.json` literal outside `EnvironmentManager`. |
 | B (automated, fixture-derived) | same script, via `scripts/lib/load-canonical-fixture.cjs` and the self-oracle helpers | Parsing, `UriIndex` build, and tree-section derivation produce identical results whether the canonical fixture is loaded from a legacy path or from `Business Config/BusinessConfig.json`, proving the rename is inert for navigation, diagnostics and the config subtree. |
-| C (manual QA) | Install the packaged `.vsix` | **New tenant:** add an environment (confirm it lands at the workspace root), add a tenant, confirm the full tree with READMEs. **Bind:** run **Connect Tenant to Git**, supply a remote and branch `dev`, confirm the clone and the branch badge in the tree. **Fetch:** confirm `Business Config/BusinessConfig.json` and that `git status` shows only that file. **Round trip:** commit, push, confirm the remote tree has no env/tenant in any path. **Second tenant:** bind to the same remote on `prod`, confirm the remote prompt is pre-filled and the branch prompt is not, confirm both tenants are visible at once and their tracked paths are identical. **Features:** Go-to-Definition, Find All References, diagnostics, completion, ontology preview and layout persistence, Fetch history, Compare with current, Apply Configuration to Tenant. **Branch creation:** connect a tenant to a branch that does not exist on the remote, confirm the creation prompt names the branch and remote, accept it, and confirm the branch is pushed and shares history with the default branch (a PR from it is possible). Decline the prompt on another tenant and confirm the folder is left empty. Point at a remote with no commits and confirm the empty-repository message. **README links:** open three generated READMEs and confirm each documentation link resolves on `docs.reltio.com`. **Migration:** open a pre-upgrade workspace with two legacy tenants, confirm automatic migration, the summary notification, the backup at `.reltio-ide-backup/{env}/{tenant}/`, that the workspace-root `.gitignore` excludes it, and that reopening does not re-migrate. **Migration refusal:** dirty the worktree of a legacy bound tenant, confirm it is skipped with a message and migrates on the next activation once clean. **Undo:** run **Undo Layout Migration**, confirm the legacy layout is restored. **Coexistence:** open a git-sourced workspace, confirm **Connect Tenant to Git** is absent and git mode is unchanged. **Detached HEAD:** check out a commit directly, confirm the tree renders without a branch and raises no error. |
+| C (manual QA) | Install the packaged `.vsix` | **New tenant:** add an environment (confirm the folder is the short label, e.g. `dev`), add a tenant (confirm the folder is the bare tenant id), confirm the five-directory tree with three READMEs and a `.gitignore`. **Bind:** run **Connect to Git**, supply a remote, confirm the branch picker lists the remote's existing branches, pick one, confirm the clone and the branch badge in the tree. Repeat on another tenant choosing **Create a new branch…** and confirm the new branch does not carry the first tenant's configuration. **Fetch:** confirm `Business Config/BusinessConfig.json` and that `git status` shows only that file. **Round trip:** commit, push, confirm the remote tree has no env/tenant in any path. **Second tenant:** bind to the same remote on `prod`, confirm the remote prompt is pre-filled and the branch prompt is not, confirm both tenants are visible at once and their tracked paths are identical. **Features:** Go-to-Definition, Find All References, diagnostics, completion, ontology preview and layout persistence, Fetch history, Compare with current, Apply Configuration to Tenant. **Branch creation:** connect a tenant to a branch that does not exist on the remote, confirm the creation prompt names the branch and remote, accept it, and confirm the branch is pushed and shares history with the default branch (a PR from it is possible). Decline the prompt on another tenant and confirm the folder is left empty. Point at a remote with no commits and confirm the empty-repository message. **README links:** open the three generated READMEs and confirm each documentation link resolves on `docs.reltio.com`. **Retired folders:** open a workspace whose tenant was created by an earlier build, confirm the fourteen removed component folders are gone and reported in the migration summary; put a file in one of them first and confirm that folder survives. **Enclosing repository:** run `git init` at the workspace root, reload, confirm the warning and that **Show Details** opens the explainer; confirm the workspace-root `.gitignore` excludes `.reltio/`; run **Connect to Git** and confirm the modal warning appears first. **Migration:** open a pre-upgrade workspace with two legacy tenants, confirm automatic migration, the summary notification, the backup at `.reltio-ide-backup/{env}/{tenant}/`, that the workspace-root `.gitignore` excludes it, and that reopening does not re-migrate. **Migration refusal:** dirty the worktree of a legacy bound tenant, confirm it is skipped with a message and migrates on the next activation once clean. **Undo:** run **Undo Layout Migration**, confirm the legacy layout is restored. **Coexistence:** open a git-sourced workspace, confirm **Connect to Git** is absent and git mode is unchanged. **Detached HEAD:** check out a commit directly, confirm the tree renders without a branch and raises no error. |
 
 ## Open Questions
 

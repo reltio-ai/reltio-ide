@@ -8,21 +8,10 @@ Business Config/
 RDM/
 Workflows/BPMN/
 Workflows/Custom Workflows/
-Data Validation Functions/
-Metadata Permissions/
-User Management/Users/
-User Management/Roles/
-User Management/Groups/
-Data Loader/
-Reltio Integration Hub/
-LifeCycle Actions/
-DTSS/
-Connectors/
-User Interface/
-Custom Code/Custom Cleansers/
-Custom Code/Utilities/
-Physical Configuration/
 ```
+
+The tree covers the components teams version today. `Workflows/` exists as an implied container,
+giving five directories in total.
 
 #### Scenario: Adding a tenant creates the full tree
 - **WHEN** the user adds a tenant to an environment
@@ -76,6 +65,33 @@ The documentation URL for each folder SHALL come from a single map declared alon
 - **WHEN** the component tree is materialized
 - **THEN** every generated `README.md` contains a non-empty `docs.reltio.com` URL for its component
 - **AND** no folder falls back to a generic or placeholder link
+
+### Requirement: Component folders no longer in the tree are removed, but only when generated
+Earlier builds materialized fourteen further component folders. The extension SHALL remove those
+folders from existing tenants, and SHALL do so only when a folder holds nothing but a `README.md`
+this extension generated. Any other file, or a `README.md` the user has rewritten, SHALL keep the
+folder and everything in it.
+
+#### Scenario: A purely generated folder is removed
+- **WHEN** a retired component folder contains only the generated `README.md`
+- **THEN** the folder is removed
+- **AND** the removal is reported in the migration summary
+
+#### Scenario: A user file keeps the folder
+- **WHEN** a retired component folder contains a file the user added
+- **THEN** the folder and its contents are left untouched
+
+#### Scenario: A rewritten README keeps the folder
+- **WHEN** a retired component folder's `README.md` no longer carries the generated wording
+- **THEN** the folder is treated as user content and left untouched
+
+#### Scenario: Surviving components are never pruned
+- **WHEN** retired folders are removed
+- **THEN** `Business Config/`, `RDM/`, `Workflows/BPMN/` and `Workflows/Custom Workflows/` remain
+
+#### Scenario: Pruning is idempotent
+- **WHEN** the prune runs a second time on the same tenant
+- **THEN** nothing further is removed
 
 ### Requirement: IDE working state is isolated in `.reltio-ide/`
 Files the extension maintains for its own operation SHALL live under `.reltio-ide/` at the tenant folder root, separate from the tracked component tree. This SHALL cover the drift baseline, the ontology layout sidecar, and configuration history snapshots.

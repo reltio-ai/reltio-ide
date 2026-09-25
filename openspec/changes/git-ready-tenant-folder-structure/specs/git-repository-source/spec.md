@@ -5,7 +5,7 @@ Two distinct Git integrations now exist: the workspace-level git-sourced mode in
 
 #### Scenario: Git-sourced mode suppresses per-tenant binding
 - **WHEN** the workspace is in git-sourced mode
-- **THEN** the **Connect Tenant to Git** command is not offered on any node
+- **THEN** the **Connect to Git** command is not offered on any node
 - **AND** the existing git-mode menu gating is unchanged
 
 #### Scenario: Tenant-connected mode suppresses workspace git source

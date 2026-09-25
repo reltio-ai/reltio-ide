@@ -150,9 +150,9 @@ to make it harmless and to say so clearly.
 - [x] 16.3 `findEnclosingGitRepository` walks up from a path to the filesystem root and reports the nearest repository, including one at the start directory itself
 - [x] 16.4 Activation warns when a repository encloses the workspace, offering **Ignore Tenant Folders**, **Show Details** and **Don't Show Again** (the dismissal is per workspace)
 - [x] 16.5 **Show Details** opens a markdown explainer covering both failure shapes and the two ways out
-- [x] 16.6 **Connect Tenant to Git** warns modally before creating a repository inside another one
+- [x] 16.6 **Connect to Git** warns modally before creating a repository inside another one
 - [x] 16.7 Tests for the workspace ignore list, its idempotency, that environment folders stay un-ignored, and enclosing-repository detection at the start directory and above
-- [ ] 16.8 Update `ARCHITECTURE.md` and the release note
+- [x] 16.8 Update `ARCHITECTURE.md` and the release note
 
 ## 17. Round 7: smaller tree, clearer command, branch picker
 
@@ -165,4 +165,4 @@ to make it harmless and to say so clearly.
 - [x] 17.7 Fall through to free text when the remote has no branches or cannot be listed, rather than showing an empty picker
 - [x] 17.8 Validate a typed branch name against the characters Git rejects
 - [x] 17.9 Tests: the four leaves and five directories, the retired list, and the prune guard (mutation-checked, since it deletes folders)
-- [ ] 17.10 Update `ARCHITECTURE.md`, the specs and the release note for the smaller tree and the picker
+- [x] 17.10 Update `ARCHITECTURE.md`, the specs and the release note for the smaller tree and the picker

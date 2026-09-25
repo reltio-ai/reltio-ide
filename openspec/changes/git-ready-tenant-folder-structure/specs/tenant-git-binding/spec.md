@@ -18,17 +18,42 @@ When a tenant is bound to Git, the `.git` directory SHALL live at the tenant fol
 - **THEN** other tenant folders in the same workspace are unaffected and may be unbound or bound to a different branch
 
 ### Requirement: User can connect a tenant folder to a Git remote and branch
-A `reltio.connectTenantToGit` command SHALL be available on a tenant node. It SHALL prompt for a remote URL and a branch name, then clone that branch into the tenant folder. The remote URL SHALL be remembered per workspace and offered as the default on subsequent invocations, because every tenant in a promotion flow shares one remote. The branch SHALL be prompted for every time, because it differs per tenant.
+A `reltio.connectTenantToGit` command, titled **Connect to Git**, SHALL be available on a tenant node. It SHALL prompt for a remote URL, then for a branch, then bind the tenant folder to that branch. The remote URL SHALL be remembered per workspace and offered as the default on subsequent invocations, because every tenant in a promotion flow shares one remote. The branch SHALL be asked for every time, because it differs per tenant.
 
 #### Scenario: Connecting clones the chosen branch
-- **WHEN** the user runs **Connect Tenant to Git**, supplies a remote URL and the branch `dev`
+- **WHEN** the user runs **Connect to Git**, supplies a remote URL and the branch `dev`
 - **THEN** that branch is cloned into the tenant folder
 - **AND** the tenant folder contains a `.git` directory
 
 #### Scenario: The remote is remembered, the branch is not
 - **WHEN** the user connects a second tenant in the same workspace
 - **THEN** the remote URL prompt is pre-filled with the previously used remote
-- **AND** the branch prompt is empty
+- **AND** the branch is asked for afresh
+
+### Requirement: The branch is chosen from the remote's existing branches
+The command SHALL list the remote's branches and offer them for selection, with an explicit option to create a new one by typing its name. Listing SHALL NOT require cloning, so that abandoning the command at this point leaves the tenant folder untouched.
+
+#### Scenario: Existing branches are offered
+- **WHEN** the remote has branches `dev`, `test` and `prod`
+- **THEN** all three are offered for selection
+- **AND** an option to create a new branch is offered alongside them
+
+#### Scenario: Nothing is written while choosing
+- **WHEN** the user dismisses the branch selection
+- **THEN** the tenant folder is exactly as it was before the command ran
+
+#### Scenario: A remote with no branches goes straight to free text
+- **WHEN** the remote has no branches yet
+- **THEN** the user is asked to type a branch name instead of being shown an empty list
+
+#### Scenario: A remote that cannot be listed goes straight to free text
+- **WHEN** the branch listing fails, for example because the remote is unreachable
+- **THEN** the user is asked to type a branch name
+- **AND** the command proceeds, so the bind itself reports the underlying failure
+
+#### Scenario: An invalid branch name is rejected before binding
+- **WHEN** the user types a name containing characters Git rejects
+- **THEN** the input is refused with an explanation and nothing is written
 
 #### Scenario: A tenant that has already fetched is adopted, not refused
 - **WHEN** the tenant folder already contains a fetched configuration
@@ -130,3 +155,34 @@ For a tenant folder that is a Git repository, the tree SHALL display the current
 #### Scenario: Detached HEAD does not break the tree
 - **WHEN** the tenant repository is in a detached HEAD state
 - **THEN** the tree renders without a branch name and logs no user-facing error
+
+### Requirement: A Git repository above the tenant folders is defused and reported
+The extension SHALL ensure that a Git repository at or above the workspace root cannot commit extension-managed state, SHALL detect such a repository, and SHALL report it with a way forward. It SHALL NOT attempt to prevent one being created: `git init` and the built-in Source Control **Initialize Repository** are outside its control.
+
+#### Scenario: Extension state is excluded wherever the repository root is
+- **WHEN** the extension activates in a tenant-connected workspace
+- **THEN** the workspace-root `.gitignore` excludes `.reltio/`, `.reltio-ide/`, `.reltio-ide-backup/` and both marker filenames
+- **AND** unrelated entries in that file are preserved and nothing is duplicated
+
+#### Scenario: Environment folders are not ignored by default
+- **WHEN** the workspace-root `.gitignore` is written
+- **THEN** the environment folders are not excluded, because one repository for the whole workspace is a choice the team may legitimately make
+
+#### Scenario: An enclosing repository is detected
+- **WHEN** a repository exists at the workspace root, or at any folder above it
+- **THEN** the nearest one is identified, including one at the workspace root itself
+
+#### Scenario: The user is warned once per workspace
+- **WHEN** an enclosing repository is detected on activation
+- **THEN** a warning explains the consequence and offers to ignore the tenant folders, to show details, or to stop asking
+- **AND** dismissing it permanently suppresses the warning for that workspace
+
+#### Scenario: Ignoring tenant folders keeps the outer repository usable
+- **WHEN** the user chooses to ignore the tenant folders
+- **THEN** each environment folder is added to the enclosing repository's `.gitignore`
+- **AND** the user is told that files it already tracks stay tracked until untracked explicitly
+
+#### Scenario: Binding inside another repository is confirmed first
+- **WHEN** the user runs **Connect to Git** on a tenant inside an enclosing repository
+- **THEN** a modal warning names that repository and explains the tenant would be stored as a pointer rather than its files
+- **AND** nothing is written unless the user confirms

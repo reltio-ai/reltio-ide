@@ -6,7 +6,7 @@ This change (RP-200851) makes each tenant folder a self-contained, tenant-agnost
 
 ## What Changes
 
-- **BREAKING (on-disk layout).** A tenant folder gains a fixed component tree: 18 leaf component folders, 21 directories on disk once the three container parents are counted. `L3.reltio.json` becomes `Business Config/BusinessConfig.json`. The 17 leaf folders for components the IDE does not yet manage (`RDM`, `Workflows`, `Data Validation Functions`, `Metadata Permissions`, `User Management`, `Data Loader`, `Reltio Integration Hub`, `LifeCycle Actions`, `DTSS`, `Connectors`, `User Interface`, `Custom Code`, `Physical Configuration`, plus their subfolders) are created with a `README.md` placeholder each, because Git does not track empty directories.
+- **BREAKING (on-disk layout).** A tenant folder gains a fixed component tree: `Business Config`, `RDM` and `Workflows` (with `BPMN` and `Custom Workflows` beneath it). Five directories, four of them leaves. `L3.reltio.json` becomes `Business Config/BusinessConfig.json`. The three unmanaged leaves each get a `README.md` placeholder, because Git does not track empty directories.
 - **BREAKING (on-disk layout).** IDE working state moves out of the tracked tree into `.reltio-ide/` at the tenant root: `BusinessConfig.baseline.json`, `BusinessConfig.layout.json`, and `history/`.
 - New tenant folders are created at the **workspace root** (`{host}.reltio.environment/{tenantId}.reltio.tenant/`) rather than under `.reltio/`, so repositories sit at depth 2 in plain sight. Both locations are already scanned by `collectEnvironmentDirs`, so this needs no scanner change. `.reltio/` keeps holding agent assets only.
 - New `reltio.connectTenantToGit` command: prompts for a remote URL (remembered per workspace after first entry) and a branch name, then clones that branch into the still-empty tenant folder via `git clone --branch`. The tenant folder becomes the Git repository root, so no tracked path contains an environment host or tenant ID.
@@ -14,7 +14,9 @@ This change (RP-200851) makes each tenant folder a self-contained, tenant-agnost
 - The tree view shows each tenant's current branch, read from `git rev-parse --abbrev-ref HEAD`. Branch state is owned by Git and never duplicated in extension state.
 - A generated `.gitignore` per tenant excludes `.reltio-ide/` and the marker file, reusing `ensureMarkerGitignored`. A clean tenant shows only configuration files in `git status`.
 - Automatic one-shot migration of existing tenants on activation, moving legacy files to the new paths. Guarded by a `workspaceState` stamp so it runs at most once, preceded by a backup of the tenant folder, skipped with a clear message when the tenant folder has uncommitted Git changes, reported afterwards by a non-blocking summary notification, and reversible via a new `reltio.undoLayoutMigration` command.
-- No new capability for any component other than Business Config. The other 17 component folders are structural placeholders only.
+- No new capability for any component other than Business Config. The other three component folders are structural placeholders only.
+- Folder names carry no identity: the environment folder is the host's first DNS label (`dev.reltio.com` becomes `dev`) and the tenant folder is the bare tenant ID. Gitignored marker files hold the real identity.
+- A Git repository rooted above the tenant folders cannot be prevented, so the extension keeps its own state out of it via a workspace-root `.gitignore`, warns on activation, and warns modally before nesting a repository.
 
 ## Capabilities
 

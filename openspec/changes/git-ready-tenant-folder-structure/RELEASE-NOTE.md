@@ -12,15 +12,18 @@ dev/                               <- environment (was dev.reltio.com.reltio.env
     ├── Business Config/
     │   └── BusinessConfig.json    <- your tenant metadata (was L3.reltio.json)
     ├── RDM/README.md
-    ├── Workflows/{BPMN,Custom Workflows}/README.md
-    └── ... 13 more component folders
+    └── Workflows/
+        ├── BPMN/README.md
+        └── Custom Workflows/README.md
 ```
 
 Folder names are now plain: the environment is the first part of its host (`dev.reltio.com` becomes
 `dev`) and the tenant is just its ID. The host is still what the extension talks to; it is recorded
 in a hidden `.reltio-environment.json` rather than in the folder name.
 
-The 17 folders for components the IDE does not manage yet are placeholders, each with a `README.md` naming the expected files and linking to the Reltio docs. Git does not track empty directories, so without those files the structure would disappear on push.
+`RDM` and the two `Workflows` folders are placeholders for components the IDE does not manage yet. Each has a `README.md` naming the expected files and linking to the Reltio docs, because Git does not track empty directories and the structure would otherwise disappear on push.
+
+If you used an earlier build, it created fourteen further component folders (`DTSS`, `Connectors`, `User Management`, and so on). Those are removed automatically, but **only** when a folder contains nothing except the README we generated. Anything you put in one, or a README you rewrote, keeps the folder exactly as it is.
 
 ## Your existing tenants migrate automatically
 
@@ -45,12 +48,16 @@ A notification afterwards summarizes what moved, with a **Show details** action 
 
 ## Connecting a tenant to Git
 
-Run **Connect Tenant to Git** from a tenant's context menu, **before** the first fetch while the folder is still empty. You are asked for:
+Run **Connect to Git** from a tenant's context menu, in whatever order suits you: before the first fetch, or after. You are asked for:
 
 - a **remote URL**, remembered per workspace (every tenant in a promotion flow shares one repository)
-- a **branch**, asked each time (this is the promotion stage, and differs per tenant)
+- a **branch**, picked from the remote's existing branches, with **Create a new branch…** if you need one
 
-If the branch does not exist on the remote, you are offered the option to create it from the default branch and push it. It is created as a normal branch sharing history, not an orphan, so a pull request from `dev` into `test` works.
+Reading the branch list needs no clone, so backing out at that point leaves the folder untouched.
+
+If you create a branch that does not exist on the remote, it forks from the default branch and is pushed. It shares history rather than being an orphan, so a pull request from `dev` into `test` works. The configuration inherited from the branch you forked is dropped, so a second tenant never shows the first tenant's data: **Fetch Configuration** writes yours into a clean folder.
+
+If the tenant already has a configuration when you connect, the repository is created in place and the branch is adopted underneath your files. Nothing is overwritten; your configuration appears as an uncommitted change against the branch, ready to review and push.
 
 The tenant's current branch is shown in the tree.
 
@@ -62,6 +69,18 @@ The drift baseline, ontology layout and history snapshots now live in a gitignor
 
 - **New environments are created at the workspace root** rather than inside the hidden `.reltio/` folder, so repositories are easy to find. Environments already under `.reltio/` keep working and are never moved.
 - `.reltio/` now holds only the extension's agent assets.
+
+## Do not put a Git repository at the workspace root
+
+Each tenant folder is its own repository. That is what keeps the environment and tenant names out of every tracked path, so a Dev branch and a Prod branch can be compared.
+
+Running **Initialize Repository** on the workspace root instead breaks that: either every path becomes `dev/<tenantId>/Business Config/...`, or, if a tenant is already connected, the outer repository stores that tenant as a pointer rather than its files, and cloning it gives you an empty folder.
+
+The extension cannot prevent this, so it does three things instead:
+
+- keeps its own state out of any such repository, via a workspace-root `.gitignore`
+- warns you once per workspace, with **Ignore Tenant Folders**, **Show Details** and **Don't Show Again**
+- warns before connecting a tenant that sits inside another repository
 
 ## If you downgrade
 
