@@ -166,3 +166,12 @@ to make it harmless and to say so clearly.
 - [x] 17.8 Validate a typed branch name against the characters Git rejects
 - [x] 17.9 Tests: the four leaves and five directories, the retired list, and the prune guard (mutation-checked, since it deletes folders)
 - [x] 17.10 Update `ARCHITECTURE.md`, the specs and the release note for the smaller tree and the picker
+
+## 18. Round 8: the rename killed the activation triggers
+
+Reported as "I still see all the directories". The prune code was installed and correct, but
+the extension was never activating.
+
+- [x] 18.1 Add `workspaceContains` triggers for `BusinessConfig.json`, `.reltio-environment.json` and `.reltio-config-source.json`; dropping the folder suffixes and renaming the config file had removed every filesystem trigger
+- [x] 18.2 Keep the legacy `*.reltio.environment` and `*.reltio.json` triggers so an un-migrated workspace still activates
+- [x] 18.3 Test asserting a trigger exists for each artifact the current layout puts on disk, mutation-checked against the old list

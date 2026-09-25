@@ -688,6 +688,40 @@ const {
 	assert.ok(isTenantConfigPath('C:\\x\\Business Config\\BusinessConfig.json'), 'windows separators handled');
 	assert.ok(!isTenantConfigPath('/x/Business Config/Other.json'), 'unrelated file rejected');
 
+	// --------------------------------------------- 18.x activation must survive the rename
+
+	// Dropping the `.reltio.environment` / `.reltio.tenant` suffixes and renaming the config file
+	// removed every filesystem trigger the extension used to activate on. A workspace on the
+	// current layout then never activates by itself, so migration, pruning and the tree never run.
+	// This asserts a trigger exists for each thing the current layout actually puts on disk.
+	const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+	const activation = pkg.activationEvents ?? [];
+	const contains = activation
+		.filter(e => e.startsWith('workspaceContains:'))
+		.map(e => e.slice('workspaceContains:'.length));
+
+	// The managed configuration file: present in every fetched tenant.
+	assert.ok(
+		contains.some(g => g.endsWith('/BusinessConfig.json') || g === 'BusinessConfig.json'),
+		'an activation trigger matches the tenant configuration file',
+	);
+	// The markers: present even before anything is fetched, which is when the tree is created.
+	assert.ok(
+		contains.some(g => g.includes('.reltio-environment.json')),
+		'an activation trigger matches the environment marker',
+	);
+	assert.ok(
+		contains.some(g => g.includes('.reltio-config-source.json')),
+		'an activation trigger matches the tenant marker',
+	);
+	// Legacy triggers stay, so a workspace that has not been migrated still activates.
+	for (const legacy of ['*.reltio.environment', '*.reltio.json']) {
+		assert.ok(
+			contains.some(g => g.endsWith(legacy)),
+			`legacy activation trigger retained: ${legacy}`,
+		);
+	}
+
 	// ---------------------------------------------------------------- 9.8 grep invariant
 
 	// The whole point of centralizing paths is that no other module can drift. Only the layout

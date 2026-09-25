@@ -29,6 +29,9 @@
   },
   "activationEvents": [
     "onLanguage:json",
+    "workspaceContains:**/BusinessConfig.json",
+    "workspaceContains:**/.reltio-environment.json",
+    "workspaceContains:**/.reltio-config-source.json",
     "workspaceContains:**/*.reltio.environment",
     "workspaceContains:**/*.reltio.json"
   ],
