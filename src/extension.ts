@@ -86,6 +86,7 @@ import { syncReltioAgentAssets } from './workspace/reltioAgentSync';
 import { registerReltioAutoSave } from './workspace/reltioAutoSave';
 import {
 	isGitRepo,
+	findEnclosingGitRepository,
 	isGitRepoWithRemote,
 	isFolderEmpty,
 	isPathContainedIn,
@@ -99,6 +100,7 @@ import {
 } from './workspace/gitSourceMarker';
 import { isTenantConfigPath } from './workspace/tenantFolderStructure';
 import { bindTenantToGit } from './workspace/tenantGitBinding';
+import { ensureGitignoreEntries, ensureWorkspaceGitignored } from './workspace/gitSourceMarker';
 import {
 	hasMigrationBackup,
 	migrateWorkspace,
@@ -323,6 +325,53 @@ function applyTrustedHostSuffixes(): void {
 	setTrustedHostSuffixes(suffixes);
 }
 
+/** Explains the enclosing-repository problem and the two ways out of it. */
+function renderEnclosingRepositoryHelp(enclosing: vscode.Uri, workspaceRoot: vscode.Uri): string {
+	return [
+		'# Git repository above your tenant folders',
+		'',
+		`A repository exists at \`${enclosing.fsPath}\`.`,
+		`Your workspace is \`${workspaceRoot.fsPath}\`.`,
+		'',
+		'## Why this matters',
+		'',
+		'Reltio IDE makes each **tenant folder** its own repository. That is what keeps the',
+		'environment host and tenant ID out of every tracked path, so the same configuration',
+		'pushed for a Dev tenant and a Prod tenant lands at identical paths and the branches can',
+		'be diffed and merged.',
+		'',
+		'A repository rooted above the tenants breaks that in one of two ways:',
+		'',
+		'| Situation | What happens |',
+		'|---|---|',
+		'| Tenants not yet connected to Git | Everything is tracked by the outer repository, so paths become `dev/<tenantId>/Business Config/BusinessConfig.json`. Branches can no longer be compared. |',
+		'| A tenant is connected to Git | The outer repository stores the tenant as a *gitlink* (mode 160000): a commit pointer, not the files. Cloning the outer repository gives an empty tenant folder. |',
+		'',
+		'## Recommended',
+		'',
+		'Remove the outer repository and connect each tenant individually:',
+		'',
+		'```',
+		`rm -rf "${enclosing.fsPath}/.git"`,
+		'```',
+		'',
+		'Then run **Connect Tenant to Git** on each tenant row.',
+		'',
+		'## If you want to keep the outer repository',
+		'',
+		'Use **Ignore Tenant Folders** on the warning. That adds each environment folder to the',
+		'outer `.gitignore`, so it stops tracking tenant content while each tenant stays free to be',
+		'its own repository. Files it already tracks remain tracked until you untrack them:',
+		'',
+		'```',
+		'git rm -r --cached <environment-folder>',
+		'```',
+		'',
+		'Extension-managed state (`.reltio/`, `.reltio-ide/`, `.reltio-ide-backup/` and the marker',
+		'files) is already excluded by the workspace-root `.gitignore` the extension maintains.',
+	].join('\n');
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
 	applyTrustedHostSuffixes();
 	context.subscriptions.push(
@@ -404,6 +453,67 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 	}
 
+	const ENCLOSING_REPO_DISMISSED_KEY = 'reltio.enclosingRepoWarningDismissed';
+
+	/**
+	 * Warns when a Git repository sits at or above the workspace root.
+	 *
+	 * Each tenant folder is meant to be its own repository. One rooted higher up either pulls the
+	 * environment and tenant names back into every tracked path, which is precisely what this
+	 * layout exists to avoid, or swallows a bound tenant as a gitlink whose contents it does not
+	 * store. The extension cannot prevent `git init`, so it reports the situation and offers a fix.
+	 */
+	async function warnAboutEnclosingRepository(
+		em: EnvironmentManager,
+		workspaceRoot: vscode.Uri,
+	): Promise<void> {
+		if (context.workspaceState.get<boolean>(ENCLOSING_REPO_DISMISSED_KEY, false)) return;
+
+		const enclosing = await findEnclosingGitRepository(workspaceRoot);
+		if (!enclosing) return;
+
+		const where =
+			enclosing.fsPath === workspaceRoot.fsPath
+				? 'this workspace folder'
+				: `a parent folder (${enclosing.fsPath})`;
+		const choice = await vscode.window.showWarningMessage(
+			`A Git repository exists at ${where}. Reltio IDE expects each tenant folder to be its own repository, so tracked paths carry no environment or tenant name. A repository above them undoes that.`,
+			'Ignore Tenant Folders',
+			'Show Details',
+			'Don\'t Show Again',
+		);
+
+		if (choice === 'Don\'t Show Again') {
+			await context.workspaceState.update(ENCLOSING_REPO_DISMISSED_KEY, true);
+			return;
+		}
+		if (choice === 'Show Details') {
+			const doc = await vscode.workspace.openTextDocument({
+				content: renderEnclosingRepositoryHelp(enclosing, workspaceRoot),
+				language: 'markdown',
+			});
+			await vscode.window.showTextDocument(doc, { preview: true });
+			return;
+		}
+		if (choice === 'Ignore Tenant Folders') {
+			// Excludes the environment folders from the enclosing repository, so it stops tracking
+			// tenant content while each tenant folder stays free to be its own repository.
+			const envs = await em.scanEnvironments();
+			const entries = envs
+				.map(e => em.environmentFolderNameFor(e.name))
+				.filter((n): n is string => !!n)
+				.map(n => [`${n}/`, [n]] as const);
+			if (entries.length === 0) {
+				void vscode.window.showInformationMessage('No environment folders to ignore yet.');
+				return;
+			}
+			await ensureGitignoreEntries(enclosing, entries);
+			void vscode.window.showInformationMessage(
+				`Added ${entries.length} environment folder(s) to ${enclosing.fsPath}\\.gitignore. Already-tracked files stay tracked until you run: git rm -r --cached <folder>`,
+			);
+		}
+	}
+
 	if (environmentManager && folder) {
 		const realEnvs = await environmentManager.scanEnvironments();
 		if (realEnvs.length > 0) {
@@ -411,7 +521,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			// Off the activation critical path: the window stays responsive and the tree refreshes
 			// when this finishes. Only runs in tenant mode — a git-sourced workspace has no tenant
 			// folders of ours to migrate.
-			void runLayoutMigration(environmentManager, folder.uri);
+			void runLayoutMigration(environmentManager, folder.uri).then(async () => {
+				if (!environmentManager || !folder) return;
+				// Safety net first: a repository rooted above the tenants must not sweep in synced
+				// agent assets, the migration backup or the environment marker.
+				await ensureWorkspaceGitignored(folder.uri).catch(() => undefined);
+				await warnAboutEnclosingRepository(environmentManager, folder.uri).catch(() => undefined);
+			});
 		} else if (await tryRestoreGitSource(environmentManager, tokenStore, folder.uri)) {
 			setWorkspaceSource('git');
 		} else {
@@ -1696,6 +1812,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					`Tenant "${node.tenantId}" is already connected to Git.`,
 				);
 				return;
+			}
+
+			// Binding inside another repository produces a nested one: the outer repo then stores
+			// this tenant as a gitlink and cloning it yields an empty folder. Say so up front.
+			const enclosingRepo = await findEnclosingGitRepository(
+				vscode.Uri.joinPath(tenantRoot, '..'),
+			);
+			if (enclosingRepo) {
+				const proceed = await vscode.window.showWarningMessage(
+					`A Git repository already exists at ${enclosingRepo.fsPath}. Connecting this tenant creates a repository inside it, and the outer one will store the tenant as a pointer rather than its files.`,
+					{ modal: true },
+					'Connect Anyway',
+				);
+				if (proceed !== 'Connect Anyway') return;
 			}
 
 			// Every tenant in a promotion flow shares one remote, so remember it per workspace.

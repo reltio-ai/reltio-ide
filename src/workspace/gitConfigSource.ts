@@ -82,6 +82,31 @@ export async function isGitRepoWithRemote(root: vscode.Uri): Promise<boolean> {
 	return (await getRemoteUrl(root)) !== undefined;
 }
 
+/**
+ * The nearest repository at or above `start`, or undefined when there is none.
+ *
+ * Each tenant folder is meant to be its own repository, so a repository sitting above one is a
+ * problem worth reporting: it either pulls the environment and tenant names back into every
+ * tracked path, or swallows the tenant as a gitlink whose contents it does not actually store.
+ *
+ * Walks up to the filesystem root, because the enclosing repository is often a level or two above
+ * the workspace (a `Projects` folder someone once ran `git init` in).
+ */
+export async function findEnclosingGitRepository(
+	start: vscode.Uri,
+): Promise<vscode.Uri | undefined> {
+	let current = start;
+	// Bounded rather than while(true): a malformed URI must not spin forever.
+	for (let depth = 0; depth < 64; depth++) {
+		if (await isGitRepo(current)) return current;
+		const parentPath = current.path.slice(0, current.path.lastIndexOf('/'));
+		// A drive root ("/c:") or the filesystem root has no further parent to examine.
+		if (!parentPath || parentPath === current.path || !parentPath.includes('/')) return undefined;
+		current = current.with({ path: parentPath });
+	}
+	return undefined;
+}
+
 /** Raised when `git clone --branch <b>` fails specifically because the branch is not on the remote. */
 export class BranchNotFoundError extends Error {
 	constructor(readonly branch: string, readonly url: string) {

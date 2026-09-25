@@ -181,6 +181,36 @@ export async function ensureMarkerGitignored(root: vscode.Uri): Promise<void> {
 	await ensureGitignoreEntries(root, REQUIRED_GITIGNORE_ENTRIES);
 }
 
+/**
+ * Extension-managed state that must never be committed, wherever the repository root happens to be.
+ *
+ * The tenant-level `.gitignore` already covers a correctly bound tenant. This is the safety net for
+ * a repository rooted higher up: someone running **Initialize Repository** at the workspace root,
+ * or a workspace that already sits inside one. Without it such a repository sweeps in the synced
+ * agent assets (megabytes of Velocity Packs), the migration backup, and the environment marker,
+ * which sits above the tenant and so is outside the tenant's own ignore file.
+ *
+ * Bare filenames rather than paths, so they match at any depth.
+ */
+const WORKSPACE_GITIGNORE_ENTRIES: ReadonlyArray<readonly [string, readonly string[]]> = [
+	['.reltio/', ['.reltio']],
+	[`${IDE_STATE_DIR}/`, [IDE_STATE_DIR]],
+	['.reltio-ide-backup/', ['.reltio-ide-backup']],
+	['.reltio-environment.json', []],
+	[MARKER_FILENAME, []],
+];
+
+/**
+ * Ensures the workspace-root `.gitignore` excludes everything the extension manages.
+ *
+ * Deliberately does not ignore the environment folders themselves: a team may genuinely want the
+ * whole workspace in one repository and accept the trade-off. This only guarantees that choice
+ * never silently commits extension state.
+ */
+export async function ensureWorkspaceGitignored(workspaceRoot: vscode.Uri): Promise<void> {
+	await ensureGitignoreEntries(workspaceRoot, WORKSPACE_GITIGNORE_ENTRIES);
+}
+
 /** Shared append-if-missing over a `.gitignore`, used for both tenant and workspace-root files. */
 export async function ensureGitignoreEntries(
 	root: vscode.Uri,

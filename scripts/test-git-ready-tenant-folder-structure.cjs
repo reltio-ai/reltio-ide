@@ -563,6 +563,66 @@ const {
 		'IDE state alone does not make a tenant non-cloneable',
 	);
 
+	// ------------------------------------------- 16.x enclosing repository: detect and defuse
+
+	// The extension cannot prevent `git init` at the workspace root, so it must (a) keep its own
+	// state out of any repository rooted above the tenants and (b) be able to detect one.
+	mem = installMemoryFs();
+	const wsRoot = U('/wsE');
+	await vscode.workspace.fs.createDirectory(wsRoot);
+	await marker.ensureWorkspaceGitignored(wsRoot);
+	const rootIgnore = text(mem._files.get('/wsE/.gitignore')).split(/\r?\n/).filter(Boolean);
+	for (const entry of [
+		'.reltio/',
+		'.reltio-ide/',
+		'.reltio-ide-backup/',
+		'.reltio-environment.json',
+		'.reltio-config-source.json',
+	]) {
+		assert.ok(rootIgnore.includes(entry), `workspace .gitignore excludes ${entry}`);
+	}
+	// Environment folders are deliberately NOT ignored: a team may want one repository for the
+	// whole workspace, and that choice is theirs to make.
+	assert.ok(
+		!rootIgnore.some(l => l === 'dev/' || l === 'dev'),
+		'environment folders are not ignored by default',
+	);
+	// Idempotent, like the tenant-level helper.
+	await marker.ensureWorkspaceGitignored(wsRoot);
+	assert.deepStrictEqual(
+		text(mem._files.get('/wsE/.gitignore')).split(/\r?\n/).filter(Boolean),
+		rootIgnore,
+		'repeat call adds nothing',
+	);
+
+	const gitSource = importDist('workspace/gitConfigSource');
+	assert.strictEqual(
+		await gitSource.findEnclosingGitRepository(U('/wsE/dev/T1')),
+		undefined,
+		'no repository above a clean workspace',
+	);
+	// A repository two levels up must still be found: people run `git init` in a Projects folder.
+	await vscode.workspace.fs.createDirectory(U('/wsE/.git'));
+	assert.strictEqual(
+		(await gitSource.findEnclosingGitRepository(U('/wsE/dev/T1'))).fsPath,
+		'/wsE',
+		'an enclosing repository is found from a nested tenant path',
+	);
+	// The start directory itself counts. This is the common case: the activation check passes the
+	// workspace root, which is exactly where Source Control's Initialize Repository puts `.git`.
+	assert.strictEqual(
+		(await gitSource.findEnclosingGitRepository(U('/wsE'))).fsPath,
+		'/wsE',
+		'a repository at the start directory is reported, not skipped',
+	);
+	// The nearest one wins, so the message names the repository that actually matters.
+	await vscode.workspace.fs.createDirectory(U('/wsE/dev/.git'));
+	assert.strictEqual(
+		(await gitSource.findEnclosingGitRepository(U('/wsE/dev/T1'))).fsPath,
+		'/wsE/dev',
+		'the nearest enclosing repository is reported',
+	);
+
 	// ---------------------------------------------------------------- 9.7 path predicate
 
 	assert.ok(isTenantConfigPath(`/x/${BUSINESS_CONFIG_FILE}`), 'component-tree config recognized');

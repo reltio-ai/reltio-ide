@@ -137,3 +137,19 @@ config in the second tenant's folder, because the branch forks from the remote d
 - [x] 15.3 Leave component folders and generated READMEs alone; they are identical per tenant, and anything hand-placed is the user's content
 - [x] 15.4 Stage the deletion but do not commit it; the extension makes no commits on the user's behalf
 - [x] 15.5 End-to-end: two tenants, one remote, branches dev and test. Tenant B never sees tenant A's config, READMEs survive, history is shared, and merging dev into test produces a normal content conflict rather than 'unrelated histories'
+
+## 16. Round 6: a Git repository above the tenant folders
+
+A repository at the workspace root either pulls environment and tenant names back into every
+tracked path, or swallows a bound tenant as a gitlink whose contents it does not store. The
+extension cannot prevent `git init` (it belongs to the built-in git extension), so the goal is
+to make it harmless and to say so clearly.
+
+- [x] 16.1 `ensureWorkspaceGitignored` writes a workspace-root `.gitignore` covering `.reltio/`, `.reltio-ide/`, `.reltio-ide-backup/` and both marker filenames, so no repository rooted above a tenant can commit extension state
+- [x] 16.2 Do not ignore the environment folders by default: one repository for the whole workspace is a legitimate choice, just not the default
+- [x] 16.3 `findEnclosingGitRepository` walks up from a path to the filesystem root and reports the nearest repository, including one at the start directory itself
+- [x] 16.4 Activation warns when a repository encloses the workspace, offering **Ignore Tenant Folders**, **Show Details** and **Don't Show Again** (the dismissal is per workspace)
+- [x] 16.5 **Show Details** opens a markdown explainer covering both failure shapes and the two ways out
+- [x] 16.6 **Connect Tenant to Git** warns modally before creating a repository inside another one
+- [x] 16.7 Tests for the workspace ignore list, its idempotency, that environment folders stay un-ignored, and enclosing-repository detection at the start directory and above
+- [ ] 16.8 Update `ARCHITECTURE.md` and the release note

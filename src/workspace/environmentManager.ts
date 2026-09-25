@@ -138,6 +138,13 @@ export class EnvironmentManager {
 		return label;
 	}
 
+	/** Directory basename of a known environment, for `.gitignore` entries and messages. */
+	environmentFolderNameFor(name: string): string | undefined {
+		const uri = this.envLocations.get(name);
+		if (!uri) return undefined;
+		return uri.path.slice(uri.path.lastIndexOf('/') + 1);
+	}
+
 	private environmentUri(name: string): vscode.Uri {
 		return this.envLocations.get(name) ?? this.preferredEnvironmentUri(name);
 	}
