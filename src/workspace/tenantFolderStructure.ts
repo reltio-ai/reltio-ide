@@ -114,119 +114,31 @@ export const COMPONENT_FOLDERS: readonly ComponentFolder[] = [
 		docsUrl: 'https://docs.reltio.com/en/objectives/manage-workflow-tasks/workflow-management-at-a-glance/workflow-management-set-up/overview-of-workflow-customizations/overview-of-workflow-configuration/configure-custom-workflows',
 		managed: false,
 	},
-	{
-		path: 'Data Validation Functions',
-		title: 'Data Validation Functions',
-		description: 'DVFs run against entity and relationship attributes when a record is saved. Each carries a name, expression, action and message.',
-		expectedFiles: ['dvf.json'],
-		docsUrl: 'https://docs.reltio.com/en/objectives/cleanse-and-verify-data/data-cleansing-at-a-glance/data-cleansing-operation/define-data-validation-functions',
-		managed: false,
-	},
-	{
-		path: 'Metadata Permissions',
-		title: 'Metadata Permissions',
-		description: 'Metadata security applied to entity types, relationship types, interaction types and individual attributes.',
-		expectedFiles: ['permissions.json'],
-		docsUrl: 'https://docs.reltio.com/en/developer-resources/system-administration-apis/system-administration-apis-at-a-glance/configuration-api/role-based-security/metadata-security',
-		managed: false,
-	},
-	{
-		path: 'User Management/Users',
-		title: 'Users',
-		description: 'User account profiles, including the roles assigned, the tenants they can reach and the groups they belong to.',
-		expectedFiles: ['users.json'],
-		docsUrl: 'https://docs.reltio.com/en/applications/console/security-applications/user-management-at-a-glance/managing-user-accounts',
-		managed: false,
-	},
-	{
-		path: 'User Management/Roles',
-		title: 'Roles',
-		description: 'System and custom roles, each identifying access privileges for one or more services and their resources.',
-		expectedFiles: ['roles.json'],
-		docsUrl: 'https://docs.reltio.com/en/objectives/administer-system/system-administration-at-a-glance/access-management-at-a-glance/access-management-reference/authorization/custom-roles',
-		managed: false,
-	},
-	{
-		path: 'User Management/Groups',
-		title: 'Groups',
-		description: 'Groups used to assign access rights and privileges to sets of users.',
-		expectedFiles: ['groups.json'],
-		docsUrl: 'https://docs.reltio.com/en/objectives/administer-system/system-administration-at-a-glance/access-management-at-a-glance/access-management-reference/authorization',
-		managed: false,
-	},
-	{
-		path: 'Data Loader',
-		title: 'Data Loader',
-		description: 'Source-to-target mappings used by the Console Data Loader.',
-		expectedFiles: ['mappings.json'],
-		docsUrl: 'https://docs.reltio.com/en/applications/console/tenant-management-applications/data-loader-at-a-glance/get-started-with-data-loader',
-		managed: false,
-	},
-	{
-		path: 'Reltio Integration Hub',
-		title: 'Reltio Integration Hub',
-		description: 'RIH recipe manifests describing automated end-to-end integration flows.',
-		expectedFiles: ['One manifest file per recipe'],
-		docsUrl: 'https://docs.reltio.com/en/applications/integration-hub/integration-hub-at-a-glance',
-		managed: false,
-	},
-	{
-		path: 'LifeCycle Actions',
-		title: 'LifeCycle Actions',
-		description: 'LCAs mapping an action name to an action list, run against platform hooks such as beforeSave.',
-		expectedFiles: ['One definition file per lifecycle action'],
-		docsUrl: 'https://docs.reltio.com/en/developer-resources/about-developer-resources/developer-resources-at-a-glance/customize-data-tasks-with-lcas/lca-configuration',
-		managed: false,
-	},
-	{
-		path: 'DTSS',
-		title: 'DTSS',
-		description: 'Data Tenant Subscription Service configuration for sharing data from a data tenant into this tenant.',
-		expectedFiles: ['dtss_config.json'],
-		docsUrl: 'https://docs.reltio.com/en/applications/data-integrations/data-enrichment-integrations-at-a-glance/reltio-data-tenant-subscription-service-dtss-at-a-glance',
-		managed: false,
-	},
-	{
-		path: 'Connectors',
-		title: 'Connectors',
-		description: 'Connector definitions for interacting with external SaaS provider APIs.',
-		expectedFiles: ['One definition file per connector'],
-		docsUrl: 'https://docs.reltio.com/en/objectives/integrate-data/data-integration-at-a-glance/reltio-connector',
-		managed: false,
-	},
-	{
-		path: 'User Interface',
-		title: 'User Interface',
-		description: 'Hub layout and page view configuration.',
-		expectedFiles: ['config.json'],
-		docsUrl: 'https://docs.reltio.com/en/objectives/configure-the-reltio-ui/ui-configuration-at-a-glance',
-		managed: false,
-	},
-	{
-		path: 'Custom Code/Custom Cleansers',
-		title: 'Custom Cleansers',
-		description: 'Custom cleanse functions beyond the out-of-the-box address, phone, email, name and string cleansers.',
-		expectedFiles: ['One folder or definition file per cleanser'],
-		docsUrl: 'https://docs.reltio.com/en/objectives/cleanse-and-verify-data/data-cleansing-at-a-glance/data-cleansing-reference/out-of-the-box-cleanse-functions',
-		managed: false,
-	},
-	{
-		path: 'Custom Code/Utilities',
-		title: 'Utilities',
-		description: 'Supporting custom code and helper utilities deployed alongside this tenant.',
-		expectedFiles: ['One folder or file per utility'],
-		docsUrl: 'https://docs.reltio.com/en/developer-resources/about-developer-resources/developer-resources-at-a-glance',
-		managed: false,
-	},
-	{
-		path: 'Physical Configuration',
-		title: 'Physical Configuration',
-		description: 'Tenant-level physical parameters governing storage, search indexing, relations, crosswalks, streaming and logging.',
-		expectedFiles: ['pConfig.json'],
-		docsUrl: 'https://docs.reltio.com/en/developer-resources/about-developer-resources/developer-resources-at-a-glance/tenant-configuration-parameters-reference',
-		managed: false,
-	},
 ] as const;
+
+/**
+ * Component folders this extension used to materialize and no longer does.
+ *
+ * The tree was cut back to the components teams actually version today. These paths are kept
+ * only so a tenant created by an earlier build can have the leftovers cleaned up, and only when
+ * they hold nothing but our own generated README.
+ */
+export const RETIRED_COMPONENT_FOLDERS: readonly string[] = [
+	'Data Validation Functions',
+	'Metadata Permissions',
+	'User Management/Users',
+	'User Management/Roles',
+	'User Management/Groups',
+	'Data Loader',
+	'Reltio Integration Hub',
+	'LifeCycle Actions',
+	'DTSS',
+	'Connectors',
+	'User Interface',
+	'Custom Code/Custom Cleansers',
+	'Custom Code/Utilities',
+	'Physical Configuration',
+];
 
 /** Leaf folders the IDE does not yet fetch or apply. These are the ones that get a README. */
 export function unmanagedFolders(): ComponentFolder[] {
@@ -313,6 +225,61 @@ export async function materializeTenantTree(tenantRoot: vscode.Uri): Promise<voi
 		if (await exists(readmeUri)) continue;
 		await vscode.workspace.fs.writeFile(readmeUri, enc.encode(renderReadme(folder)));
 	}
+}
+
+/**
+ * Removes component folders an earlier build created that are no longer part of the tree.
+ *
+ * Strictly conservative: a folder goes only when everything under it is a README this extension
+ * generated. Anything else, even one file a user dropped in, means the folder stays. Returns the
+ * paths actually removed so the caller can report them.
+ */
+export async function pruneRetiredComponentFolders(tenantRoot: vscode.Uri): Promise<string[]> {
+	const removed: string[] = [];
+	// Deepest first, so `Custom Code` is considered only once its children are gone.
+	const ordered = [...RETIRED_COMPONENT_FOLDERS].sort(
+		(a, b) => b.split('/').length - a.split('/').length,
+	);
+	const containers = new Set(
+		RETIRED_COMPONENT_FOLDERS.filter(p => p.includes('/')).map(p => p.split('/')[0]),
+	);
+
+	for (const relative of [...ordered, ...containers]) {
+		const dir = joinRelative(tenantRoot, relative);
+		if (!(await exists(dir))) continue;
+		if (!(await holdsOnlyGeneratedReadmes(dir))) continue;
+		await vscode.workspace.fs.delete(dir, { recursive: true, useTrash: false });
+		removed.push(relative);
+	}
+	return removed;
+}
+
+/** True when every file beneath `dir` is a README this extension wrote. Empty counts as true. */
+async function holdsOnlyGeneratedReadmes(dir: vscode.Uri): Promise<boolean> {
+	let entries: [string, vscode.FileType][];
+	try {
+		entries = await vscode.workspace.fs.readDirectory(dir);
+	} catch {
+		return false;
+	}
+	for (const [name, type] of entries) {
+		if (type === vscode.FileType.Directory) {
+			if (!(await holdsOnlyGeneratedReadmes(vscode.Uri.joinPath(dir, name)))) return false;
+			continue;
+		}
+		if (name !== 'README.md') return false;
+		// Match on the sentence every generated README carries, so a README the user rewrote is
+		// treated as their content and protects the folder.
+		try {
+			const body = new TextDecoder().decode(
+				await vscode.workspace.fs.readFile(vscode.Uri.joinPath(dir, name)),
+			);
+			if (!body.includes('not yet managed by Reltio IDE')) return false;
+		} catch {
+			return false;
+		}
+	}
+	return true;
 }
 
 /**

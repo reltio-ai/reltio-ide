@@ -153,3 +153,16 @@ to make it harmless and to say so clearly.
 - [x] 16.6 **Connect Tenant to Git** warns modally before creating a repository inside another one
 - [x] 16.7 Tests for the workspace ignore list, its idempotency, that environment folders stay un-ignored, and enclosing-repository detection at the start directory and above
 - [ ] 16.8 Update `ARCHITECTURE.md` and the release note
+
+## 17. Round 7: smaller tree, clearer command, branch picker
+
+- [x] 17.1 Cut the component tree to Business Config, RDM and Workflows (with BPMN and Custom Workflows): 5 directories, 4 leaves, 3 READMEs
+- [x] 17.2 Keep the 14 removed paths in `RETIRED_COMPONENT_FOLDERS` and prune them from tenants created by an earlier build
+- [x] 17.3 Prune only when a folder holds nothing but a README this extension generated, matched on content; a user file or a rewritten README protects the folder
+- [x] 17.4 Report pruned folders in the migration summary and its detail view
+- [x] 17.5 Rename the command title to **Connect to Git**; the command id stays `reltio.connectTenantToGit` so menus and any keybindings keep working
+- [x] 17.6 List the remote's branches with `git ls-remote --heads` (no clone needed) and offer them as a quick pick, with **Create a new branch…** as free text
+- [x] 17.7 Fall through to free text when the remote has no branches or cannot be listed, rather than showing an empty picker
+- [x] 17.8 Validate a typed branch name against the characters Git rejects
+- [x] 17.9 Tests: the four leaves and five directories, the retired list, and the prune guard (mutation-checked, since it deletes folders)
+- [ ] 17.10 Update `ARCHITECTURE.md`, the specs and the release note for the smaller tree and the picker

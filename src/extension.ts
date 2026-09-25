@@ -99,7 +99,7 @@ import {
 	type MultiGitSourceMarker,
 } from './workspace/gitSourceMarker';
 import { isTenantConfigPath } from './workspace/tenantFolderStructure';
-import { bindTenantToGit } from './workspace/tenantGitBinding';
+import { bindTenantToGit, listRemoteBranches } from './workspace/tenantGitBinding';
 import { ensureGitignoreEntries, ensureWorkspaceGitignored } from './workspace/gitSourceMarker';
 import {
 	hasMigrationBackup,
@@ -108,7 +108,7 @@ import {
 	undoMigration,
 } from './workspace/layoutMigration';
 
-/** Remote shared by every tenant in a promotion flow; pre-fills the Connect Tenant to Git prompt. */
+/** Remote shared by every tenant in a promotion flow; pre-fills the Connect to Git prompt. */
 const LAST_GIT_REMOTE_KEY = 'reltio.lastGitRemote';
 import {
 	discoverL3Files,
@@ -325,6 +325,65 @@ function applyTrustedHostSuffixes(): void {
 	setTrustedHostSuffixes(suffixes);
 }
 
+const CREATE_BRANCH_ITEM = '$(add) Create a new branch…';
+
+/**
+ * Asks which branch this tenant should sit on.
+ *
+ * Existing remote branches are offered as a pick list, because a branch name is something the
+ * team already agreed on and recalling it exactly is needless friction. Creating a new one stays
+ * available as free text, since the first tenant in a promotion flow has nothing to pick from.
+ *
+ * A remote with no branches, or one that could not be listed, falls straight through to free text
+ * rather than showing an empty picker.
+ */
+async function pickBranch(
+	tenantId: string,
+	remoteBranches: string[],
+	listFailed: boolean,
+): Promise<string | undefined> {
+	const askFreeText = async (prompt: string): Promise<string | undefined> => {
+		const typed = await vscode.window.showInputBox({
+			title: 'Connect to Git',
+			prompt,
+			placeHolder: 'dev',
+			ignoreFocusOut: true,
+			validateInput: value => {
+				const name = value.trim();
+				if (!name) return 'Enter a branch name.';
+				// Cheap guard against the names git will reject outright.
+				if (/[~^:?*[\\\s]/.test(name) || name.startsWith('-') || name.endsWith('.lock')) {
+					return 'Not a valid Git branch name.';
+				}
+				return undefined;
+			},
+		});
+		return typed?.trim() || undefined;
+	};
+
+	if (listFailed) {
+		return askFreeText(`Branch for tenant "${tenantId}" (could not read the remote's branches)`);
+	}
+	if (remoteBranches.length === 0) {
+		return askFreeText(`Branch for tenant "${tenantId}" (the remote has no branches yet)`);
+	}
+
+	const picked = await vscode.window.showQuickPick(
+		[
+			...remoteBranches.map(name => ({ label: name, description: 'existing branch' })),
+			{ label: CREATE_BRANCH_ITEM, description: 'type a new name' },
+		],
+		{
+			title: 'Connect to Git',
+			placeHolder: `Branch for tenant "${tenantId}"`,
+			ignoreFocusOut: true,
+		},
+	);
+	if (!picked) return undefined;
+	if (picked.label !== CREATE_BRANCH_ITEM) return picked.label;
+	return askFreeText(`New branch for tenant "${tenantId}"`);
+}
+
 /** Explains the enclosing-repository problem and the two ways out of it. */
 function renderEnclosingRepositoryHelp(enclosing: vscode.Uri, workspaceRoot: vscode.Uri): string {
 	return [
@@ -355,7 +414,7 @@ function renderEnclosingRepositoryHelp(enclosing: vscode.Uri, workspaceRoot: vsc
 		`rm -rf "${enclosing.fsPath}/.git"`,
 		'```',
 		'',
-		'Then run **Connect Tenant to Git** on each tenant row.',
+		'Then run **Connect to Git** on each tenant row.',
 		'',
 		'## If you want to keep the outer repository',
 		'',
@@ -428,7 +487,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			console.error('Reltio layout migration failed:', e);
 			return;
 		}
-		if (report.migrated.length === 0 && report.skipped.length === 0 && report.renamedFolders.length === 0) return;
+		if (
+			report.migrated.length === 0 &&
+			report.skipped.length === 0 &&
+			report.renamedFolders.length === 0 &&
+			report.prunedFolders.length === 0
+		) return;
 
 		treeProvider.refresh();
 		uxBus.fire();
@@ -439,6 +503,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 		if (report.renamedFolders.length > 0) {
 			parts.push(`${report.renamedFolders.length} folder(s) renamed`);
+		}
+		if (report.prunedFolders.length > 0) {
+			parts.push(`${report.prunedFolders.length} unused folder(s) removed`);
 		}
 		if (report.skipped.length > 0) {
 			parts.push(`${report.skipped.length} skipped`);
@@ -1831,7 +1898,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			// Every tenant in a promotion flow shares one remote, so remember it per workspace.
 			const lastRemote = context.workspaceState.get<string>(LAST_GIT_REMOTE_KEY, '');
 			const remoteUrl = await vscode.window.showInputBox({
-				title: 'Connect Tenant to Git',
+				title: 'Connect to Git',
 				prompt: 'Git remote URL holding this tenant\'s configuration',
 				placeHolder: 'https://github.com/org/reltio-config.git',
 				value: lastRemote,
@@ -1839,14 +1906,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			});
 			if (!remoteUrl?.trim()) return;
 
-			// Branch is the promotion stage and differs per tenant, so it is never pre-filled.
-			const branch = await vscode.window.showInputBox({
-				title: 'Connect Tenant to Git',
-				prompt: `Branch for tenant "${node.tenantId}"`,
-				placeHolder: 'dev',
-				ignoreFocusOut: true,
-			});
-			if (!branch?.trim()) return;
+			// Offer the remote's existing branches rather than making the user recall them. Listing
+			// needs no clone, so nothing is written to disk if they back out here.
+			let remoteBranches: string[] = [];
+			let listFailed = false;
+			try {
+				remoteBranches = await vscode.window.withProgress(
+					{ location: vscode.ProgressLocation.Notification, title: 'Reading branches…' },
+					() => listRemoteBranches(tenantRoot, remoteUrl.trim()),
+				);
+			} catch {
+				// Unreachable remote, or credentials the helper could not supply. Fall back to
+				// free text rather than blocking: the bind itself will report the real failure.
+				listFailed = true;
+			}
+
+			const branch = await pickBranch(node.tenantId, remoteBranches, listFailed);
+			if (!branch) return;
 
 			try {
 				const outcome = await vscode.window.withProgress(

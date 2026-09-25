@@ -198,7 +198,7 @@
       },
       {
         "command": "reltio.connectTenantToGit",
-        "title": "Connect Tenant to Git",
+        "title": "Connect to Git",
         "category": "Reltio",
         "icon": "$(git-branch)"
       },

@@ -151,13 +151,19 @@ const {
 (async () => {
 	// ---------------------------------------------------------------- 9.2 component tree
 
-	// 18 declared leaf components; 21 directories once the 3 container parents are implied.
-	assert.strictEqual(COMPONENT_FOLDERS.length, 18, '18 leaf component folders');
+	// The tree was cut back to the components teams version today: Business Config, RDM and
+	// Workflows (with its two sub-folders). Five directories, four of them leaves.
+	assert.deepStrictEqual(
+		COMPONENT_FOLDERS.map(f => f.path),
+		['Business Config', 'RDM', 'Workflows/BPMN', 'Workflows/Custom Workflows'],
+		'exactly the four leaf components',
+	);
 	const dirsDeclared = allTreeDirectories();
-	assert.strictEqual(dirsDeclared.length, 21, '21 directories including container parents');
-	for (const parent of ['Workflows', 'User Management', 'Custom Code']) {
-		assert.ok(dirsDeclared.includes(parent), `implied container parent: ${parent}`);
-	}
+	assert.deepStrictEqual(
+		dirsDeclared,
+		['Business Config', 'RDM', 'Workflows', 'Workflows/BPMN', 'Workflows/Custom Workflows'],
+		'five directories, Workflows implied as a container',
+	);
 	// A parent is always listed before anything beneath it, so creation order is safe.
 	for (const d of dirsDeclared) {
 		const slash = d.lastIndexOf('/');
@@ -172,7 +178,7 @@ const {
 	const managed = COMPONENT_FOLDERS.filter(f => f.managed);
 	assert.deepStrictEqual(managed.map(f => f.path), [BUSINESS_CONFIG_DIR], 'only Business Config is managed');
 	assert.strictEqual(BUSINESS_CONFIG_FILE, `${BUSINESS_CONFIG_DIR}/BusinessConfig.json`);
-	assert.strictEqual(unmanagedFolders().length, 17, '17 unmanaged folders get a README');
+	assert.strictEqual(unmanagedFolders().length, 3, '3 unmanaged folders get a README');
 
 	// Every unmanaged folder carries a real docs.reltio.com URL, asserted offline: the map is the
 	// contract, and making CI depend on the network would be flaky for no added signal.
@@ -192,7 +198,7 @@ const {
 	const urlCounts = new Map();
 	for (const f of unmanagedFolders()) urlCounts.set(f.docsUrl, (urlCounts.get(f.docsUrl) ?? 0) + 1);
 	for (const [url, n] of urlCounts) {
-		assert.ok(n <= 2, `docs URL reused too often (${n}x): ${url}`);
+		assert.ok(n === 1, `docs URL reused (${n}x): ${url}`);
 	}
 
 	// Materialization creates every directory and exactly the unmanaged READMEs.
@@ -208,7 +214,7 @@ const {
 		);
 	}
 	const readmes = [...mem._files.keys()].filter(p => p.endsWith('/README.md'));
-	assert.strictEqual(readmes.length, 17, 'one README per unmanaged folder');
+	assert.strictEqual(readmes.length, 3, 'one README per unmanaged folder');
 	assert.ok(
 		!mem._files.has(`${tenant.fsPath}/${BUSINESS_CONFIG_DIR}/README.md`),
 		'Business Config gets no README, it holds a managed file',
@@ -222,6 +228,58 @@ const {
 	await materializeTenantTree(tenant);
 	assert.strictEqual(mem._files.size, before, 're-materialize adds no files');
 	assert.strictEqual(text(mem._files.get(userReadme)), '# my own notes', 'existing README preserved');
+
+	// ------------------------------------------- 17.x pruning folders the tree no longer includes
+
+	// Tenants created by an earlier build carry folders that are gone from the tree. Removing them
+	// deletes user-visible directories, so the guard has to be strict: our own generated README
+	// and nothing else.
+	const { RETIRED_COMPONENT_FOLDERS, pruneRetiredComponentFolders } = structure;
+	assert.ok(RETIRED_COMPONENT_FOLDERS.includes('DTSS'), 'DTSS is retired');
+	assert.ok(RETIRED_COMPONENT_FOLDERS.includes('Custom Code/Utilities'), 'nested leaves are retired');
+	assert.ok(
+		!RETIRED_COMPONENT_FOLDERS.some(p => ['Business Config', 'RDM', 'Workflows/BPMN'].includes(p)),
+		'no surviving component is listed as retired',
+	);
+
+	mem = installMemoryFs();
+	const old = U('/wsP/env/t1');
+	await materializeTenantTree(old);
+	const generated = renderReadme({
+		path: 'DTSS',
+		title: 'DTSS',
+		description: 'x',
+		expectedFiles: ['dtss_config.json'],
+		docsUrl: 'https://docs.reltio.com/x',
+		managed: false,
+	});
+	// Three retired folders: one purely generated, one holding a user file, one with a README
+	// the user rewrote.
+	await vscode.workspace.fs.writeFile(U(`${old.fsPath}/DTSS/README.md`), Buffer.from(generated));
+	await vscode.workspace.fs.writeFile(U(`${old.fsPath}/Connectors/README.md`), Buffer.from(generated));
+	await vscode.workspace.fs.writeFile(U(`${old.fsPath}/Connectors/my-connector.json`), Buffer.from('{}'));
+	await vscode.workspace.fs.writeFile(
+		U(`${old.fsPath}/Data Loader/README.md`),
+		Buffer.from('# Data Loader\n\nMy own notes about our mappings.\n'),
+	);
+
+	const pruned = await pruneRetiredComponentFolders(old);
+	assert.ok(pruned.includes('DTSS'), 'a purely generated retired folder is removed');
+	assert.ok(!mem._dirs.has(`${old.fsPath}/DTSS`), 'DTSS is gone from disk');
+	assert.ok(!pruned.includes('Connectors'), 'a retired folder holding a user file is kept');
+	assert.ok(
+		mem._files.has(`${old.fsPath}/Connectors/my-connector.json`),
+		'the user file survives untouched',
+	);
+	assert.ok(!pruned.includes('Data Loader'), 'a user-rewritten README protects its folder');
+	assert.ok(mem._files.has(`${old.fsPath}/Data Loader/README.md`), 'the rewritten README survives');
+
+	// Surviving components are never touched, whatever else is pruned.
+	for (const keep of ['Business Config', 'RDM', 'Workflows/BPMN', 'Workflows/Custom Workflows']) {
+		assert.ok(mem._dirs.has(`${old.fsPath}/${keep}`), `${keep} survives pruning`);
+	}
+	// Idempotent: a second pass finds nothing left to do.
+	assert.deepStrictEqual(await pruneRetiredComponentFolders(old), [], 'second prune is a no-op');
 
 	// ---------------------------------------------------------------- 9.3 EnvironmentManager
 

@@ -36,6 +36,25 @@ async function git(cwd: vscode.Uri, args: string[]): Promise<string> {
 }
 
 /**
+ * Branch names on a remote, without cloning it.
+ *
+ * `git ls-remote` needs no local repository, so the branch list can be offered as a picker before
+ * anything is written to disk. Auth is the system credential helper's job, as everywhere else.
+ *
+ * Returns an empty list for a remote that has no branches yet (a freshly created repository), and
+ * throws only when the remote could not be reached, so the caller can tell "nothing there" apart
+ * from "could not ask".
+ */
+export async function listRemoteBranches(cwd: vscode.Uri, remoteUrl: string): Promise<string[]> {
+	const stdout = await git(cwd, ['ls-remote', '--heads', remoteUrl]);
+	return stdout
+		.split(/\r?\n/)
+		.map(line => line.split('refs/heads/')[1])
+		.filter((name): name is string => !!name)
+		.sort((a, b) => a.localeCompare(b));
+}
+
+/**
  * True when the repository has at least one commit.
  *
  * A freshly created remote has none, which makes its branch "unborn": it exists as a ref target

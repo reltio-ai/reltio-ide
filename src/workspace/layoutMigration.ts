@@ -19,6 +19,7 @@ import {
 	LEGACY_LAYOUT_FILENAME,
 	MIGRATION_BACKUP_DIR,
 	materializeTenantTree,
+	pruneRetiredComponentFolders,
 	tenantPath,
 } from './tenantFolderStructure';
 
@@ -62,6 +63,8 @@ export interface MigrationReport {
 	migrated: TenantMigration[];
 	/** Suffixed folders renamed to plain names, as `from -> to` strings. */
 	renamedFolders: string[];
+	/** Retired component folders removed because they held only generated READMEs. */
+	prunedFolders: string[];
 	skipped: MigrationSkip[];
 	backupRoot?: vscode.Uri;
 }
@@ -311,6 +314,21 @@ export async function migrateWorkspace(
 		else migrated.push(m);
 	}
 
+	// Tenants created by an earlier build carry component folders the tree no longer includes.
+	const pruned: string[] = [];
+	for (const env of await environmentManager.scanEnvironments()) {
+		for (const tenant of env.tenants) {
+			const root = environmentManager.getTenantRootUri(env.name, tenant.tenantId);
+			try {
+				for (const p of await pruneRetiredComponentFolders(root)) {
+					pruned.push(`${tenant.tenantId}/${p}`);
+				}
+			} catch {
+				// Cleanup is best effort; never let it block activation.
+			}
+		}
+	}
+
 	// File layout first, then folder names: the tenant migration above resolves paths through the
 	// manager, which still knows the suffixed locations at that point.
 	const rename = await renameSuffixedFolders(workspaceRoot, environmentManager);
@@ -318,6 +336,7 @@ export async function migrateWorkspace(
 
 	return {
 		renamedFolders: rename.renamed,
+		prunedFolders: pruned,
 		migrated,
 		skipped,
 		backupRoot: migrated.length > 0
@@ -332,6 +351,11 @@ export function renderMigrationDetail(report: MigrationReport): string {
 	for (const m of report.migrated) {
 		lines.push(`Migrated ${m.environmentName} / ${m.tenantId}`);
 		for (const move of m.moves) lines.push(`    ${move.legacy}  ->  ${move.destination}`);
+		lines.push('');
+	}
+	if (report.prunedFolders.length > 0) {
+		lines.push('Removed component folders no longer part of the tree (they held only generated READMEs):');
+		for (const p of report.prunedFolders) lines.push(`    ${p}`);
 		lines.push('');
 	}
 	if (report.renamedFolders.length > 0) {
