@@ -471,7 +471,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					() => syncReltioAgentAssets(context, { force: true }),
 				);
 				void vscode.window.showInformationMessage(
-					'Reltio agent skills and Velocity Packs were refreshed under .reltio/reltio-agent/ (workspace overrides were not changed).',
+					'Reltio agent skills, Velocity Packs, and LCA knowledge base were refreshed under .reltio/reltio-agent/ (workspace overrides were not changed).',
 				);
 			} catch (e) {
 				void vscode.window.showErrorMessage(`Resync failed: ${(e as Error).message}`);

@@ -103,25 +103,33 @@ graph TD
 |-----------|---------|
 | `src/model/` | Pure TypeScript interfaces mirroring the Reltio XSD/JSON schema — no runtime logic |
 | `src/parser/` | Parses `*.reltio.json` text into a typed `ReltioBusinessModel` and a `jsonc-parser` AST; provides path-based navigation and safe structural edit helpers |
-| `src/tree/` | `MultiTenantTreeProvider` (environments → tenants → History folder + L3 config sub-tree), `configSubtree` (shared section/entity/relation tree building), `treeNodes`, `multiTenantNodes` |
+| `src/tree/` | `MultiTenantTreeProvider` (environments → tenants → History folder + L3 config sub-tree), `configSubtree` (shared section/entity/relation tree building, read-only `lifecycleActions` leaf), `treeNodes`, `multiTenantNodes` |
+| `src/lca/` | LCA agent gates: working-directory + tenant context, L3 lookup, hook validation, Java package names, workflow confirmations, `lifecycleActions` diffs |
 | `src/api/` | Stateless Reltio REST helpers (`reltioClient`; `listTenants` reads `GET /reltio/enhancedTenants?showAll=true` and reduces each `TenantRecord` to its `tenantId`; the only call that omits the `xxx-client` header; `toHttpsBase()` is the single choke point every call passes through — it force-upgrades an explicit `http://` to `https://` and rejects any host outside the `reltio.trustedHostSuffixes` allowlist (default `reltio.com`) before a bearer token is attached, throwing `UntrustedHostError`), in-memory `TokenStore` (access token + optional refresh-token/expiry for OAuth sessions), `SessionStore` (refresh-token persistence via `vscode.SecretStorage`), `OAuthCredentialsStore` (per-environment client ID/secret in `SecretStorage`), **`oauthLogin`** (Authorization Code flow: local callback server on `http://localhost:8081`, browser-based `auth.reltio.com/oauth/sso`, code→token exchange, refresh-token rotation), and `formatJson` (pretty-print fetched L3 via `JSON.parse` / `JSON.stringify` — fast; preserves key / array order from the parsed document) |
 | `src/ux/` | UX state derivation (`uxState.ts`), status bar item (`statusBar.ts`), Setup Wizard (`setupWizard.ts`), recents persistence (`recents.ts`), quick-switch command (`quickSwitch.ts`). The "what's next" guidance layer. |
 | `src/util/` | Small shared helpers (e.g. **`jsonDeepEqual`** for JSON-parse result comparison) |
-| `src/workspace/` | `EnvironmentManager` — creates under `.reltio/*.reltio.environment` (scans that home plus legacy workspace-root dirs), manages `*.reltio.tenant` and `L3.reltio.json` via `vscode.workspace.fs`; `configurationHistory.ts` — snapshot file naming, read/write/clear under `history/`; **`reltioAgentSync.ts`** — materialize bundled skills + Velocity Packs under `.reltio/reltio-agent/` (see D3b); **`reltioAutoSave.ts`** — save dirty `*.reltio.json` on editor switch (and optionally on window blur) so disk matches agents and parse/index passes; **`gitConfigSource.ts`** — system-`git` shell-out helpers (detect existing repo/remote, clone, empty-folder check, path containment with a Windows case-insensitive drive fix) via `child_process.execFile`; **`l3Discovery.ts`** — depth-10 search for `BusinessConfig.json` (case-insensitive) plus conflict-aware environment/tenant naming; **`gitSourceMarker.ts`** — persists discovered L3 locations in `.reltio-config-source.json` (multi-source format, backward compatible, auto-gitignored along with `.reltio/`) |
+| `src/workspace/` | `EnvironmentManager` — creates under `.reltio/*.reltio.environment` (scans that home plus legacy workspace-root dirs), manages `*.reltio.tenant` and `L3.reltio.json` via `vscode.workspace.fs`; `configurationHistory.ts` — snapshot file naming, read/write/clear under `history/`; **`reltioAgentSync.ts`** — materialize bundled skills, Velocity Packs, and LCA knowledge base under `.reltio/reltio-agent/` (see D3b / `lca-assistant`); **`reltioAutoSave.ts`** — save dirty `*.reltio.json` on editor switch (and optionally on window blur) so disk matches agents and parse/index passes; **`gitConfigSource.ts`** — system-`git` shell-out helpers (detect existing repo/remote, clone, empty-folder check, path containment with a Windows case-insensitive drive fix) via `child_process.execFile`; **`l3Discovery.ts`** — depth-10 search for `BusinessConfig.json` (case-insensitive) plus conflict-aware environment/tenant naming; **`gitSourceMarker.ts`** — persists discovered L3 locations in `.reltio-config-source.json` (multi-source format, backward compatible, auto-gitignored along with `.reltio/`) |
 | `src/navigation/` | Language feature providers: `UriIndex` (central URI → AST mapping), Go-to-Definition, Find References, Document Links, Diagnostics for unresolved URIs, **`uriCompletionProvider`** (Ctrl+Space URI + same-property value hints), **`uriPropertyScopes`** / **`samePropertyValues`** |
 | `src/commands/` | `editCommands` (insert/delete/rename via `WorkspaceEdit`), `elementSkeletons` (default-name builders), `revealInsertion` (select inserted JSON), `revealCommand` |
 | `src/ontology/` | Ontology preview: transforms model to graph, runs ELK layout, manages the webview panel lifecycle, persists layout positions. Also holds `inspectorHtml.ts` (pure, escaped HTML builders for the inspector popup) and `webviewMessageSafety.ts` (`message`-origin check, prototype-safe dynamic-key map) — kept outside `src/webview/` so `tsc`/`importDist` can test them directly, but imported by both the host and the webview bundle |
 | `src/webview/` | Browser-side code for the ontology preview: SVG rendering, pan/zoom/drag, inspectors, context menus. Bundled separately as IIFE. Validates the origin of every incoming `postMessage` before trusting it (`window.origin`, captured at bootstrap, vs. `e.origin`) |
 | `schemas/` | JSON schema (`reltio-metadata.schema.json`) registered for `*.reltio.json` validation |
-| `resources/` | Static assets (activity bar icon); **`resources/reltio-agent-assets.json`** (`skillsBundleVersion`, `velocityPacksBundleVersion`); **`resources/velocity-packs/`** bundled Velocity Pack reference JSON + `manifest.json` |
-| `skills/` | **`skills/reltio-default/*/`** default `SKILL.md` playbooks shipped in the VSIX; optional **`skills/workspace/**`** team overrides (never overwritten by sync) |
+| `resources/` | Static assets (activity bar icon); **`resources/reltio-agent-assets.json`** (`skillsBundleVersion`, `velocityPacksBundleVersion`, **`lcaKnowledgeBaseBundleVersion`**); **`resources/velocity-packs/`** bundled Velocity Pack reference JSON + `manifest.json`; **`resources/lca-knowledge-base/`** LCA Assistant KB (7 docs + `manifest.json`, OpenSpec `lca-assistant` / RP-191824) |
+| `skills/` | **`skills/reltio-default/*/`** default `SKILL.md` playbooks shipped in the VSIX (includes **`lca-assistant`**); optional **`skills/workspace/**`** team overrides (never overwritten by sync) |
 | `samples/` | Example Reltio configuration files for testing |
 
 ### Velocity Pack reference assets
 
 Industry **Velocity Pack** JSON (reference `BusinessConfig.json` files for agent grounding) lives under **`resources/velocity-packs/`** and ships in the **`.vsix`** as the **canonical** copy. **`manifest.json`** lists pack ids, `schemaVersion`, `vertical`, byte sizes, and paths. Maintainer notes: **`resources/velocity-packs/README.md`**.
 
-On workspace load, **`syncReltioAgentAssets`** (see `src/workspace/reltioAgentSync.ts`) **materializes** that tree into **`.reltio/reltio-agent/velocity-packs/`** when **`velocityPacksBundleVersion`** in **`resources/reltio-agent-assets.json`** is newer than `.reltio/reltio-agent/.sync-state.json` (or the mirror is missing). Command **`reltio.resyncAgentAssets`** forces a re-copy (still never touches `skills/workspace/**`). OpenSpec: **`skills-and-enablement-packs-library`**, `design.md` **D4b**.
+On workspace load, **`syncReltioAgentAssets`** (see `src/workspace/reltioAgentSync.ts`) **materializes** Velocity Packs into **`.reltio/reltio-agent/velocity-packs/`** when **`velocityPacksBundleVersion`** advances (or the mirror is missing), and the **LCA knowledge base** into **`.reltio/reltio-agent/lca-knowledge-base/`** when **`lcaKnowledgeBaseBundleVersion`** advances. Command **`reltio.resyncAgentAssets`** forces a re-copy of skills, packs, and LCA KB (still never touches `skills/workspace/**`). OpenSpec: **`skills-and-enablement-packs-library`** (D4b); **`lca-assistant`** (RP-191824).
+
+### LCA Assistant (Cursor Agent)
+
+- **Canonical skill:** `skills/reltio-default/lca-assistant/SKILL.md` — L3-first LCA advising, dual-workspace branching, opt-in Maven scaffold; uses the knowledge base with intent routing.
+- **Bundled KB:** `resources/lca-knowledge-base/` (provenance in `PROVENANCE.md`; LCA content sign-off on RP-191824 before partner VSIX cut).
+- **Partner invoke:** Partner workspaces usually lack `.cursor/skills` stubs from this repo. After sync, `@`-reference `.reltio/reltio-agent/skills/default/lca-assistant/SKILL.md` and `.reltio/reltio-agent/lca-knowledge-base/` (or ask the agent to follow the Reltio LCA assistant). Sample prompts live in the skill and `openspec/changes/lca-assistant/demo-script.md`.
+- The extension **does not** host an LLM; Cursor Agent (or compatible agents) reads the skill + KB.
 
 ### Cursor Agent assets in the user workspace
 
@@ -129,14 +137,15 @@ Layout under the **workspace root** after sync:
 
 ```text
 .reltio/reltio-agent/                    # hidden (.reltio); extension-managed only
-├── .sync-state.json                     # last synced skillsBundleVersion + velocityPacksBundleVersion (design D3b)
+├── .sync-state.json                     # skillsBundleVersion + velocityPacksBundleVersion + lcaKnowledgeBaseBundleVersion
 ├── skills/default/                      # copies of skills/reltio-default — refreshed on skills bundle bump
-└── velocity-packs/                      # mirror of packaged resources/velocity-packs — refreshed on pack bundle bump
+├── velocity-packs/                      # mirror of packaged resources/velocity-packs — refreshed on pack bundle bump
+└── lca-knowledge-base/                  # mirror of resources/lca-knowledge-base — refreshed on LCA KB bundle bump
 
 skills/workspace/                        # optional team overrides — never overwritten by extension sync
 ```
 
-Precedence: **`skills/workspace/`** overrides the same logical playbook under **`.reltio/reltio-agent/skills/default/`**. Thin Cursor stubs under **`.cursor/skills/reltio-*`** point at canonical `skills/reltio-default/` paths. Full diagram and rules: [`openspec/changes/skills-and-enablement-packs-library/design.md`](openspec/changes/skills-and-enablement-packs-library/design.md) (§D3b, **§D4b**).
+Precedence: **`skills/workspace/`** overrides the same logical playbook under **`.reltio/reltio-agent/skills/default/`**. Thin Cursor stubs under **`.cursor/skills/reltio-*`** (contributor checkout) point at canonical `skills/reltio-default/` paths. Full diagram and rules: [`openspec/changes/skills-and-enablement-packs-library/design.md`](openspec/changes/skills-and-enablement-packs-library/design.md) (§D3b, **§D4b**); LCA: [`openspec/changes/lca-assistant/design.md`](openspec/changes/lca-assistant/design.md).
 
 ## Application Bootstrap
 
@@ -147,7 +156,7 @@ Precedence: **`skills/workspace/`** overrides the same logical playbook under **
 1. Instantiate `EnvironmentManager` (when a workspace folder exists), `TokenStore`, **`SessionStore`** (backed by `context.secrets` + `context.globalState`), `MultiTenantTreeProvider` (with `context.workspaceState` for history UI flags and compare-first URI), `UriIndex`, `ReltioDocumentLinkProvider`, `ReltioDefinitionProvider`, `ReltioReferenceProvider`, `DiagnosticsManager`, `OntologyPanelManager`
 2. Create `TreeView` for `reltioConfigTree` view container
 3. Register **`registerReltioAutoSave`** (`src/workspace/reltioAutoSave.ts`) — when enabled, saves dirty `*.reltio.json` on active-editor change and optionally when the window loses focus (`reltio.autoSaveOnEditorSwitch`, `reltio.autoSaveOnWindowBlur`)
-4. **Fire-and-forget** `syncReltioAgentAssets(context)` — materialize bundled skills + Velocity Packs under `.reltio/reltio-agent/` per `resources/reltio-agent-assets.json` vs `.sync-state.json`
+4. **Fire-and-forget** `syncReltioAgentAssets(context)` — materialize bundled skills + Velocity Packs + LCA knowledge base under `.reltio/reltio-agent/` per `resources/reltio-agent-assets.json` vs `.sync-state.json`
 5. Register language providers (links, definition, references) scoped to `**/*.reltio.json`
 6. Register all commands (ontology, environment/tenant/L3 and configuration-history fetch, history compare, reveal, edit operations, **`reltio.resyncAgentAssets`**)
 7. Set up debounced document change listener (300ms) — on `*.reltio.json` change: invalidate multi-tenant tree when `L3.reltio.json` or files under `history/` change, rebuild URI index
@@ -208,7 +217,7 @@ Precedence: **`skills/workspace/`** overrides the same logical playbook under **
 | `reltio.historyCompareWithPrevious` | Tree context (`reltio.history.snapshot.hasOlder` only) | `vscode.diff` with **older** snapshot on the left and **selected** on the right; neighbor is the next-older file in `listLocalHistorySnapshots` order (newest first). Chronologically oldest snapshot uses `reltio.history.snapshot` so this menu entry is hidden; if there is no older neighbor on disk, an informational message is shown instead of opening a diff. |
 | `reltio.historySelectForCompare` / `reltio.historyCompareSelected` | Tree context (any history snapshot) | Store first URI in `workspaceState`, then open diff (same tenant only) |
 | `reltio.refreshEnvironment` | Tree context (environment) | Rescan workspace tree |
-| `reltio.resyncAgentAssets` | Command palette | Force re-copy of bundled skills + Velocity Packs into `.reltio/reltio-agent/` |
+| `reltio.resyncAgentAssets` | Command palette | Force re-copy of bundled skills + Velocity Packs + LCA knowledge base into `.reltio/reltio-agent/` |
 | `reltio.launchSetupWizard` | Welcome view, view title bar, status bar, walkthrough, Command Palette | Multi-step QuickPick chain: host → sign-in method → auth sub-flow → first tenant → confirm. Persists results and opens L3 on finish. |
 | `reltio.openSetupGuide` | Welcome view, Command Palette | Opens the in-product Setup Guide webview (`resources/setupGuide.json`). Six steps: tenant connect → auth → pick tenant → model → apply, plus **Connect a Git repository instead**. Markdown twin: `docs/setup-guide-content.md`. The `reltio.gettingStarted` walkthrough mirrors those six steps (`featuredFor` includes `*.reltio.json`, `BusinessConfig.json`, `L3.json`). |
 | `reltio.signInEnvironment` | Inline tree icon on `E_NO_AUTH` env rows | Smart helper: QuickPick to choose browser-OAuth vs token, then runs the matching command. |

@@ -6,6 +6,7 @@ import {
 	parseDocument,
 } from '../parser/configParser';
 import type { ConfigTreeItem } from '../tree/treeNodes';
+import { isLifecycleActionsReadOnly } from '../tree/configSubtree';
 import type { Node } from 'jsonc-parser';
 import type { Attribute, EntityType, RelationType, ReltioBusinessModel } from '../model/types';
 import {
@@ -267,6 +268,10 @@ export async function deleteNode(
 	documentUri: vscode.Uri,
 	ast: Node,
 ): Promise<boolean> {
+	if (isLifecycleActionsReadOnly(item.nodeType)) {
+		void vscode.window.showInformationMessage('lifecycleActions is read-only in the tree. Ask the LCA assistant to change it.');
+		return false;
+	}
 	const confirm = await vscode.window.showWarningMessage(
 		`Delete "${item.nodeLabel}"?`,
 		{ modal: true },
@@ -291,6 +296,10 @@ export async function renameNode(
 	documentUri: vscode.Uri,
 	ast: Node,
 ): Promise<boolean> {
+	if (isLifecycleActionsReadOnly(item.nodeType)) {
+		void vscode.window.showInformationMessage('lifecycleActions is read-only in the tree. Ask the LCA assistant to change it.');
+		return false;
+	}
 	const newName = await vscode.window.showInputBox({
 		prompt: 'New name',
 		value: item.nodeLabel,

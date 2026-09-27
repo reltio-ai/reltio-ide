@@ -2,7 +2,7 @@
   "name": "reltio-ide",
   "displayName": "Reltio IDE",
   "description": "Use the Reltio IDE to review and update the business configuration of your Reltio tenant.",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "publisher": "Reltio",
   "icon": "resources/icons/reltio-icon.png",
   "license": "SEE LICENSE IN LICENSE",
@@ -258,7 +258,7 @@
       },
       {
         "command": "reltio.resyncAgentAssets",
-        "title": "Reltio: Resync agent assets (skills & Velocity Packs)",
+        "title": "Reltio: Resync agent assets (skills, Velocity Packs & LCA knowledge base)",
         "icon": "$(sync)"
       },
       {
@@ -518,12 +518,12 @@
         },
         {
           "command": "reltio.deleteNode",
-          "when": "viewItem =~ /^reltio\\.item\\./",
+          "when": "viewItem =~ /^reltio\\.item\\./ && viewItem != reltio.item.lifecycleActions",
           "group": "7_modification"
         },
         {
           "command": "reltio.renameNode",
-          "when": "viewItem =~ /^reltio\\.item\\./",
+          "when": "viewItem =~ /^reltio\\.item\\./ && viewItem != reltio.item.lifecycleActions",
           "group": "7_modification"
         },
         {

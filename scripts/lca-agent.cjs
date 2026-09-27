@@ -1,0 +1,173 @@
+#!/usr/bin/env node
+'use strict';
+/**
+ * CLI for the LCA workflow gates. Compile first (`npm run compile`).
+ * Prints JSON. Does not print .env values.
+ */
+const fs = require('fs');
+const { importDist } = require('./lib/import-dist.cjs');
+const lca = importDist('lca/index');
+
+function readL3(filePath) {
+	try {
+		return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+	} catch {
+		return undefined;
+	}
+}
+
+const [command, ...rest] = process.argv.slice(2);
+const payload = rest[0] ? JSON.parse(rest[0]) : {};
+
+function run() {
+	switch (command) {
+		case 'tenant-gate':
+			return lca.assessTenantConnection(payload);
+		case 'resolve-type':
+			return lca.resolveObjectType(payload.model, payload.name, payload.kind);
+		case 'resolve-attributes':
+			return lca.resolveAttributes(payload.object, payload.names);
+		case 'package':
+			return { javaPackage: lca.buildJavaPackage(payload) };
+		case 'cloud':
+			return lca.selectCloud(payload.explicit);
+		case 'hook':
+			return lca.validateHook(payload.kind, payload.hook);
+		case 'propose-l3':
+			return lca.proposeLifecycleChange(payload);
+		case 'gate': {
+			if (!payload.workingDirectory) {
+				return { error: 'workingDirectory is required' };
+			}
+			const store = new lca.LcaContextStore();
+			const opened = store.open(payload.workingDirectory, payload.tenantId, { disk: true });
+			return lca.gate(lca.workflowFromContext(opened.context), payload.action);
+		}
+		case 'env':
+			return { missing: lca.missingEnvKeys(payload.envText ?? '', payload.provider) };
+		case 'intent':
+			return {
+				intent: lca.classifyLcaIntent(payload.text ?? ''),
+				act: lca.classifyTurn(payload.text ?? ''),
+				tenantAware: lca.tenantAwareIntent(payload.text ?? '', lca.classifyLcaIntent(payload.text ?? '')),
+			};
+		case 'step': {
+			if (!payload.workingDirectory) {
+				return { error: 'workingDirectory is required' };
+			}
+			const text = payload.text ?? '';
+			const intent = lca.classifyLcaIntent(text);
+			const tenantAware = lca.tenantAwareIntent(text, intent);
+			let tenantConnected;
+			let l3Model;
+			if (tenantAware) {
+				const locations = lca.discoverTenantL3(payload.workingDirectory);
+				const gate = lca.assessTenantConnection({
+					tenantAware: true,
+					locations,
+					preferredTenantId: payload.tenantId,
+				});
+				if (!gate.connected) {
+					tenantConnected = false;
+				} else if (!gate.selected) {
+					return {
+						phase: 'REQUIREMENT_GATHERING',
+						persistedPhase: 'REQUIREMENT_GATHERING',
+						allowedActions: ['ask'],
+						writeFiles: false,
+						message: gate.message,
+					};
+				} else {
+					tenantConnected = true;
+					l3Model = readL3(gate.selected.path);
+					if (!l3Model) {
+						return {
+							phase: 'ASK',
+							persistedPhase: 'ASK',
+							allowedActions: ['ask'],
+							writeFiles: false,
+							message: 'The connected tenant L3 could not be read. Fetch configuration again before continuing.',
+						};
+					}
+				}
+			}
+			const store = new lca.LcaContextStore();
+			const opened = store.open(payload.workingDirectory, payload.tenantId, { disk: true });
+			const stored = lca.workflowFromContext(opened.context);
+			const result = lca.step(stored, text, {
+				trust: 'persisted',
+				claimed: payload.claimed,
+				l3Model,
+				tenantConnected,
+			});
+			const patched = { ...opened.context, ...lca.contextPatchFromWorkflow(result.workflow) };
+			store.save(patched, { disk: true });
+			return {
+				phase: result.phase,
+				persistedPhase: result.persistedPhase,
+				allowedActions: result.allowedActions,
+				writeFiles: result.writeFiles === true,
+				message: result.message,
+				questions: result.questions,
+				redacted: result.redacted === true ? true : undefined,
+				facts: {
+					targetType: result.workflow.targetType,
+					targetTypeUri: result.workflow.targetTypeUri,
+					hook: result.workflow.hook,
+					attributesRead: result.workflow.attributesRead,
+					attributesAdded: result.workflow.attributesAdded,
+					attributesUpdated: result.workflow.attributesUpdated,
+					cloudProvider: result.workflow.cloudProvider ?? 'aws',
+					objectAttributesConfirmed: result.workflow.objectAttributesConfirmed === true,
+					designApproved: result.workflow.designApproved === true,
+					connectivityStatus: result.workflow.connectivityStatus ?? 'unknown',
+				},
+			};
+		}
+		case 'java':
+			return lca.requireJava(payload.language);
+		case 'present-inputs':
+			return { text: lca.formatObjectAttributeConfirmation(payload) };
+		case 'present-design':
+			return { text: lca.formatImplementationDesign(payload) };
+		case 'present-diff':
+			return { text: lca.formatLifecycleDiff(payload) };
+		case 'context-open':
+			return new lca.LcaContextStore().open(payload.workingDirectory, payload.tenantId, { disk: true });
+		case 'context-save': {
+			if (!payload.workingDirectory) return { error: 'workingDirectory is required' };
+			const store = new lca.LcaContextStore();
+			const opened = store.open(payload.workingDirectory, payload.tenantId, { disk: true });
+			const preserved = {
+				phase: opened.context.phase,
+				workflowState: opened.context.workflowState,
+				targetType: opened.context.targetType,
+				targetTypeUri: opened.context.targetTypeUri,
+				targetKind: opened.context.targetKind,
+				hooks: opened.context.hooks,
+				attributesRead: opened.context.attributesRead,
+				attributesAdded: opened.context.attributesAdded,
+				attributesUpdated: opened.context.attributesUpdated,
+				attributesAddedOrUpdated: opened.context.attributesAddedOrUpdated,
+				attributesSpecified: opened.context.attributesSpecified,
+				objectAttributesConfirmed: opened.context.objectAttributesConfirmed,
+				designApproved: opened.context.designApproved,
+				deploymentApproved: opened.context.deploymentApproved,
+				l3UpdateApproved: opened.context.l3UpdateApproved,
+				pendingConfigurationPatch: opened.context.pendingConfigurationPatch,
+				cloudFunctionIdentifier: opened.context.cloudFunctionIdentifier,
+				connectivityStatus: opened.context.connectivityStatus,
+				deploymentStatus: opened.context.deploymentStatus,
+			};
+			store.save({ ...opened.context, ...payload, ...preserved, implementationLanguage: 'Java' }, { disk: true });
+			return { ok: true, note: 'Phase, approvals, and requirement facts are kept from the last step. Use the step command to change them.' };
+		}
+		default:
+			return {
+				error: 'Unknown command',
+				commands: ['tenant-gate', 'resolve-type', 'resolve-attributes', 'package', 'cloud', 'hook', 'propose-l3', 'gate', 'env', 'intent', 'step', 'java', 'present-inputs', 'present-design', 'present-diff', 'context-open', 'context-save'],
+			};
+	}
+}
+
+process.stdout.write(`${JSON.stringify(run(), null, 2)}\n`);
