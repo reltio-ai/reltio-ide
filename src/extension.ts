@@ -4106,7 +4106,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					void vscode.window.showErrorMessage('Open a BPMN, or run this from the Workflows tree.');
 					return;
 				}
-				const draftCtx = resolveDraftContext(fileUri.fsPath);
+				const draftCtx = resolveDraftContext(fileUri.fsPath, environmentManager);
 				if (!draftCtx) {
 					void vscode.window.showErrorMessage(
 						'This file is not a BPMN inside a tenant folder, so there is no tenant to deploy it to.',
@@ -4305,7 +4305,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	context.subscriptions.push(
 		vscode.workspace.onDidSaveTextDocument(async doc => {
 			if (resolvingPendingBpmn || !environmentManager) return;
-			const ctx = resolveDraftContext(doc.uri.fsPath);
+			const ctx = resolveDraftContext(doc.uri.fsPath, environmentManager);
 			if (!ctx) return;
 
 			const baselineText = await readTextFile(

@@ -354,13 +354,28 @@ const CRLF = '\r\n';
 
 	// ── 11. Draft context round trip ──────────────────────────────────────────
 	{
+		// Plain folder names carry no identity any more (RP-200851), so
+		// resolveDraftContext needs environmentManager's scan-built reverse
+		// index; createTenant() is what populates it, mirroring real activation.
 		const mgr = new EnvironmentManager(vscode.Uri.file('/ws'));
+		await mgr.createTenant('demo-01.reltio.com', 'AcmeTenant');
 		const uri = mgr.getWorkflowDraftUri('demo-01.reltio.com', 'AcmeTenant', draftFileName('vipApproval'));
-		const ctx = resolveDraftContext(uri.path);
+		const ctx = resolveDraftContext(uri.path, mgr);
 		assert.deepStrictEqual(
 			ctx,
 			{ environmentName: 'demo-01.reltio.com', tenantId: 'AcmeTenant', processId: 'vipApproval' },
 			`getWorkflowDraftUri → resolveDraftContext must round-trip, got ${JSON.stringify(ctx)}`,
+		);
+
+		// A pre-rename workspace still resolves via the legacy suffix fallback,
+		// with no environmentManager (or one that has not indexed the path) at all.
+		const legacyCtx = resolveDraftContext(
+			'/ws/demo-01.reltio.com.reltio.environment/AcmeTenant.reltio.tenant/workflows/vipApproval.bpmn20.xml',
+		);
+		assert.deepStrictEqual(
+			legacyCtx,
+			{ environmentName: 'demo-01.reltio.com', tenantId: 'AcmeTenant', processId: 'vipApproval' },
+			`legacy suffixed path must still resolve, got ${JSON.stringify(legacyCtx)}`,
 		);
 
 		// Anything that is not a draft in a tenant's workflows folder resolves to undefined,
@@ -371,7 +386,7 @@ const CRLF = '\r\n';
 			'/ws/demo-01.reltio.com.reltio.environment/AcmeTenant.reltio.tenant/vipApproval.bpmn20.xml',
 			'/tmp/vipApproval.bpmn20.xml',
 		]) {
-			assert.strictEqual(resolveDraftContext(bad), undefined, `should not resolve: ${bad}`);
+			assert.strictEqual(resolveDraftContext(bad, mgr), undefined, `should not resolve: ${bad}`);
 		}
 	}
 

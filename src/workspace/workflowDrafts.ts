@@ -25,6 +25,7 @@ import * as vscode from 'vscode';
 import { BPMN_SUFFIX, bpmnFileName, processIdFromBpmnFileName } from './workflowBpmnFiles';
 import { extractProcessModel } from '../workflow/bpmnModel';
 import { layoutChain, renderDiagramSection, withDiagramSection } from '../workflow/bpmnDiagram';
+import type { EnvironmentManager } from './environmentManager';
 
 /**
  * A draft and a downloaded deployment are the same kind of file on disk, so
@@ -75,9 +76,19 @@ export function processIdFromDraftFileName(fileName: string): string | undefined
  * no tree node to carry context — and three tenants can each hold a draft with
  * the same filename. Inferring the tenant from the current tree selection would
  * eventually deploy the wrong file to the wrong tenant, so the file's own path
- * is the authority. Mirrors `pathTenantLocFromL3Path`.
+ * is the authority.
+ *
+ * Plain folder names carry no identity — a tenant folder is now just the bare
+ * tenant ID, and an environment folder's short label is not invertible when two
+ * hosts collide on it — so `environmentManager`'s scan-built reverse index is
+ * the authority whenever it is available. The suffix-based fallback below only
+ * still matches a pre-rename workspace, exactly like `pathTenantLocFromL3Path`,
+ * which this mirrors.
  */
-export function resolveDraftContext(fsPath: string): DraftContext | undefined {
+export function resolveDraftContext(
+	fsPath: string,
+	environmentManager?: Pick<EnvironmentManager, 'locFromPath'> | null,
+): DraftContext | undefined {
 	const parts = fsPath.split(/[/\\]/).filter(Boolean);
 	const fileName = parts[parts.length - 1];
 	if (!fileName) return undefined;
@@ -85,18 +96,30 @@ export function resolveDraftContext(fsPath: string): DraftContext | undefined {
 	const processId = processIdFromDraftFileName(fileName);
 	if (!processId) return undefined;
 
-	// …/{env}.reltio.environment/{tenant}.reltio.tenant/workflows/{file}
+	// …/{tenant folder}/workflows/{file} — the immediate parent must be the drafts folder.
 	if (parts[parts.length - 2] !== 'workflows') return undefined;
+
+	const loc = environmentManager?.locFromPath(fsPath) ?? legacySuffixedDraftLoc(parts);
+	if (!loc) return undefined;
+
+	return { environmentName: loc.environmentName, tenantId: loc.tenantId, processId };
+}
+
+/**
+ * Suffix-based fallback for a pre-rename workspace: `…/{env}.reltio.environment/
+ * {tenant}.reltio.tenant/workflows/{file}`. Mirrors `pathTenantLocFromL3Path`.
+ */
+function legacySuffixedDraftLoc(
+	parts: readonly string[],
+): { environmentName: string; tenantId: string } | undefined {
 	const tenantSeg = parts[parts.length - 3];
 	const envSeg = parts[parts.length - 4];
 	if (!tenantSeg?.endsWith('.reltio.tenant') || !envSeg?.endsWith('.reltio.environment')) {
 		return undefined;
 	}
-
 	return {
 		environmentName: envSeg.slice(0, -'.reltio.environment'.length),
 		tenantId: tenantSeg.slice(0, -'.reltio.tenant'.length),
-		processId,
 	};
 }
 
