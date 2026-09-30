@@ -27,9 +27,15 @@ import {
 	UnregisteredJarNode,
 	WorkflowDraftsFolderNode,
 	WorkflowDraftNode,
+	WorkflowRepoNode,
+	WorkflowRepoBpmnFileNode,
 } from './workflowNodes';
 import { loadWorkflowAdapterUrl } from '../workspace/workflowAdapterConfig';
 import { bpmnFileName, listLocalBpmnFiles } from '../workspace/workflowBpmnFiles';
+import type { RepoSyncState } from '../workspace/workflowRepoSync';
+import { loadWorkflowRepoConfig } from '../workspace/workflowRepoConfig';
+import { reconcileWorkflowRepoGitignore } from '../workspace/workflowRepoGitignore';
+import type { DiscoveredBpmnFile } from '../workspace/workflowRepoDiscovery';
 import type { ProcessDefinition, JarDeployment, AvailableJar } from '../api/workflowAdapterClient';
 import type { EState, TState, UxState } from '../ux/uxState';
 import { ConfigTreeItem } from './treeNodes';
@@ -59,7 +65,9 @@ export type MultiTenantTreeElement =
 	| UnregisteredJarsFolderNode
 	| UnregisteredJarNode
 	| WorkflowDraftsFolderNode
-	| WorkflowDraftNode;
+	| WorkflowDraftNode
+	| WorkflowRepoNode
+	| WorkflowRepoBpmnFileNode;
 
 /** Shared by the key builder and the by-environment sweep in `removeEnvironment`. */
 const HISTORY_EXPOSED_PREFIX = 'reltio.history.exposed::';
@@ -143,6 +151,24 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			 * tenant (missing `jarsLocation` config) — see `listAvailableJars()`.
 			 */
 			unregisteredJars: AvailableJar[] | undefined;
+			/**
+			 * D5's sync badge, populated by `markWorkflowRepoSync()`. `repoTrackedCount`
+			 * is `undefined` until the first computation (no badge text yet, distinct
+			 * from "computed as zero"); `repoSync` maps a process id to its state only
+			 * for definitions that matched a discovered repository file — everything
+			 * else has no entry, which the tree renders as no badge at all.
+			 */
+			repoTrackedCount?: number;
+			repoSync?: Map<string, RepoSyncState>;
+			/**
+			 * The files themselves, so `getChildren(WorkflowRepoNode)` can render one
+			 * row per discovered file without a second filesystem walk. Kept separate
+			 * from `repoTrackedCount` (which existed first, for the row's description
+			 * text) rather than derived from `repoFiles.length`, so a cache written by
+			 * an older code path that only ever set the count still renders a count
+			 * even before this list is populated.
+			 */
+			repoFiles?: DiscoveredBpmnFile[];
 		}
 	>();
 
@@ -222,7 +248,16 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		jars: JarDeployment[],
 		unregisteredJars: AvailableJar[] | undefined = undefined,
 	): void {
-		this.workflowCache.set(`${environmentName}/${tenantId}`, { definitions, jars, unregisteredJars });
+		const key = `${environmentName}/${tenantId}`;
+		const existing = this.workflowCache.get(key);
+		this.workflowCache.set(key, {
+			definitions,
+			jars,
+			unregisteredJars,
+			repoTrackedCount: existing?.repoTrackedCount,
+			repoSync: existing?.repoSync,
+			repoFiles: existing?.repoFiles,
+		});
 		this.scheduleTreeRefresh();
 	}
 
@@ -245,6 +280,9 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			definitions,
 			jars: existing?.jars ?? [],
 			unregisteredJars: existing?.unregisteredJars,
+			repoTrackedCount: existing?.repoTrackedCount,
+			repoSync: existing?.repoSync,
+			repoFiles: existing?.repoFiles,
 		});
 		this.scheduleTreeRefresh();
 	}
@@ -265,8 +303,65 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 	): void {
 		const key = `${environmentName}/${tenantId}`;
 		const existing = this.workflowCache.get(key);
-		this.workflowCache.set(key, { definitions: existing?.definitions ?? [], jars, unregisteredJars });
+		this.workflowCache.set(key, {
+			definitions: existing?.definitions ?? [],
+			jars,
+			unregisteredJars,
+			repoTrackedCount: existing?.repoTrackedCount,
+			repoSync: existing?.repoSync,
+			repoFiles: existing?.repoFiles,
+		});
 		this.scheduleTreeRefresh();
+	}
+
+	/**
+	 * Store D5's sync-badge computation for one tenant, and the discovered file
+	 * list itself so `getChildren(WorkflowRepoNode)` can render one row per file
+	 * without a second filesystem walk. Called by `refreshWorkflowRepoSyncState()`
+	 * in `extension.ts` after Fetch/Deploy and by the manual
+	 * `reltio.refreshWorkflowRepoSync` command — never from inside this class,
+	 * which has no network or filesystem access of its own.
+	 */
+	markWorkflowRepoSync(
+		environmentName: string,
+		tenantId: string,
+		trackedCount: number | undefined,
+		sync: Map<string, RepoSyncState>,
+		files: DiscoveredBpmnFile[] = [],
+	): void {
+		const key = `${environmentName}/${tenantId}`;
+		const existing = this.workflowCache.get(key);
+		this.workflowCache.set(key, {
+			definitions: existing?.definitions ?? [],
+			jars: existing?.jars ?? [],
+			unregisteredJars: existing?.unregisteredJars,
+			repoTrackedCount: trackedCount,
+			repoSync: sync,
+			repoFiles: files,
+		});
+		this.scheduleTreeRefresh();
+	}
+
+	/** Number of repository files `discoverBpmnFiles()` found on the last sync computation, or `undefined` before the first one. */
+	getCachedWorkflowRepoTrackedCount(environmentName: string, tenantId: string): number | undefined {
+		return this.workflowCache.get(`${environmentName}/${tenantId}`)?.repoTrackedCount;
+	}
+
+	/** D5's sync state for one process id, or `undefined` when it has no matching repository file. */
+	getCachedRepoSyncState(
+		environmentName: string,
+		tenantId: string,
+		processId: string,
+	): RepoSyncState | undefined {
+		return this.workflowCache.get(`${environmentName}/${tenantId}`)?.repoSync?.get(processId);
+	}
+
+	/** Files `discoverBpmnFiles()` found on the last sync computation, or `undefined` before the first one. */
+	getCachedWorkflowRepoFiles(
+		environmentName: string,
+		tenantId: string,
+	): DiscoveredBpmnFile[] | undefined {
+		return this.workflowCache.get(`${environmentName}/${tenantId}`)?.repoFiles;
 	}
 
 	/** Cached JAR deployments for one tenant, or an empty list when unfetched. */
@@ -480,9 +575,13 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			element instanceof ProcessDefinitionsFolderNode ||
 			element instanceof JarDeploymentsFolderNode ||
 			element instanceof WorkflowDraftsFolderNode ||
-			element instanceof WorkflowFetchActionNode
+			element instanceof WorkflowFetchActionNode ||
+			element instanceof WorkflowRepoNode
 		) {
 			return this.workflowsFolderFor(element.environmentName, element.tenantId);
+		}
+		if (element instanceof WorkflowRepoBpmnFileNode) {
+			return this.workflowRepoNodeFor(element.environmentName, element.tenantId);
 		}
 		if (element instanceof ProcessDefinitionNode) {
 			const cached = this.workflowCache.get(`${element.environmentName}/${element.tenantId}`);
@@ -621,6 +720,37 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 	/** Drafts on disk for one tenant; empty when the folder does not exist yet. */
 	private async workflowDraftsFor(environmentName: string, tenantId: string) {
 		return (await this.localBpmnStateFor(environmentName, tenantId)).drafts;
+	}
+
+	/**
+	 * Rebuild the Custom Workflow Repository row for one tenant.
+	 *
+	 * Reads the sidecar directly (a small, tracked JSON file — cheap) rather than
+	 * caching it, matching `workflowsFolderFor()`'s treatment of the Workflow
+	 * Adapter URL just above. `trackedBpmnCount` does come from the cache: it is
+	 * D5's network-backed computation (`refreshWorkflowRepoSyncState()` in
+	 * `extension.ts`), not something this method can compute itself.
+	 *
+	 * Also where D10's reconciliation check re-runs "on tree refresh" (its other
+	 * trigger, besides activation — see `extension.ts`'s activation-time sweep):
+	 * a tenant bound to Git *after* its repository was already connected needs
+	 * this to catch the resulting `.gitignore` gap on the next render, not only
+	 * on the next window reload.
+	 */
+	private async workflowRepoNodeFor(environmentName: string, tenantId: string): Promise<WorkflowRepoNode> {
+		if (!this.environmentManager) {
+			return new WorkflowRepoNode(environmentName, tenantId, undefined, 0);
+		}
+		const repoConfigUri = this.environmentManager.getWorkflowRepoConfigUri(environmentName, tenantId);
+		const config = await loadWorkflowRepoConfig(repoConfigUri);
+		if (config) {
+			await reconcileWorkflowRepoGitignore(
+				this.environmentManager.getTenantRootUri(environmentName, tenantId),
+				repoConfigUri,
+			).catch(() => undefined);
+		}
+		const trackedCount = this.getCachedWorkflowRepoTrackedCount(environmentName, tenantId) ?? 0;
+		return new WorkflowRepoNode(environmentName, tenantId, config, trackedCount);
 	}
 
 	/**
@@ -781,12 +911,18 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			return items;
 		}
 		if (element instanceof WorkflowsFolderNode) {
+			// The Custom Workflow Repository needs no Workflow Adapter URL and no
+			// fetch — connect/disconnect/discovery all work before Workflows has ever
+			// been loaded this session — so this row is independent of `cached` below.
+			const repoRow = await this.workflowRepoNodeFor(element.environmentName, element.tenantId);
 			const cached = this.workflowCache.get(`${element.environmentName}/${element.tenantId}`);
 			if (cached === undefined) {
 				// URL saved but not yet loaded this session — show a fetch action row.
-				return element.savedAdapterUrl !== undefined
+				const children: MultiTenantTreeElement[] = element.savedAdapterUrl !== undefined
 					? [new WorkflowFetchActionNode(element.environmentName, element.tenantId)]
 					: [];
+				children.push(repoRow);
+				return children;
 			}
 			const children: MultiTenantTreeElement[] = [
 				new ProcessDefinitionsFolderNode(
@@ -800,6 +936,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 					cached.jars,
 					cached.unregisteredJars,
 				),
+				repoRow,
 			];
 			// Drafts appear only when at least one exists — same rule as History.
 			const drafts = await this.workflowDraftsFor(element.environmentName, element.tenantId);
@@ -815,17 +952,44 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 				d => new WorkflowDraftNode(element.environmentName, element.tenantId, d),
 			);
 		}
+		if (element instanceof WorkflowRepoNode) {
+			// Only reachable once `WorkflowRepoNode` is collapsible, i.e. connected
+			// with at least one discovered file — see its constructor. `repoFiles`
+			// being `undefined` here (sync never computed this session) still safely
+			// renders nothing rather than throwing, though that case should not arise
+			// in practice: `trackedBpmnCount` and `repoFiles` are always written together
+			// by `markWorkflowRepoSync()`.
+			const files = this.getCachedWorkflowRepoFiles(element.environmentName, element.tenantId) ?? [];
+			return files.map(
+				f => new WorkflowRepoBpmnFileNode(
+					element.environmentName,
+					element.tenantId,
+					f.fileUri,
+					f.processId,
+					this.getCachedRepoSyncState(element.environmentName, element.tenantId, f.processId),
+				),
+			);
+		}
 		if (element instanceof ProcessDefinitionsFolderNode) {
 			const { changed, downloaded } = await this.localBpmnStateFor(
 				element.environmentName,
 				element.tenantId,
 			);
-			return element.definitions.map(d => new ProcessDefinitionNode(
-				element.environmentName,
-				element.tenantId,
-				d,
-				changed.has(d.type) ? 'changed' : downloaded.has(d.type) ? 'clean' : 'none',
-			));
+			return element.definitions.map(d => {
+				// D5: a definition tracked by the connected Custom Workflow Repository
+				// takes its `localState` from that comparison, taking priority over the
+				// downloaded-copy comparison below — the repository, not a manually
+				// fetched local copy, is this definition's source of truth once one exists.
+				const repoState = this.getCachedRepoSyncState(
+					element.environmentName, element.tenantId, d.type,
+				);
+				return new ProcessDefinitionNode(
+					element.environmentName,
+					element.tenantId,
+					d,
+					repoState ?? (changed.has(d.type) ? 'changed' : downloaded.has(d.type) ? 'clean' : 'none'),
+				);
+			});
 		}
 		if (element instanceof JarDeploymentsFolderNode) {
 			const children: MultiTenantTreeElement[] = element.deployments.map(

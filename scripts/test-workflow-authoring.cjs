@@ -369,8 +369,10 @@ const CRLF = '\r\n';
 
 		// A pre-rename workspace still resolves via the legacy suffix fallback,
 		// with no environmentManager (or one that has not indexed the path) at all.
+		// The tenant-folder suffix and the Workflows/BPMN drafts location are two
+		// independent renames — a legacy-suffixed tenant still gets the new location.
 		const legacyCtx = resolveDraftContext(
-			'/ws/demo-01.reltio.com.reltio.environment/AcmeTenant.reltio.tenant/workflows/vipApproval.bpmn20.xml',
+			'/ws/demo-01.reltio.com.reltio.environment/AcmeTenant.reltio.tenant/Workflows/BPMN/vipApproval.bpmn20.xml',
 		);
 		assert.deepStrictEqual(
 			legacyCtx,
@@ -378,11 +380,14 @@ const CRLF = '\r\n';
 			`legacy suffixed path must still resolve, got ${JSON.stringify(legacyCtx)}`,
 		);
 
-		// Anything that is not a draft in a tenant's workflows folder resolves to undefined,
-		// so a stray editor tab can never be deployed at a tenant it has nothing to do with.
+		// Anything that is not a draft in a tenant's Workflows/BPMN folder resolves to
+		// undefined, so a stray editor tab can never be deployed at a tenant it has
+		// nothing to do with. Includes the pre-Part-3 flat `workflows/` shape, which
+		// carries no migration and so must not resolve at all any more.
 		for (const bad of [
 			'/ws/demo-01.reltio.com.reltio.environment/AcmeTenant.reltio.tenant/L3.reltio.json',
-			'/ws/AcmeTenant.reltio.tenant/workflows/vipApproval.bpmn20.xml',
+			'/ws/AcmeTenant.reltio.tenant/Workflows/BPMN/vipApproval.bpmn20.xml',
+			'/ws/demo-01.reltio.com.reltio.environment/AcmeTenant.reltio.tenant/workflows/vipApproval.bpmn20.xml',
 			'/ws/demo-01.reltio.com.reltio.environment/AcmeTenant.reltio.tenant/vipApproval.bpmn20.xml',
 			'/tmp/vipApproval.bpmn20.xml',
 		]) {

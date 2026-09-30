@@ -3,7 +3,7 @@
  * deployed.
  *
  * On-disk shape:
- *   {tenantId}.reltio.tenant/workflows/{processId}.bpmn20.xml
+ *   {tenant}/Workflows/BPMN/{processId}.bpmn20.xml
  *
  * A draft is a real file, not a scratch buffer: it survives a window reload, is
  * visible in the Explorer, and belongs to the customer rather than to this
@@ -96,8 +96,8 @@ export function resolveDraftContext(
 	const processId = processIdFromDraftFileName(fileName);
 	if (!processId) return undefined;
 
-	// …/{tenant folder}/workflows/{file} — the immediate parent must be the drafts folder.
-	if (parts[parts.length - 2] !== 'workflows') return undefined;
+	// …/{tenant folder}/Workflows/BPMN/{file} — the immediate parent must be the drafts folder.
+	if (parts[parts.length - 2] !== 'BPMN' || parts[parts.length - 3] !== 'Workflows') return undefined;
 
 	const loc = environmentManager?.locFromPath(fsPath) ?? legacySuffixedDraftLoc(parts);
 	if (!loc) return undefined;
@@ -107,13 +107,15 @@ export function resolveDraftContext(
 
 /**
  * Suffix-based fallback for a pre-rename workspace: `…/{env}.reltio.environment/
- * {tenant}.reltio.tenant/workflows/{file}`. Mirrors `pathTenantLocFromL3Path`.
+ * {tenant}.reltio.tenant/Workflows/BPMN/{file}`. Mirrors `pathTenantLocFromL3Path`.
+ * The tenant folder may still be legacy-suffixed even though the drafts location
+ * inside it (`Workflows/BPMN/`) never was — the two renames are independent.
  */
 function legacySuffixedDraftLoc(
 	parts: readonly string[],
 ): { environmentName: string; tenantId: string } | undefined {
-	const tenantSeg = parts[parts.length - 3];
-	const envSeg = parts[parts.length - 4];
+	const tenantSeg = parts[parts.length - 4];
+	const envSeg = parts[parts.length - 5];
 	if (!tenantSeg?.endsWith('.reltio.tenant') || !envSeg?.endsWith('.reltio.environment')) {
 		return undefined;
 	}
@@ -274,7 +276,7 @@ function retargetDiagramPlane(
 
 // ─── File system ─────────────────────────────────────────────────────────────
 
-/** Every draft in a tenant's `workflows/` folder, sorted by process id. */
+/** Every draft in a tenant's `Workflows/BPMN/` folder, sorted by process id. */
 export async function listWorkflowDrafts(draftsDir: vscode.Uri): Promise<WorkflowDraft[]> {
 	let entries: [string, vscode.FileType][];
 	try {
@@ -293,7 +295,7 @@ export async function listWorkflowDrafts(draftsDir: vscode.Uri): Promise<Workflo
 	return out;
 }
 
-/** Write one draft, creating the `workflows/` folder on first use. */
+/** Write one draft, creating the `Workflows/BPMN/` folder on first use. */
 export async function writeWorkflowDraft(
 	draftsDir: vscode.Uri,
 	fileName: string,

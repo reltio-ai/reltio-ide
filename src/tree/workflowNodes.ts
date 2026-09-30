@@ -22,6 +22,8 @@
 import * as vscode from 'vscode';
 import type { ProcessDefinition, JarDeployment, AvailableJar } from '../api/workflowAdapterClient';
 import type { WorkflowDraft } from '../workspace/workflowDrafts';
+import type { WorkflowRepoConfig } from '../workspace/workflowRepoConfig';
+import type { RepoSyncState } from '../workspace/workflowRepoSync';
 
 // ─── Tooltip helpers ─────────────────────────────────────────────────────────
 
@@ -364,6 +366,113 @@ export class UnregisteredJarNode extends vscode.TreeItem {
 			command: 'reltio.registerJarDeployment',
 			title: 'Register JAR',
 			arguments: [this],
+		};
+	}
+}
+
+// ─── Custom Workflow Repository ──────────────────────────────────────────────
+
+/**
+ * The customer's Reltio-provisioned, Java-backed Custom Workflow Repository —
+ * a single row under `WorkflowsFolderNode`, shown regardless of connection
+ * state (unlike Drafts/JAR sub-folders, which appear only once non-empty).
+ * "Not connected" until `reltio.connectWorkflowRepository` clones one in;
+ * clicking it in that state starts the connect flow, same pattern as
+ * `WorkflowsFolderNode` itself before its first fetch.
+ *
+ * Expandable once connected and at least one BPMN file has been discovered —
+ * see `WorkflowRepoBpmnFileNode` below. D7 originally ruled this out ("VS
+ * Code's own Explorer already shows it"), but that's a real folder browser
+ * with no sync-badge awareness; the actual point of connecting a repository
+ * — "is this file clean or changed against the tenant?" — is invisible there.
+ * Revised, not silently dropped: see `design.md`'s D7 addendum.
+ */
+export class WorkflowRepoNode extends vscode.TreeItem {
+	constructor(
+		readonly environmentName: string,
+		readonly tenantId: string,
+		readonly config: WorkflowRepoConfig | undefined,
+		/** Files `discoverBpmnFiles()` found inside the connected repository, or 0 when not connected. */
+		readonly trackedBpmnCount: number = 0,
+	) {
+		super(
+			'Custom Workflow Repository',
+			config && trackedBpmnCount > 0
+				? vscode.TreeItemCollapsibleState.Collapsed
+				: vscode.TreeItemCollapsibleState.None,
+		);
+		this.contextValue = config
+			? 'reltio.workflows.customRepo.connected'
+			: 'reltio.workflows.customRepo.notConnected';
+		this.iconPath = new vscode.ThemeIcon(config ? 'repo' : 'repo-forked');
+		this.id = `workflowRepo:${environmentName}/${tenantId}`;
+
+		if (config) {
+			const count = this.trackedBpmnCount;
+			this.description = `Connected — ${count} BPMN file${count === 1 ? '' : 's'} tracked`;
+			this.tooltip = buildTooltip('Custom Workflow Repository', [
+				['Repository', config.repoUrl],
+				['Path', config.relativePath],
+				['BPMN files tracked', String(count)],
+			]);
+		} else {
+			this.description = 'Not connected';
+			this.tooltip = 'Click to connect the Reltio-provisioned repository for this tenant\u2019s custom workflow code.';
+			this.command = {
+				command: 'reltio.connectWorkflowRepository',
+				title: 'Connect Custom Workflow Repository',
+				arguments: [this],
+			};
+		}
+	}
+}
+
+/**
+ * One BPMN file `discoverBpmnFiles()` found inside the connected repository —
+ * a child of `WorkflowRepoNode`, one per discovered file, sorted by process id
+ * (the order `discoverBpmnFiles()` already returns them in).
+ *
+ * `syncState` is `undefined` when this file's process id has no matching
+ * deployed `ProcessDefinition` yet (never deployed from this repo, or deployed
+ * under a different id) — rendered as "not deployed" rather than a badge,
+ * distinct from `'clean'`/`'changed'` which both imply a live counterpart exists.
+ */
+export class WorkflowRepoBpmnFileNode extends vscode.TreeItem {
+	constructor(
+		readonly environmentName: string,
+		readonly tenantId: string,
+		readonly fileUri: vscode.Uri,
+		readonly processId: string,
+		readonly syncState: RepoSyncState | undefined,
+	) {
+		super(processId, vscode.TreeItemCollapsibleState.None);
+		this.contextValue = 'reltio.workflows.customRepo.file';
+		this.resourceUri = fileUri;
+		this.iconPath = new vscode.ThemeIcon(
+			'file-code',
+			syncState === 'changed'
+				? new vscode.ThemeColor('gitDecoration.modifiedResourceForeground')
+				: undefined,
+		);
+		this.description =
+			syncState === 'changed' ? 'changed' : syncState === 'clean' ? 'synced' : 'not deployed';
+		this.tooltip = buildTooltip(
+			'Custom Workflow Repository file',
+			[
+				['Process ID', processId],
+				['File', fileUri.fsPath],
+			],
+			syncState === 'changed'
+				? 'Differs from the version deployed on this tenant.'
+				: syncState === 'clean'
+					? 'Matches the version deployed on this tenant.'
+					: 'No deployed process definition with this id yet — click Deploy to publish it.',
+		);
+		this.id = `workflowRepoFile:${environmentName}/${tenantId}/${fileUri.fsPath}`;
+		this.command = {
+			command: 'vscode.open',
+			title: 'Open BPMN',
+			arguments: [fileUri],
 		};
 	}
 }

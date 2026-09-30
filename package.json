@@ -419,6 +419,31 @@
         "command": "reltio.previewWorkflowDiagram",
         "title": "Show BPMN Diagram",
         "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "reltio.connectWorkflowRepository",
+        "title": "Connect Custom Workflow Repository...",
+        "icon": "$(repo)"
+      },
+      {
+        "command": "reltio.disconnectWorkflowRepository",
+        "title": "Disconnect Custom Workflow Repository",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "reltio.refreshWorkflowRepoSync",
+        "title": "Refresh Sync Status",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "reltio.openWorkflowRepoFolder",
+        "title": "Open Repository Folder",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "reltio.openWorkflowRepoInBrowser",
+        "title": "Open Repository in Browser",
+        "icon": "$(link-external)"
       }
     ],
     "configuration": {
@@ -937,6 +962,61 @@
         {
           "command": "reltio.previewWorkflowDiagram",
           "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.processDefinition(\\.changed)?$/",
+          "group": "navigation@1"
+        },
+        {
+          "command": "reltio.connectWorkflowRepository",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.notConnected",
+          "group": "5_insert@01"
+        },
+        {
+          "command": "reltio.connectWorkflowRepository",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.notConnected",
+          "group": "inline@1"
+        },
+        {
+          "command": "reltio.refreshWorkflowRepoSync",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.connected",
+          "group": "1_refresh@01"
+        },
+        {
+          "command": "reltio.refreshWorkflowRepoSync",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.connected",
+          "group": "inline@1"
+        },
+        {
+          "command": "reltio.openWorkflowRepoFolder",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.connected",
+          "group": "2_config@01"
+        },
+        {
+          "command": "reltio.openWorkflowRepoFolder",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.connected",
+          "group": "inline@2"
+        },
+        {
+          "command": "reltio.openWorkflowRepoInBrowser",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.connected",
+          "group": "2_config@02"
+        },
+        {
+          "command": "reltio.disconnectWorkflowRepository",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.connected",
+          "group": "9_delete@01"
+        },
+        {
+          "command": "reltio.deployWorkflow",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.file",
+          "group": "4_deploy@01"
+        },
+        {
+          "command": "reltio.deployWorkflow",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.file",
+          "group": "inline@1"
+        },
+        {
+          "command": "reltio.previewWorkflowDiagram",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.file",
           "group": "navigation@1"
         }
       ],
