@@ -519,8 +519,7 @@ const design = formatImplementationDesign({
 assert.match(design, /LCA Implementation Design/);
 assert.match(design, /Language/);
 assert.match(design, /^Java$/m);
-assert.match(design, /Should I proceed with Java LCA code generation\?/);
-assert.ok(design.indexOf('LCA Implementation Design') < design.indexOf('Should I proceed with Java LCA code generation?'));
+assert.ok(!/Should I proceed with Java LCA code generation\?/.test(design), 'design is information, not a second confirmation');
 assert.strictEqual(deploymentPrompt('aws'), 'Would you like me to deploy this version to AWS Lambda?');
 assert.ok(!design.includes('com.example.lca'));
 const preview = formatDeploymentPreview({
@@ -530,7 +529,7 @@ const preview = formatDeploymentPreview({
 	changes: ['Publish the built artifact'],
 });
 assert.match(preview, /Target environment/);
-assert.match(preview, /This does not deploy anything/);
+assert.match(preview, /Would you like me to deploy/);
 assert.ok(!preview.toLowerCase().includes('secret key'));
 
 // Conversation gates. trust:'persisted' is the state saved by the previous step.
@@ -576,22 +575,17 @@ const facts = extractFacts(stated, createWorkflow({ intent: 'generate', state: '
 assert.strictEqual(facts.workflow.targetType, 'HCP');
 assert.strictEqual(facts.workflow.hook, 'beforeSave');
 assert.strictEqual(facts.workflow.attributesSpecified, true);
-turn = step(facts.workflow, stated, { trust: 'persisted' });
-assert.strictEqual(turn.phase, 'REQUIREMENT_GATHERING', '3 complete facts still wait for confirmation');
-assert.ok(!turn.allowedActions.includes('generate'));
-turn = step(turn.workflow, 'yes', { trust: 'persisted' });
-assert.match(turn.message, /design/i);
-assert.ok(!turn.allowedActions.includes('generate'));
-assert.strictEqual(turn.writeFiles, false);
+turn = step(facts.workflow, stated, { trust: 'persisted', l3Model: model });
+assert.strictEqual(turn.phase, 'GENERATE', '3 known facts generate without an extra confirmation');
+assert.ok(turn.allowedActions.includes('generate'));
+assert.strictEqual(turn.writeFiles, true);
+assert.strictEqual(turn.persistedPhase, 'DEPLOY_PENDING_APPROVAL');
+assert.ok(!turn.allowedActions.includes('deploy'));
+assert.ok(!turn.allowedActions.includes('updateL3'));
 const explained = step(turn.workflow, 'ok explain the hook first', { trust: 'persisted' });
-assert.ok(!explained.allowedActions.includes('generate'), 'a qualified yes is not design approval');
+assert.ok(!explained.allowedActions.includes('generate'), 'a qualified yes is not deploy approval');
 assert.notStrictEqual(explained.phase, 'GENERATE');
-const generated = step(turn.workflow, 'Yes, proceed with Java LCA code generation', { trust: 'persisted' });
-assert.strictEqual(generated.phase, 'GENERATE', '3 design approval allows code');
-assert.ok(generated.allowedActions.includes('generate'));
-assert.strictEqual(generated.writeFiles, true);
-assert.ok(!generated.allowedActions.includes('deploy'));
-assert.ok(!generated.allowedActions.includes('updateL3'));
+const generated = turn;
 
 const hostile = step(createWorkflow({
 	state: 'DESIGN_APPROVED',
@@ -616,12 +610,29 @@ assert.ok(!diverted.allowedActions.includes('deploy'));
 const resumed = step(diverted.workflow, 'yes', { trust: 'persisted' });
 assert.ok(!resumed.allowedActions.includes('deploy'), '10 yes after a question does not deploy');
 
+const awsEnv = 'AWS_REGION=us-east-1\nAWS_PROFILE=dev\n';
 turn = step(generated.workflow, 'yes, deploy it', { trust: 'persisted' });
-assert.strictEqual(turn.phase, 'DEPLOY_PENDING_APPROVAL');
+assert.strictEqual(turn.phase, 'DEPLOY_PENDING_APPROVAL', 'deploy waits when .env is missing');
 assert.ok(!turn.allowedActions.includes('deploy'));
-turn = step(turn.workflow, 'yes', { trust: 'persisted' });
-assert.strictEqual(turn.phase, 'DEPLOY', '5 approval allows deploy');
+assert.ok(turn.missingCredentials && turn.missingCredentials.length > 0);
+turn = step(turn.workflow, 'yes', { trust: 'persisted', envText: awsEnv });
+assert.strictEqual(turn.phase, 'DEPLOY', '5 approval deploys with the .env credentials');
 assert.ok(turn.allowedActions.includes('deploy'));
+assert.ok(turn.allowedActions.includes('updateL3'), 'successful deploy may update L3 in the same turn');
+assert.ok(turn.consoleUpdate, 'missing physical configuration is reported, not confirmed');
+assert.match(turn.consoleUpdate, /Console/);
+const silentPhysical = step(generated.workflow, 'yes', {
+	trust: 'persisted',
+	envText: awsEnv,
+	physicalConfigText: JSON.stringify({
+		awsAccountId: '123456789012',
+		roleArn: 'arn:aws:iam::123456789012:role/ReltioLcaInvokerRole',
+		region: 'us-east-1',
+		externalId: 'ext-1',
+	}),
+});
+assert.strictEqual(silentPhysical.consoleUpdate, undefined, 'present physical configuration is not mentioned');
+assert.strictEqual(silentPhysical.workflow.connectivityStatus, 'confirmed');
 assert.strictEqual(actionSucceeded(undefined), false);
 assert.strictEqual(actionSucceeded({ exitCode: 1 }), false);
 assert.strictEqual(actionSucceeded({ ok: true }), true);
@@ -632,27 +643,34 @@ assert.ok(turn.allowedActions.includes('test'));
 assert.match(turn.message, /Do not claim the test passed/);
 
 turn = step(turn.workflow, 'Update lifecycleActions for this tenant', { trust: 'persisted' });
-assert.ok(!turn.allowedActions.includes('previewL3'), '7 L3 waits for connectivity');
+assert.ok(!turn.allowedActions.includes('previewL3'), '7 L3 does not ask for a connectivity confirmation');
 assert.ok(!turn.allowedActions.includes('updateL3'));
-assert.match(turn.message, /connectivity/i);
+assert.match(turn.message, /physical configuration/i);
+assert.ok(!/already configured for this tenant\?/.test(turn.message));
 turn = step(turn.workflow, 'Connectivity is already confirmed for this tenant', { trust: 'persisted' });
-assert.strictEqual(turn.workflow.connectivityStatus, 'confirmed');
+assert.notStrictEqual(turn.workflow.connectivityStatus, 'confirmed', 'a verbal confirmation does not count');
 assert.ok(!turn.allowedActions.includes('updateL3'));
-turn = step(turn.workflow, 'Update lifecycleActions for this tenant', { trust: 'persisted' });
-assert.strictEqual(turn.phase, 'L3_PREVIEW', '7 L3 shows a preview after connectivity');
-assert.strictEqual(turn.persistedPhase, 'L3_PENDING_APPROVAL');
-assert.ok(turn.allowedActions.includes('previewL3'));
-assert.ok(!turn.allowedActions.includes('updateL3'));
+const physicalAws = JSON.stringify({
+	awsAccountId: '123456789012',
+	roleArn: 'arn:aws:iam::123456789012:role/ReltioLcaInvokerRole',
+	region: 'us-east-1',
+	externalId: 'ext-1',
+});
+turn = step(generated.workflow, 'Update lifecycleActions for this tenant', {
+	trust: 'persisted',
+	physicalConfigText: physicalAws,
+});
+assert.strictEqual(turn.phase, 'L3_UPDATE', '7 physical configuration allows L3 without asking');
+assert.ok(turn.allowedActions.includes('updateL3'));
+assert.strictEqual(turn.consoleUpdate, undefined);
 const earlyYes = step(createWorkflow({
 	...turn.workflow,
 	connectivityStatus: 'unknown',
 	phase: 'L3_PENDING_APPROVAL',
 	state: 'TENANT_CONFIG_PENDING',
+	l3UpdateApproved: false,
 }), 'yes', { trust: 'persisted' });
-assert.ok(!earlyYes.allowedActions.includes('updateL3'), 'L3 yes without connectivity does not apply');
-turn = step(turn.workflow, 'yes', { trust: 'persisted' });
-assert.strictEqual(turn.phase, 'L3_UPDATE', '8 approval applies L3');
-assert.ok(turn.allowedActions.includes('updateL3'));
+assert.ok(!earlyYes.allowedActions.includes('updateL3'), 'L3 yes without physical configuration does not apply');
 
 const leaked = 'aws_secret_access_key=AKIAIOSFODNN7EXAMPLE';
 turn = step(turn.workflow, leaked, { trust: 'persisted' });
@@ -681,10 +699,9 @@ const again = step(done, againText, {
 	claimed: { targetType: 'Organization', hook: 'beforeSave', attributesRead: ['Name'] },
 });
 assert.strictEqual(again.workflow.targetType, 'Organization', 'a new request replaces the stored type');
-assert.strictEqual(again.workflow.objectAttributesConfirmed, false);
-assert.strictEqual(again.workflow.designApproved, false);
-assert.ok(!again.allowedActions.includes('generate'), 'a completed project does not skip confirmation');
-assert.strictEqual(again.writeFiles, false);
+assert.strictEqual(again.phase, 'GENERATE', 'a new request with known facts moves on');
+assert.ok(again.allowedActions.includes('generate'));
+assert.strictEqual(again.writeFiles, true);
 
 const nearText = 'Create a beforeSave LCA for entity type CourseTopics. Read Title.';
 const near = step(createWorkflow({ intent: 'generate', state: 'COLLECT_REQUIREMENTS', phase: 'REQUIREMENT_GATHERING' }), nearText, {
@@ -781,5 +798,28 @@ const nativeL3 = gate(createWorkflow({
 	attributesSpecified: true,
 }), 'updateL3');
 assert.strictEqual(nativeL3.allowed, true, 'native LCA does not wait on cloud connectivity');
+
+const placeholderEnv = missingEnvKeys('AWS_REGION=us-east-1\nAWS_PROFILE=your-profile\n', 'aws');
+assert.ok(placeholderEnv.includes('AWS_PROFILE or AWS_ACCESS_KEY_ID'), 'sample profile values are not credentials');
+const filledEnv = missingEnvKeys('AWS_REGION=us-east-1\nAWS_PROFILE=dev\n', 'aws');
+assert.deepStrictEqual(filledEnv, []);
+const temporary = missingEnvKeys('AWS_REGION=us-east-1\nAWS_ACCESS_KEY_ID=ASIA0000000000000000\nAWS_SECRET_ACCESS_KEY=secret\n', 'aws');
+assert.ok(temporary.includes('AWS_SESSION_TOKEN'));
+assert.ok(!JSON.stringify(temporary).includes('ASIA0000000000000000'));
+
+const expired = lca.deployFailureGuidance('ExpiredToken: The security token included in the request is expired. aws_secret_access_key=AKIAIOSFODNN7EXAMPLE');
+assert.match(expired.nextAction, /expired/i);
+assert.match(expired.nextAction, /\.env/);
+assert.ok(!expired.error.includes('AKIAIOSFODNN7EXAMPLE'));
+const denied = lca.deployFailureGuidance('AccessDeniedException: User is not authorized to perform lambda:UpdateFunctionCode');
+assert.match(denied.nextAction, /permission/i);
+
+const { assessPhysicalAccess } = lca;
+const gcpMissing = assessPhysicalAccess('{"projectId":"demo"}', 'gcp');
+assert.strictEqual(gcpMissing.present, false);
+assert.match(gcpMissing.consoleUpdate, /service account/i);
+const gcpReady = assessPhysicalAccess('{"projectId":"demo","serviceAccountEmail":"reltio@demo.iam.gserviceaccount.com"}', 'gcp');
+assert.strictEqual(gcpReady.present, true);
+assert.strictEqual(gcpReady.consoleUpdate, undefined);
 
 console.log('test-lca-workflow: OK');

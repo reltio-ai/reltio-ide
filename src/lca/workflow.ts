@@ -1,7 +1,10 @@
+import type { CloudProvider } from './cloud';
+import { missingEnvKeys } from './envCheck';
 import { ALL_LCA_HOOKS } from './hooks';
 import { classifyTurn, isExplicitApproval, type LcaIntent } from './intent';
 import type { ProjectContext } from './context';
 import { listObjectTypes, resolveAttributes, resolveObjectType } from './l3Lookup';
+import { assessPhysicalAccess } from './physicalConfig';
 import { TENANT_CONNECTION_MESSAGE } from './tenantGate';
 
 export type WorkflowState =
@@ -315,6 +318,38 @@ export function credentialPrompt(): string {
 	return 'What environment variable name holds the credential reference? Do not paste the secret value.';
 }
 
+const DEPLOY_CAVEAT = /\b(but|however|instead|production|first|wait|explain|don't|do not|not yet|hold on)\b/i;
+
+/** Yes to the deploy question that is already waiting. A change of target is not approval. */
+export function affirmsPendingDeploy(text: string): boolean {
+	const value = text.trim();
+	if (!value || /[?]/.test(value) || DEPLOY_CAVEAT.test(value)) return false;
+	if (isExplicitApproval(value)) return true;
+	return /^(yes|yep|yeah|ok|okay|go ahead|proceed)\b.*\b(deploy|publish)\b/i.test(value);
+}
+
+/**
+ * Deploy tool failures. The returned text is safe to show: secret values are removed.
+ * `nextAction` is the single follow-up. Do not update L3 after a failed deploy.
+ */
+export function deployFailureGuidance(errorText: string): { error: string; nextAction: string } {
+	const error = redactSecrets(errorText).slice(0, 2000);
+	const lower = error.toLowerCase();
+	let nextAction: string;
+	if (/expiredtoken|token has expired|requestexpired|security token.*expired|credentials?.*expired/.test(lower)) {
+		nextAction = 'The cloud credentials in .env are expired. Refresh them in .env, then deploy again. Do not paste the secret values here.';
+	} else if (/invalidclienttokenid|unrecognizedclient|signaturedoesnotmatch|authfailure|invalid access key|security token included in the request is invalid/.test(lower)) {
+		nextAction = 'The cloud credentials in .env were rejected. Replace the access key, profile, or session token in .env, then deploy again. Do not paste the secret values here.';
+	} else if (/accessdenied|not authorized|unauthorizedoperation|status(?:\s+code)?:\s*403|\b403\b/.test(lower)) {
+		nextAction = 'The identity in .env does not have permission for this deploy. Grant the permission named in the error, then deploy again.';
+	} else if (/resourcenotfound|function not found|resource not found|does not exist/.test(lower)) {
+		nextAction = 'The cloud function was not found. Create it in the target account and region, then deploy again.';
+	} else {
+		nextAction = 'Fix the error above, then deploy again. Do not update tenant L3 until the deploy succeeds.';
+	}
+	return { error, nextAction };
+}
+
 export function actionSucceeded(toolResult?: { ok?: boolean; exitCode?: number; error?: string } | null): boolean {
 	if (!toolResult || toolResult.error) return false;
 	if (toolResult.ok === true) return true;
@@ -395,6 +430,10 @@ export interface StepResult {
 	message: string;
 	questions?: string[];
 	redacted?: boolean;
+	/** Cloud access details missing from tenant physical configuration. Omitted when they are present. */
+	consoleUpdate?: string;
+	/** .env key names that are missing. Values are never included. */
+	missingCredentials?: string[];
 }
 
 export interface StepOptions {
@@ -407,6 +446,10 @@ export interface StepOptions {
 	l3Model?: Record<string, unknown>;
 	/** `false` stops tenant-object work until a tenant L3 is connected. Omit to skip the check. */
 	tenantConnected?: boolean;
+	/** Raw `.env` text. Values are checked locally and never copied into the result. */
+	envText?: string;
+	/** `undefined` means the tenant physical configuration file was not found. */
+	physicalConfigText?: string;
 }
 
 function finish(workflow: LcaWorkflow, phase: LcaPhase, persistedPhase: LcaPhase, allowedActions: AllowedAction[], message: string, questions?: string[]): StepResult {
@@ -457,18 +500,8 @@ function connectivityReady(workflow: LcaWorkflow): boolean {
 	return workflow.connectivityStatus === 'confirmed' || workflow.connectivityStatus === 'not-required';
 }
 
-function noteConnectivity(workflow: LcaWorkflow, text: string): { workflow: LcaWorkflow; noted: boolean } {
-	if (!/\bconnectivity\b/i.test(text)) return { workflow, noted: false };
-	if (/\b(not required|isn't required|is not required)\b/i.test(text)) {
-		return { workflow: { ...workflow, connectivityStatus: 'not-required' }, noted: true };
-	}
-	if (/\b(missing|not configured|isn't configured|not set up|isn't set up)\b/i.test(text)) {
-		return { workflow: { ...workflow, connectivityStatus: 'missing' }, noted: true };
-	}
-	if (/\b(confirmed|already|configured|in place|established)\b/i.test(text)) {
-		return { workflow: { ...workflow, connectivityStatus: 'confirmed' }, noted: true };
-	}
-	return { workflow, noted: false };
+function cloudOf(workflow: LcaWorkflow): CloudProvider {
+	return workflow.cloudProvider ?? 'aws';
 }
 
 function gapQuestions(gaps: RequirementGap[], model?: Record<string, unknown>): string[] {
@@ -536,9 +569,106 @@ function gathering(workflow: LcaWorkflow, questions: string[], message: string):
 	return finish(next, 'REQUIREMENT_GATHERING', 'REQUIREMENT_GATHERING', ['ask'], message, questions);
 }
 
+const GENERATE_MESSAGE = 'The object type, hook, and attributes are already known. Generate Java now. After the files are written, ask whether to deploy this version. Do not deploy or edit L3 in this turn.';
+
+/** Facts are present. Write code in this turn, then the only question is deploy. */
+function readyToGenerate(workflow: LcaWorkflow): StepResult {
+	const approved = markDesignApproved(markObjectAttributesConfirmed({
+		...workflow,
+		cloudProvider: workflow.cloudProvider ?? 'aws',
+		objectAttributesConfirmed: true,
+		designApproved: true,
+	}));
+	const pending = markDeploymentPending(approved, false);
+	return finish(pending, 'GENERATE', 'DEPLOY_PENDING_APPROVAL', ['generate'], GENERATE_MESSAGE);
+}
+
+function authorizeDeploy(workflow: LcaWorkflow, options: StepOptions): StepResult {
+	const provider = cloudOf(workflow);
+	const next: LcaWorkflow = { ...workflow, cloudProvider: provider };
+	if (provider !== 'native') {
+		const missing = missingEnvKeys(options.envText ?? '', provider);
+		if (options.envText === undefined || missing.length > 0) {
+			const keys = missing.length > 0 ? missing : missingEnvKeys('', provider);
+			const why = options.envText === undefined
+				? 'No .env file was found.'
+				: 'The .env file does not have the cloud access details for this deploy.';
+			const result = finish(
+				markDeploymentPending(next, false),
+				'DEPLOY_PENDING_APPROVAL',
+				'DEPLOY_PENDING_APPROVAL',
+				['ask'],
+				`${why} Add the missing keys, then say deploy again. Do not paste secret values. Missing: ${keys.join('; ')}.`,
+				keys,
+			);
+			result.missingCredentials = keys;
+			return result;
+		}
+	}
+	const physical = assessPhysicalAccess(options.physicalConfigText, provider);
+	const approved = markDeploymentPending(
+		{
+			...next,
+			connectivityStatus: physical.present ? 'confirmed' : 'missing',
+			l3UpdateApproved: true,
+		},
+		true,
+	);
+	const result = finish(
+		approved,
+		'DEPLOY',
+		'DEPLOY',
+		['deploy', 'updateL3'],
+		physical.present
+			? 'Deployment is approved. Use the credentials in .env. If the deploy tool fails, report the error and the next action, and do not update L3. If it succeeds, apply lifecycleActions immediately without asking, then summarize what was registered. Do not mention cloud connectivity.'
+			: 'Deployment is approved. Use the credentials in .env. If the deploy tool fails, report the error and the next action, and do not update L3. If it succeeds, apply lifecycleActions immediately without asking, then summarize what was registered. Also include the console steps for the missing physical-configuration details. Do not ask the user to confirm them.',
+	);
+	if (!physical.present) result.consoleUpdate = physical.consoleUpdate;
+	return result;
+}
+
+/** Apply lifecycleActions when physical access details exist. Otherwise show the console steps and do not ask. */
+function authorizeL3(workflow: LcaWorkflow, options: StepOptions): StepResult {
+	const provider = cloudOf(workflow);
+	const physical = assessPhysicalAccess(options.physicalConfigText, provider);
+	if (!physical.present) {
+		const result = finish(
+			{
+				...workflow,
+				cloudProvider: provider,
+				state: 'CONNECTIVITY_PENDING',
+				connectivityStatus: 'missing',
+				l3UpdateApproved: false,
+			},
+			'TEST',
+			'TEST',
+			['ask'],
+			`${physical.consoleUpdate}\nDo not ask whether this is already configured. Do not edit L3 until these details exist.`,
+		);
+		result.consoleUpdate = physical.consoleUpdate;
+		return result;
+	}
+	const next: LcaWorkflow = {
+		...workflow,
+		cloudProvider: provider,
+		state: 'TENANT_CONFIG_PENDING',
+		phase: 'L3_UPDATE',
+		connectivityStatus: 'confirmed',
+		l3UpdateApproved: true,
+	};
+	return finish(
+		next,
+		'L3_UPDATE',
+		'L3_UPDATE',
+		['updateL3'],
+		'Cloud access details are already in the tenant physical configuration. Apply lifecycleActions now without asking. Then tell the user what was registered. Do not mention the connectivity check.',
+	);
+}
+
 /**
  * One user turn. The returned `allowedActions` are the only tools that may run.
- * Generation, deploy, and L3 apply are never allowed on the same turn that requests them.
+ * Deploy and L3 apply stay off the turn that only asks to generate code.
+ * After an explicit deploy yes, L3 apply is allowed only once the deploy tool succeeds.
  */
 export function step(workflow: LcaWorkflow, userText: string, options: StepOptions = {}): StepResult {
 	if (containsSecretValue(userText)) {
@@ -564,22 +694,25 @@ export function step(workflow: LcaWorkflow, userText: string, options: StepOptio
 			l3UpdateApproved: false,
 			state: 'COLLECT_REQUIREMENTS',
 			phase: 'REQUIREMENT_GATHERING',
+			targetType: undefined,
+			targetTypeUri: undefined,
+			targetKind: undefined,
+			hook: undefined,
+			additionalHooks: undefined,
+			attributesRead: undefined,
+			attributesAdded: undefined,
+			attributesUpdated: undefined,
+			attributesSpecified: false,
 		};
 	}
 
 	const extracted = extractFacts(userText, current, options.claimed);
 	current = extracted.workflow;
-	const noted = noteConnectivity(current, userText);
-	current = noted.workflow;
 	const act = classifyTurn(userText);
 	const pendingDeploy = current.phase === 'DEPLOY_PENDING_APPROVAL';
 	const pendingL3 = current.phase === 'L3_PENDING_APPROVAL';
 	const approving = isExplicitApproval(userText);
 	const ambiguousHooks = options.ambiguousHooks ?? extracted.ambiguousHooks;
-
-	if (noted.noted && act !== 'generate' && act !== 'update') {
-		return finish(current, current.phase, current.phase, ['ask'], 'Connectivity status is recorded. Do not deploy or edit L3 in this turn.');
-	}
 
 	if (options.tenantConnected === false) {
 		return finish(
@@ -634,38 +767,18 @@ export function step(workflow: LcaWorkflow, userText: string, options: StepOptio
 		return finish(next, 'TEST', 'TEST', ['test'], 'Guide invocation and testing. Provide a sample request and the expected result. Do not claim the test passed unless a tool result says so. Do not deploy or edit L3.');
 	}
 
-	if ((act === 'approve' || approving) && pendingDeploy) {
-		const next = markDeploymentPending(current, true);
-		return finish(next, 'DEPLOY', 'DEPLOY', ['deploy'], 'Deployment is approved. Run the deploy tool and report only what that tool returns.');
+	if (pendingDeploy && affirmsPendingDeploy(userText)) {
+		return authorizeDeploy(current, options);
 	}
 
 	if ((act === 'approve' || approving) && pendingL3) {
-		if (!connectivityReady(current)) {
-			return finish(
-				{ ...current, state: 'TENANT_CONFIG_PENDING', phase: 'L3_PENDING_APPROVAL', l3UpdateApproved: false },
-				'L3_PREVIEW',
-				'L3_PENDING_APPROVAL',
-				['ask'],
-				'Confirm Reltio-to-cloud connectivity for this tenant before applying lifecycleActions. Do not apply the change in this turn.',
-				['Is Reltio-to-cloud connectivity already configured for this tenant?'],
-			);
-		}
-		const next: LcaWorkflow = { ...current, phase: 'L3_UPDATE', state: 'TENANT_CONFIG_PENDING', l3UpdateApproved: true };
-		return finish(next, 'L3_UPDATE', 'L3_UPDATE', ['updateL3'], 'L3 update is approved. Apply the previewed lifecycleActions change and report only the tool result.');
+		return authorizeL3(current, options);
 	}
 
-	if (current.phase === 'REQUIREMENT_GATHERING' && (act === 'approve' || approving) && act !== 'deploy' && act !== 'update-l3' && current.state === 'DESIGN_PENDING_APPROVAL') {
+	if (current.phase === 'REQUIREMENT_GATHERING' && (act === 'approve' || approving) && act !== 'deploy' && act !== 'update-l3' && (current.state === 'DESIGN_PENDING_APPROVAL' || current.state === 'OBJECT_ATTRIBUTES_PENDING_CONFIRMATION')) {
 		const aligned = alignToL3(current, options.l3Model);
 		if (aligned.blocked) return aligned.blocked;
-		const next = markDesignApproved(aligned.workflow);
-		return finish(next, 'GENERATE', 'GENERATE', ['generate'], 'Design is approved. Generate Java only. Do not deploy or edit L3.');
-	}
-
-	if (current.phase === 'REQUIREMENT_GATHERING' && (act === 'approve' || approving) && act !== 'deploy' && act !== 'update-l3' && current.state === 'OBJECT_ATTRIBUTES_PENDING_CONFIRMATION') {
-		const aligned = alignToL3(current, options.l3Model);
-		if (aligned.blocked) return aligned.blocked;
-		const next = markDesignPending(markObjectAttributesConfirmed(aligned.workflow));
-		return finish(next, 'REQUIREMENT_GATHERING', 'REQUIREMENT_GATHERING', ['ask'], 'Object and attributes are confirmed. Print the LCA implementation design, then wait. Do not write code in this turn.');
+		return readyToGenerate(aligned.workflow);
 	}
 
 	if ((act === 'approve' || approving) && current.designApproved && current.phase === 'GENERATE' && act !== 'deploy' && act !== 'update-l3') {
@@ -679,41 +792,18 @@ export function step(workflow: LcaWorkflow, userText: string, options: StepOptio
 			'DEPLOY_PENDING_APPROVAL',
 			'DEPLOY_PENDING_APPROVAL',
 			['previewDeploy'],
-			'Show the target environment, the deployment configuration, and what will change. Ask for explicit approval. Do not deploy in this turn.',
+			'Ask whether to deploy this version. Do not deploy in this turn.',
 		);
 	}
 
 	if (act === 'update-l3' || act === 'register') {
-		if (!connectivityReady(current)) {
-			return finish(
-				{
-					...current,
-					intent: act === 'register' ? 'register' : current.intent,
-					state: 'CONNECTIVITY_PENDING',
-					l3UpdateApproved: false,
-					deploymentApproved: false,
-				},
-				'TEST',
-				'TEST',
-				['ask'],
-				'Confirm Reltio-to-cloud connectivity for this tenant before previewing or applying lifecycleActions. Do not edit L3.',
-				['Is Reltio-to-cloud connectivity already configured for this tenant?'],
-			);
-		}
-		const next: LcaWorkflow = {
-			...current,
-			intent: act === 'register' ? 'register' : current.intent,
-			state: 'TENANT_CONFIG_PENDING',
-			phase: 'L3_PENDING_APPROVAL',
-			l3UpdateApproved: false,
-			deploymentApproved: false,
-		};
-		return finish(
-			next,
-			'L3_PREVIEW',
-			'L3_PENDING_APPROVAL',
-			['previewL3'],
-			'Show the current lifecycleActions, the proposed diff, and the impact. Ask for explicit approval. Do not apply the change in this turn.',
+		return authorizeL3(
+			{
+				...current,
+				intent: act === 'register' ? 'register' : current.intent,
+				deploymentApproved: false,
+			},
+			options,
 		);
 	}
 
@@ -735,20 +825,9 @@ export function step(workflow: LcaWorkflow, userText: string, options: StepOptio
 		withIntent = aligned.workflow;
 		const gaps = missingRequirements(withIntent);
 		if (gaps.length > 0) {
-			return gathering(withIntent, gapQuestions(gaps, options.l3Model), 'Requirements are incomplete. Ask these questions. Do not guess tenant, hook, attribute, API, or cloud details, and do not write code.');
+			return gathering(withIntent, gapQuestions(gaps, options.l3Model), 'Requirements are incomplete. Ask only for the missing facts. Do not guess tenant, hook, attribute, API, or cloud details, and do not write code.');
 		}
-		if (withIntent.objectAttributesConfirmed && withIntent.state === 'DESIGN_PENDING_APPROVAL') {
-			const next = markDesignPending(withIntent);
-			return finish(next, 'REQUIREMENT_GATHERING', 'REQUIREMENT_GATHERING', ['ask'], 'Print the LCA implementation design and wait for approval. Do not write code.');
-		}
-		const next: LcaWorkflow = {
-			...withIntent,
-			state: 'OBJECT_ATTRIBUTES_PENDING_CONFIRMATION',
-			phase: 'REQUIREMENT_GATHERING',
-			objectAttributesConfirmed: false,
-			designApproved: false,
-		};
-		return finish(next, 'REQUIREMENT_GATHERING', 'REQUIREMENT_GATHERING', ['ask'], 'Show the object type and the attributes to read and to add or update. Wait for an explicit yes. Do not write code.');
+		return readyToGenerate(withIntent);
 	}
 
 	if (approving) {

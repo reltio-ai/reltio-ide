@@ -40,8 +40,11 @@ export {
 	isDisallowedCredentialPrompt,
 	credentialPrompt,
 	actionSucceeded,
+	affirmsPendingDeploy,
+	deployFailureGuidance,
 } from './workflow';
-export { missingEnvKeys, presentEnvKeys, envExample } from './envCheck';
+export { missingEnvKeys, presentEnvKeys, envExample, discoverEnvFile, isPlaceholderEnvValue } from './envCheck';
+export { assessPhysicalAccess, discoverPhysicalConfig, consoleUpdateInstructions } from './physicalConfig';
 export { classifyLcaIntent, classifyTurn, isAdviceQuestion, isExplicitApproval, tenantAwareIntent } from './intent';
 
 export type { CloudProvider, CloudSelection } from './cloud';

@@ -27,6 +27,7 @@
 - [Connect a Git repository](#connect-a-git-repository)
 - [Open and navigate your configuration](#open-and-navigate-your-configuration)
 - [Create configuration objects](#create-configuration-objects)
+- [Ask the LCA agent](#ask-the-lca-agent)
 - [Visualize the ontology](#visualize-the-ontology)
 - [Apply configuration and track changes](#apply-configuration-and-track-changes)
 - [Security and credential handling](#security-and-credential-handling)
@@ -36,7 +37,7 @@
 
 ## What is Reltio IDE
 
-Reltio IDE is an editor extension for building and managing Reltio business configuration (L3) inside VS Code or Cursor. It brings modeling, validation, AI-assisted authoring, and a review step into one place.
+Reltio IDE is an editor extension for building and managing Reltio business configuration (L3) inside VS Code or Cursor. It brings modeling, validation, AI-assisted authoring, a Life Cycle Action (LCA) agent, and a review step into one place.
 
 You open configuration from **either** a live Reltio tenant **or** a Git repository — not both in the same workspace. Choose the source that matches how your team already works, then follow the matching section below.
 
@@ -52,6 +53,7 @@ Reltio IDE supports the people who design and maintain tenant configuration acro
 | **Git repository connectivity** | Connect to your Git repository and fetch the hosted business configuration files. |
 | **Intelligent navigation** | Browse the complete business configuration and navigate among entity, relation, interaction, hierarchy, and other object types. |
 | **AI-assisted authoring** | Create different object types through guided actions or natural-language prompts. |
+| **LCA agent** | Ask about Life Cycle Actions, or generate Java LCA code from your connected configuration. It confirms the type and attributes before writing code, and waits again before deploy or an L3 change. |
 | **Code completion and validation** | Get context-aware suggestions and real-time validation as you edit metadata, so issues surface before deployment, not after. |
 | **Automatic dependency management** | Adding a reference attribute automatically creates the relation type it depends on — no separate setup step. |
 | **Ontology visualization** | Visualize your full business configuration as an interactive diagram of entity types and their relationships. |
@@ -276,6 +278,18 @@ Reltio IDE supports two ways to create configuration objects such as entity type
 
 ---
 
+## Ask the LCA agent
+
+The LCA agent answers questions about Reltio Life Cycle Actions and can generate Java LCA code from your connected configuration. Use it in Cursor. It confirms the type and attributes before writing code, and waits again before deploy or a change to `lifecycleActions`.
+
+1. Open a folder. Connect a tenant or a Git repository when the question is about your own types or attributes.
+2. In Cursor's agent, ask it to follow the Reltio LCA assistant.
+3. Try a prompt such as *"What does the beforeSave hook do?"* or *"Generate a beforeSave LCA for entity type HCP."*
+
+If the assistant is not in the workspace yet, run **Reltio: Resync agent assets (skills, Velocity Packs & LCA knowledge base)** from the Command Palette.
+
+---
+
 ## Visualize the ontology
 
 The ontology view displays a diagram of your local configuration — entity types and the relationships between them. It reflects your local file, not the live tenant configuration, and is for visualization only.
@@ -350,6 +364,7 @@ If the tenant configuration changed since your last fetch, the dialog asks you t
 - **Bearer token:** kept in memory only for the current session and cleared on restart. It is never written to `settings.json` or committed to your workspace.
 - **Git repositories:** clone and private-repository access use Git on your machine and its credential helper. Reltio IDE never asks you to place a git password or token in workspace settings.
 - Reltio IDE never asks you to place a token, client secret, or password directly in workspace settings.
+- **LCA agent:** ask it for an environment-variable or credential-reference name. Do not paste a secret key, password, or token into the chat.
 
 ---
 

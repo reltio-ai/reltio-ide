@@ -20,14 +20,13 @@ export const OBJECT_ATTRIBUTE_CONFIRM_PROMPT = [
 ].join('\n');
 
 export const DESIGN_CONFIRM_PROMPT = [
-	'Please review the design above.',
-	'',
-	'Should I proceed with Java LCA code generation?',
+	'The object type, hook, and attributes above are taken from the connected tenant L3.',
+	'Java generation proceeds from these values. The next question is deployment.',
 ].join('\n');
 
 export const L3_CONFIRM_PROMPT = [
-	'Would you like me to apply this lifecycleActions change',
-	'to the currently connected tenant?',
+	'This lifecycleActions change is applied after a successful deploy.',
+	'It is not a confirmation prompt.',
 ].join('\n');
 
 export function deploymentPrompt(provider: CloudProvider): string {
@@ -56,7 +55,6 @@ export function formatDeploymentPreview(input: {
 		'----------------',
 		bulletList(input.changes),
 		'',
-		'This does not deploy anything.',
 		deploymentPrompt(input.provider),
 		'Reply yes only if I should deploy.',
 	].join('\n');

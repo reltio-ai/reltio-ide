@@ -43,8 +43,36 @@ function run() {
 			const opened = store.open(payload.workingDirectory, payload.tenantId, { disk: true });
 			return lca.gate(lca.workflowFromContext(opened.context), payload.action);
 		}
-		case 'env':
-			return { missing: lca.missingEnvKeys(payload.envText ?? '', payload.provider) };
+		case 'env': {
+			const envPath = payload.envPath || (payload.workingDirectory ? lca.discoverEnvFile(payload.workingDirectory) : undefined);
+			let envText = payload.envText;
+			if (envText === undefined && envPath) {
+				try {
+					envText = fs.readFileSync(envPath, 'utf8');
+				} catch {
+					envText = undefined;
+				}
+			}
+			return {
+				envFound: Boolean(envPath) || typeof payload.envText === 'string',
+				missing: lca.missingEnvKeys(envText ?? '', payload.provider || 'aws'),
+			};
+		}
+		case 'physical': {
+			const configPath = payload.configPath || (payload.workingDirectory ? lca.discoverPhysicalConfig(payload.workingDirectory) : undefined);
+			let configText = payload.configText;
+			if (configText === undefined && configPath) {
+				try {
+					configText = fs.readFileSync(configPath, 'utf8');
+				} catch {
+					configText = undefined;
+				}
+			}
+			const check = lca.assessPhysicalAccess(configText, payload.provider || 'aws');
+			return { present: check.present, consoleUpdate: check.consoleUpdate };
+		}
+		case 'deploy-error':
+			return lca.deployFailureGuidance(payload.error ?? '');
 		case 'intent':
 			return {
 				intent: lca.classifyLcaIntent(payload.text ?? ''),
@@ -94,11 +122,23 @@ function run() {
 			const store = new lca.LcaContextStore();
 			const opened = store.open(payload.workingDirectory, payload.tenantId, { disk: true });
 			const stored = lca.workflowFromContext(opened.context);
+			const envPath = lca.discoverEnvFile(payload.workingDirectory);
+			const physicalPath = lca.discoverPhysicalConfig(payload.workingDirectory);
+			let envText;
+			let physicalConfigText;
+			if (envPath) {
+				try { envText = fs.readFileSync(envPath, 'utf8'); } catch { envText = undefined; }
+			}
+			if (physicalPath) {
+				try { physicalConfigText = fs.readFileSync(physicalPath, 'utf8'); } catch { physicalConfigText = undefined; }
+			}
 			const result = lca.step(stored, text, {
 				trust: 'persisted',
 				claimed: payload.claimed,
 				l3Model,
 				tenantConnected,
+				envText,
+				physicalConfigText,
 			});
 			const patched = { ...opened.context, ...lca.contextPatchFromWorkflow(result.workflow) };
 			store.save(patched, { disk: true });
@@ -122,6 +162,8 @@ function run() {
 					designApproved: result.workflow.designApproved === true,
 					connectivityStatus: result.workflow.connectivityStatus ?? 'unknown',
 				},
+				consoleUpdate: result.consoleUpdate,
+				missingCredentials: result.missingCredentials,
 			};
 		}
 		case 'java':
@@ -165,7 +207,7 @@ function run() {
 		default:
 			return {
 				error: 'Unknown command',
-				commands: ['tenant-gate', 'resolve-type', 'resolve-attributes', 'package', 'cloud', 'hook', 'propose-l3', 'gate', 'env', 'intent', 'step', 'java', 'present-inputs', 'present-design', 'present-diff', 'context-open', 'context-save'],
+				commands: ['tenant-gate', 'resolve-type', 'resolve-attributes', 'package', 'cloud', 'hook', 'propose-l3', 'gate', 'env', 'physical', 'deploy-error', 'intent', 'step', 'java', 'present-inputs', 'present-design', 'present-diff', 'context-open', 'context-save'],
 			};
 	}
 }

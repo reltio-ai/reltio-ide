@@ -378,7 +378,7 @@ assert.match(
 	/code-generation confirmation|attributes the LCA will \*\*read\*\*/i,
 	'demo prompt 2 confirms type and attributes before code',
 );
-assert.match(demoBody, /Do not edit L3|no `lifecycleActions` patch/i, 'demo prompt 2 does not patch L3');
+assert.match(demoBody, /Do not edit L3 until deploy succeeds|apply `lifecycleActions` after a successful deploy/i, 'demo prompt 2 applies L3 only after deploy');
 
 // ---------------------------------------------------------------------------
 // Scenario: Resync command mentions LCA KB; VSIX whitelist includes resources/skills

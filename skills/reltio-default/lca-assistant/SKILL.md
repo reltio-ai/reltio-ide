@@ -1,6 +1,6 @@
 ---
 name: reltio-lca-assistant
-description: Advise on and generate Reltio Life Cycle Action code using the bundled LCA knowledge base and the connected tenant L3. Scope project decisions to the working directory plus tenant. For tenant-object queries, require connected L3. Cross-check named types (HCP, HCO, HasAddress, …) and attributes against that L3; if missing, STOP and wait for the actual name. Questions do not start implementation. Before generating or updating LCA code, confirm object type and attributes, print the design, then wait for approval. Deploy and patch lifecycleActions only after separate later confirmations. Run the workflow step gate and obey allowedActions. Never ask for secret values.
+description: Advise on and generate Reltio Life Cycle Action code using the bundled LCA knowledge base and the connected tenant L3. Scope project decisions to the working directory plus tenant. For tenant-object queries, require connected L3. Cross-check named types (HCP, HCO, HasAddress, …) and attributes against that L3; if missing, STOP and wait for the actual name. Questions do not start implementation. When the type, hook, and attributes already exact-match L3, generate without asking. Check .env and tenant physical configuration instead of asking the user to confirm them. After code is written, ask only whether to deploy. On yes, deploy with the .env credentials. After a successful deploy, update lifecycleActions without another confirmation. Run the workflow step gate and obey allowedActions. Never ask for secret values.
 ---
 
 # LCA assistant
@@ -11,7 +11,7 @@ Normative product context: `openspec/changes/lca-assistant/design.md` (D2, D5, D
 
 The user asks about **Life Cycle Actions**: hook choice, architecture, config, troubleshooting, LCA vs DVF, or scaffolding an LCA Java/Maven project. For any question about **tenant objects** (entity, relation, or change-request types such as HCP / HCO / HasAddress, attribute names, existing `lifecycleActions`, generate/scaffold an LCA for a named type), the **connected tenant L3** from the Reltio IDE plugin is required as read-only context.
 
-Do not patch L3 until the user confirms the proposed `lifecycleActions` change. Generate LCA code only after object, attribute, and design confirmation. Document further steps for deploy, connectivity, and verification.
+Do not patch L3 until the cloud function deploy succeeds. When the type, hook, and attributes already exact-match L3, generate without a confirmation question. After a successful deploy, apply `lifecycleActions` and then tell the user what changed. Document further steps for verification.
 
 ## Workflow phases
 
@@ -20,26 +20,29 @@ Every turn starts with `node scripts/lca-agent.cjs step` (compile first). Pass `
 | Phase | When | This turn may | This turn must not |
 |---|---|---|---|
 | `ASK` | Questions about hooks, connectivity, configuration, syntax, or whether an LCA is appropriate | Answer from the KB | Generate, deploy, edit L3, or treat the question as a build request |
-| `REQUIREMENT_GATHERING` | The user asked to build or update an LCA and type, hook, or attributes are missing or unconfirmed | Ask the questions in `questions`, then show object/attribute confirmation and the design | Guess names, write source, deploy, or edit L3 |
-| `GENERATE` | Design was approved on an earlier turn | Write Java, tests, Maven, sample payloads, and docs | Deploy, claim tests passed, or edit L3 |
-| `DEPLOY_PENDING_APPROVAL` | The user asked to deploy | Show target, configuration, and impact, then ask for approval | Deploy |
-| `DEPLOY` | A later message explicitly approved the preview | Run the deploy tool | Claim success unless the tool result says so |
+| `REQUIREMENT_GATHERING` | The user asked to build or update an LCA and the type, hook, or attributes are missing or not an exact L3 match | Ask only for the missing fact | Guess names, write source, deploy, or edit L3 |
+| `GENERATE` | The type, hook, and attributes are already known | Write Java, tests, Maven, sample payloads, and docs, then ask whether to deploy | Deploy, claim tests passed, or edit L3 |
+| `DEPLOY_PENDING_APPROVAL` | Code exists and deploy has not been accepted | Ask once whether to deploy. If `.env` is missing details, name the missing keys instead | Deploy, or ask the user to confirm credentials that are already in `.env` |
+| `DEPLOY` | The user said yes to deploy and `.env` has the cloud access details | Deploy with those credentials. If the tool fails, show the error and the next action. If it succeeds, update L3 | Claim success unless the tool result says so, or update L3 after a failed deploy |
 | `TEST` | The user wants invocation or troubleshooting | Give a sample request, expected result, and log checks | Claim the test passed unless a tool result says so |
-| `L3_PREVIEW` | The user asked to link or change `lifecycleActions` | Show the current config, the diff, and the impact | Apply it |
-| `L3_PENDING_APPROVAL` | The preview was shown and saved | Wait for an explicit yes | Apply it |
-| `L3_UPDATE` | A later message approved that preview | Apply only the previewed change | Invent a different patch |
-| `COMPLETE` | The approved L3 change was applied | Summarize the tool result | Start a new deploy or L3 edit |
+| `L3_PREVIEW` | A direct registration was requested and physical configuration is still missing | Show the console fields to add | Apply L3, or ask whether connectivity is already configured |
+| `L3_PENDING_APPROVAL` | An older session was left on this phase | Re-check physical configuration. If the details exist, apply L3 | Ask for another yes when the details are already present |
+| `L3_UPDATE` | Deploy succeeded, or a direct registration has physical configuration already | Apply the `lifecycleActions` change, then say what was registered | Invent a different patch, or ask for confirmation first |
+| `COMPLETE` | The L3 change was applied | Summarize what was registered. Mention physical configuration only when its cloud access details are missing | Start a new deploy or L3 edit |
 
 Rules:
 
 - A mention of LCA is not a request to build one. Questions stay in `ASK`.
 - Missing or ambiguous type, hook, or attributes: ask. Never invent tenant, hook, attribute, API, or cloud-account details. An omitted cloud **provider** is AWS Lambda and must be visible in the design before code is written. Do not invent regions, account ids, function ARNs, or credentials.
 - Generation is not execution. Writing files is not deploying and not an L3 edit.
-- A new generate or update request repeats object, attribute, and design confirmation, even when an earlier design was approved. Do not reuse that approval.
-- Approval is a direct yes to the pending question. "Yes, but…", a question, or a request to deploy or edit L3 is not approval of the design.
-- Deployment requires a later explicit approval. L3 changes require connectivity confirmed on an earlier turn, a preview, and an explicit approval on a later turn. `step` will not return `updateL3` before that.
+- A new generate or update request checks L3 again. If the type, hook, and attributes are already an exact match, generate. Ask only for what is missing.
+- Approval is a direct yes to the pending deploy question. "Yes, but…", a question, or a change of target is not approval.
+- Deploy only after an explicit yes. Before deploying, read `.env`. If the file exists and the cloud access details are filled in, do not ask the user to confirm them. If the file or a required key is missing, name the missing keys and stop. Do not deploy, and do not paste or repeat secret values.
+- If `step` returns `deploy` and `updateL3` together, run deploy first. Apply `updateL3` only when the deploy tool succeeds. On failure, show `deployFailureGuidance`: the redacted error and one next action (refresh expired credentials, replace rejected credentials, grant the missing permission, or create the missing function). Do not update L3 after a failed deploy.
+- After a successful deploy, apply `lifecycleActions` immediately. Then tell the user the tenant, object type, hook, and action value that was added. Preserve existing actions and order, skip duplicates, and reject invalid hooks. Do not ask for permission to write L3.
+- Check the tenant physical configuration for this cloud's access details. If they are present, do not mention the check and do not ask the user to confirm connectivity. If they are missing, include `consoleUpdate` in the summary: the Reltio Console fields to set. That is not a question.
 - If `step` says a type or attribute is not an exact L3 match, the entire reply is that clarification. Do not pick a similar type.
-- Do not skip a phase. A new question leaves the pending deploy or L3 approval; do not resume it until the user asks again. A question does not clear a pending object or design confirmation: after the answer, a later yes still applies to that confirmation.
+- Do not ask a second question in the same turn. One missing fact, the deploy yes/no, or the console steps — whichever single gap is actually blocking. A new question leaves the pending deploy; do not resume it until the user asks again. A question does not clear a pending object or design confirmation: after the answer, a later yes still applies to that confirmation.
 - Never request a secret key, password, access token, API secret, private key, client secret, or credential value. Ask for an environment variable name, a property name, or the name of an already configured credential reference. If a secret is pasted, do not repeat it, store it, log it, or put it in code.
 - `context-save` cannot set phase or approvals. Only `step` can.
 
@@ -55,7 +58,7 @@ Ask Cursor to follow this playbook, or `@`-reference those paths. Optional team 
 **Sample prompts**
 
 1. What does the `beforeSave` hook do, and when should I use it?
-2. Using our connected tenant L3, generate a `beforeSave` LCA for entity type \<Name\> for enrichment — use real attribute URIs only. Confirm the type and attributes with me before writing code. Do not edit L3; include further-steps docs and the suggested `lifecycleActions` JSON.
+2. Using our connected tenant L3, generate a `beforeSave` LCA for entity type \<Name\> for enrichment — use real attribute URIs only. If the type and attributes match L3, write the code and ask only whether to deploy. Do not patch L3 until the deploy succeeds.
 3. Scaffold a Maven LCA project for that action into folder \<path\> (confirm before writing).
 4. Generate an LCA for entity type `CourseTopics` (or `HCP` / relation `HasAddress`). If that name is not an exact L3 match, **stop**, suggest close types, and wait for me to confirm the actual name before writing any LCA.
 
@@ -69,10 +72,10 @@ Ask Cursor to follow this playbook, or `@`-reference those paths. Optional team 
 
 | Context | Behavior |
 |---------|----------|
-| Tenant L3 connected (`*.reltio.tenant/**/L3.reltio.json`) | **L3-first**: inventory types/attributes; resolve names against L3. If a named tenant/type/attribute is **not an exact match**, **stop this turn**: suggest close L3 names, wait for the user to **confirm the actual name**, then continue. Never silently use a similar type. Do not patch L3 until the user confirms the `lifecycleActions` diff. |
+| Tenant L3 connected (`*.reltio.tenant/**/L3.reltio.json`) | **L3-first**: inventory types/attributes; resolve names against L3. If a named tenant/type/attribute is **not an exact match**, **stop this turn**: suggest close L3 names, wait for the user to **confirm the actual name**, then continue. Never silently use a similar type. Do not patch L3 until the cloud function deploy succeeds. |
 | Plugin not connected to any tenant (no `*.reltio.tenant/` or no fetched L3) **and** the query is about tenant objects | **Stop.** Ask the user to connect a tenant in the Reltio IDE plugin (see Tenant L3 gate). Do not invent type or attribute URIs. Do not substitute Velocity Packs or sample JSON for this tenant. |
 | Generic LCA knowledge only (hooks, architecture, LCA vs DVF, ops) | Answer from the KB. L3 is optional. |
-| Java/Maven only (project present, tenant L3 connected) | Ground in L3. Write Java only in the current working directory. A different folder is opt-in: confirm target folder before writing elsewhere. Do not patch L3 until the L3 confirmation gate. |
+| Java/Maven only (project present, tenant L3 connected) | Ground in L3. Write Java only in the current working directory. A different folder is opt-in: confirm target folder before writing elsewhere. Do not patch L3 until the cloud function deploy succeeds. |
 
 ## Tenant L3 gate
 
@@ -124,35 +127,17 @@ If the user omitted a required name (e.g. “generate a beforeSave LCA” with n
 
 This gate applies **only** when the user asks to **generate or update LCA code** (new class, edit existing LCA Java, or opt-in Maven scaffold). Conceptual answers (what a hook does, LCA vs DVF, troubleshooting without code) skip this step.
 
-After names resolve to exact L3 objects, and **before writing or changing any LCA source**, send a confirmation and **wait**. That reply must not include generated Java/XML.
+If the object type, hook, and attributes already exact-match the connected L3, do not ask. Print the design as information and write the Java in that turn. The design includes:
 
-Show:
-
-| Confirm | Value (from connected L3 only) |
+| Shown | Value (from connected L3 only) |
 |---------|--------------------------------|
 | **Object type** | Entity type **or** relation type (or DCR type): `label` + `uri` |
 | **Attributes to read** | Name + URI the LCA will read |
 | **Attributes to add/update** | Name + URI the LCA will set, add, or change. Use `none` if read-only. |
 
-Ask, and wait:
+The design also includes working directory, tenant, hook, **Language: Java**, cloud, behavior, `com.reltio.lca…` package, cloud function, and expected registration. After the files are written, ask only whether to deploy.
 
-```text
-Please confirm that the object type and attributes above are correct.
-
-Should I use these values for the LCA implementation?
-```
-
-Only after that yes, print the full **LCA Implementation Design** (working directory, tenant, object, hook, **Language: Java**, cloud, attributes, behavior, `com.reltio.lca…` package, cloud function, expected registration). Then ask, and wait:
-
-```text
-Please review the design above.
-
-Should I proceed with Java LCA code generation?
-```
-
-Do not ask for design approval before that design is in the reply. Proceed with Java generation **only after** an explicit yes to the design (or a corrected list that still exact-matches L3). If the user changes a name, re-run Resolve named L3 objects, show the object and attributes again, then the design again.
-
-Do not skip this because the type already exact-matched. Near-miss confirmation and this generation confirmation are different: missing name → pick the real type; code gen → confirm type + read/write attributes.
+Ask before writing code only when a required name is missing or not an exact L3 match. Near-miss confirmation and generation are different: missing name → pick the real type; known names → write the code.
 
 ## Procedure
 
@@ -161,21 +146,21 @@ Do not skip this because the type already exact-matched. Near-miss confirmation 
 3. **Resolve named L3 objects** — Exact-match tenant / entity type / relation type / DCR type / attribute names against the connected L3. If a name is missing or only a near-miss (e.g. `CourseTopics` vs `Course`, `HasAAddress` vs `HasAddress`), **stop this turn**: suggest L3 options, wait for the user to **confirm the actual name**. Do not generate LCA code until they confirm.
 4. **LCA vs DVF** — Resolve via KB-03 internally. Narrate the comparison only if the user asks or the choice is borderline. Answer in one context (LCA-only or DVF-only) otherwise.
 5. **Clarify remaining inputs** — Trigger and crosswalk when relevant, only after type and attributes resolve in L3. If the user did not name a hook, ask. Do not infer one from an earlier question. If cloud is omitted, default to AWS Lambda (`LifeCycleActionHandler`) and show that default in the design. Honor an explicit AWS, GCP (`LifeCycleGoogleFunction`), Azure (`LifeCycleAzureFunction`), or Native (`LifeCycleActionBase`) request. Do not stop requirement collection only to ask for a cloud provider. Do not invent regions, accounts, or credentials.
-6. **Propose** — After the user names the hook, show the action name format (`MyAction`, `Reltio/…`, `Lambda/BinaryJSON/<function-name>`, `googlefunction/BinaryJSON/…`, Azure HTTPS URL). Do not write `lifecycleActions` into L3 before the L3 confirmation gate. AWS registration uses the deployed function name, never the Java class name.
-7. **Code-generation confirmation** — If generating or updating LCA code, show object type name (entity or relation) plus attributes to **read** and attributes to **add/update**. Wait for explicit confirmation. Do not write source in that turn.
-8. **Print the design, then wait** — Only after object and attribute confirmation. The design must include Language: Java and the selected cloud (AWS Lambda when the user did not name one). Ask whether to proceed with Java LCA code generation. Do not write source in that turn.
-9. **Generate or update code** — Only after design approval, and only when `allowedActions` includes `generate`. Write Java in the current working directory (source, tests, fixtures, Maven, `.env.example` with placeholders, README). Confirm target folder only when the user asks for a different folder; that Maven scaffold is **opt-in**. Follow KB-02 patterns and KB-06 Maven templates. Do not overwrite unrelated repos. State that **compile may require** access to Reltio Maven repos (`repo-dev.reltio.com`). Never embed secrets/tokens/PII (KB-04). Refuse Python, TypeScript, JavaScript, Kotlin, Groovy, and C# for the LCA class. Do not deploy, patch L3, or claim that tests passed in this turn.
-10. **Further steps, one gate at a time** — After tests pass, ask before deploy (`Would you like me to deploy this version to <cloud>?`). Do not deploy on generation success. Then verify Reltio-to-cloud connectivity for this tenant (reuse it only when it is already confirmed for this directory and tenant). Then show the current and proposed `lifecycleActions`, preserve existing actions and order, skip duplicates, and reject invalid hooks. Do not patch L3 until the user confirms. Apply only after an explicit yes, reload L3, and refresh the Tree View. Tree View is read-only: one `lifecycleActions` leaf, no hook children, no add/edit/delete from the tree. A new code change, including a new hook, repeats object, design, deploy, and L3 confirmations. Direct registration of an already deployed action skips Java generation. Validation-only rules prefer DVF and do not generate Java.
+6. **Propose** — When the hook is known, use the action name format (`MyAction`, `Reltio/…`, `Lambda/BinaryJSON/<function-name>`, `googlefunction/BinaryJSON/…`, Azure HTTPS URL). Do not write `lifecycleActions` into L3 before the deploy succeeds. AWS registration uses the deployed function name, never the Java class name.
+7. **Code-generation confirmation** — If the object type and the attributes to **read** and to **add/update** are already an exact L3 match, do not ask. Ask only for a missing type, hook, or attribute.
+8. **Print the design with the code** — The design must include Language: Java and the selected cloud (AWS Lambda when the user did not name one). Do not wait for a second approval before writing source.
+9. **Generate or update code** — When `allowedActions` includes `generate`. Write Java in the current working directory (source, tests, fixtures, Maven, `.env.example` with placeholders, README). Confirm target folder only when the user asks for a different folder; that Maven scaffold is **opt-in**. Follow KB-02 patterns and KB-06 Maven templates. Do not overwrite unrelated repos. State that **compile may require** access to Reltio Maven repos (`repo-dev.reltio.com`). Never embed secrets/tokens/PII (KB-04). Refuse Python, TypeScript, JavaScript, Kotlin, Groovy, and C# for the LCA class. Do not deploy or patch L3 in this turn. End by asking whether to deploy.
+10. **Deploy, then L3** — Ask once: `Would you like me to deploy this version to <cloud>?`. On yes, read `.env` for that cloud (`AWS_REGION` plus `AWS_PROFILE` or `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`; GCP project and region; Azure function app and resource group). Placeholder values such as `your-profile` count as missing. A temporary AWS access key also needs `AWS_SESSION_TOKEN`. If the details are present, deploy with them and do not ask the user to confirm the file. If deploy fails, give the error and the next action (expired credentials, rejected credentials, missing permission, or missing function) and stop. If deploy succeeds, apply `lifecycleActions`, reload L3, and refresh the Tree View. Tree View is read-only: one `lifecycleActions` leaf, no hook children, no add/edit/delete from the tree. Then say what was registered. Check physical configuration (`physical.json` or `physicalConfig.json` under the tenant folder). AWS needs account id, role ARN, region, and external id. GCP needs project id and service account email. Azure needs Entra ids or an https token URL plus client id. If those details are present, do not mention them. If they are missing, add the console steps to the summary and do not ask a yes/no. Direct registration of an already deployed action skips Java generation and applies L3 when the physical details exist. Validation-only rules prefer DVF and do not generate Java.
 11. **User-facing answers** — Do not expose internal `KB-LCA-##` / file/line refs unless the user asks for sources. You may cite `docs.reltio.com` via KB-05. Surface known ambiguities (KB-01 §7) instead of guessing.
 
 ## Outputs
 
 - Short plan: hook, action name, target L3 type URI, attributes touched, Java package `com.reltio.lca.<customer-or-tenant>.<type>`.
-- LCA source and/or agreed Maven scaffold in the current working directory. Do not patch L3 until the user confirms.
-- Further-steps documentation: deploy prompt, connectivity for this tenant, and the `lifecycleActions` diff. Apply the diff only after confirmation, then refresh Tree View.
+- LCA source and/or agreed Maven scaffold in the current working directory. Do not patch L3 until the cloud function deploy succeeds.
+- Further-steps documentation: the deploy question, and after success the `lifecycleActions` registration that was applied. Refresh Tree View. Include console steps only when physical configuration is missing.
 - If the plugin is not connected to a tenant and the query needs tenant objects: a connect request (setup wizard / add tenant / fetch L3) instead of invented metadata.
 - If a named tenant, type, or attribute is not an exact L3 match: a **confirmation-only** reply (suggestions + available L3 names). No LCA code until the user confirms the actual name.
-- If generating or updating LCA code: a confirmation of object type name and attributes to read vs add/update; print the design; code only after the user confirms.
+- If generating or updating LCA code and the names already match: the design, the Java, and one deploy question. No extra confirmation.
 
 ## Java LCA rules
 
@@ -183,14 +168,14 @@ Generated LCA classes are Java on the selected cloud base class. Null-check `get
 
 ## README
 
-When generating a project, the README covers business purpose, working directory, tenant, object type, hook, Java, attributes read and added/updated, package, build, tests, `.env.example` placeholders, manual deploy, `reltio-ide` deploy, connectivity, `lifecycleActions` registration, verification, logs, and rollback.
+When generating a project, the README covers business purpose, working directory, tenant, object type, hook, Java, attributes read and added/updated, package, build, tests, `.env.example` placeholders, manual deploy, `reltio-ide` deploy, physical configuration, `lifecycleActions` registration, verification, logs, and rollback. Do not tell the reader to confirm credentials that are already in `.env`.
 
 ## Active context
 
-The boundary for project state is `workingDirectory::tenantId`. Do not reuse customer, type, attributes, hooks, package, function name, deployment, connectivity, or approvals from another directory. Same directory with a different tenant reloads L3 and drops tenant-scoped decisions. Same directory and tenant may reuse confirmed context, but a new code change still repeats the confirmation gates. Global default: omitted cloud is AWS.
+The boundary for project state is `workingDirectory::tenantId`. Do not reuse customer, type, attributes, hooks, package, function name, deployment, connectivity, or approvals from another directory. Same directory with a different tenant reloads L3 and drops tenant-scoped decisions. Same directory and tenant may reuse known context. A new code change still resolves names against L3, and it asks only when a name is missing. Global default: omitted cloud is AWS.
 
 Package: `com.reltio.lca.<customerName>.<type>`, else `com.reltio.lca.<tenantId>.<type>`. Normalize segments to lowercase Java identifiers. Never use `com.example.lca`.
 
 Validation-only rules prefer DVF. Do not generate Java for a rule that only checks a value.
 
-Deterministic gates live in `src/lca` (`context`, `workflow`, `hooks`, `packageName`, `lifecycleConfig`). Use them instead of chat memory for tenant connection, hook validity, package names, confirmation state, and `lifecycleActions` diffs.
+Deterministic gates live in `src/lca` (`context`, `workflow`, `hooks`, `packageName`, `lifecycleConfig`, `envCheck`, `physicalConfig`). Use them instead of chat memory for tenant connection, hook validity, package names, `.env` keys, physical configuration, and `lifecycleActions` diffs. `node scripts/lca-agent.cjs env`, `physical`, and `deploy-error` read those checks. They never print secret values.
