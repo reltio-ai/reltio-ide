@@ -136,11 +136,39 @@ export function withDiagramSection(xml: string, section: string): string {
 	);
 	const closing = /<\/(?:[\w.-]+:)?definitions\s*>/.exec(stripped);
 	if (!closing) return stripped;
-	return (
+	return withDiagramNamespaces(
 		stripped.slice(0, closing.index) +
 		`${section}\n` +
-		stripped.slice(closing.index)
+		stripped.slice(closing.index),
 	);
+}
+
+const DIAGRAM_NAMESPACES: ReadonlyArray<readonly [string, string]> = [
+	['bpmndi', 'http://www.omg.org/spec/BPMN/20100524/DI'],
+	['omgdc', 'http://www.omg.org/spec/DD/20100524/DC'],
+	['omgdi', 'http://www.omg.org/spec/DD/20100524/DI'],
+];
+
+/**
+ * Declare `bpmndi`, `omgdc` and `omgdi` on the root `<definitions>` when it does not already bind
+ * those prefixes. An older skeleton carries four declarations, so inserting diagram elements without
+ * this leaves unbound prefixes and the file no longer parses as XML.
+ */
+function withDiagramNamespaces(xml: string): string {
+	const root = /<((?:[\w.-]+:)?definitions)\b([^>]*)>/.exec(xml);
+	if (!root) return xml;
+	const attrs = root[2];
+	const missing = DIAGRAM_NAMESPACES.filter(
+		([prefix]) => !new RegExp(String.raw`\sxmlns:${prefix}\s*=`).test(attrs),
+	);
+	if (missing.length === 0) return xml;
+	const selfClosing = attrs.endsWith('/');
+	const body = (selfClosing ? attrs.slice(0, -1) : attrs).replace(/\s+$/, '');
+	const indent = /\n([ \t]*)xmlns/.exec(body)?.[1];
+	const sep = indent === undefined ? ' ' : `\n${indent}`;
+	const added = missing.map(([prefix, uri]) => `${sep}xmlns:${prefix}="${uri}"`).join('');
+	const open = `<${root[1]}${body}${added}${selfClosing ? ' /' : ''}>`;
+	return xml.slice(0, root.index) + open + xml.slice(root.index + root[0].length);
 }
 
 // ─── Reading an existing diagram ─────────────────────────────────────────────

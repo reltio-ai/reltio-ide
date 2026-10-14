@@ -21,7 +21,7 @@
  *   5.  §10.3 exclusive gateway with no `default`; a `default` naming no flow;
  *       a `default` naming a flow that leaves a different gateway; and a default
  *       flow carrying a condition — the pair Activiti rejects outright.
- *   6.  §10.4 a gateway with fewer than two outgoing flows, and a parallel
+ *   6.  §10.4 a gateway with no outgoing flow or a one-in-one-out pass-through (a join is valid), and a parallel
  *       gateway not being asked for a default it has no concept of.
  *   7.  §10.5 a `userTask` missing either `create` listener, on every task and
  *       not only the first.
@@ -354,6 +354,52 @@ ${LISTENERS.replace(/class="[^"]*"/g, 'class="com.reltio.workflow.activiti.servi
 	const bareHits = findingsFor(selfClosing, 'reltio-bpmn/user-task-listeners');
 	assert.strictEqual(bareHits.length, 1);
 	assert.ok(textAt(selfClosing, bareHits[0]).includes('bare'));
+}
+
+// ── 6b. Joins are valid; dead ends and pass-throughs are not ────────────────
+{
+	const join = `<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <process id="review" name="R" isExecutable="true">
+    <startEvent id="start" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="merge" />
+    <sequenceFlow id="f2" sourceRef="start" targetRef="merge" />
+    <exclusiveGateway id="merge" />
+    <sequenceFlow id="f3" sourceRef="merge" targetRef="end" />
+    <endEvent id="end" />
+  </process>
+</definitions>`;
+	assert.deepStrictEqual(
+		findingsFor(join, undefined, {}).filter(f => /gateway/.test(f.code)), [],
+		'an exclusive join (two in, one out) reports nothing, and gets no missing-default warning',
+	);
+
+	const deadEnd = join.replace('<sequenceFlow id="f3" sourceRef="merge" targetRef="end" />', '');
+	expectOne(deadEnd, 'reltio-bpmn/gateway-outgoing-flows', 'exclusiveGateway id="merge"', {});
+}
+
+// ── 7b. The type listener follows the process kind ──────────────────────────
+{
+	const only = className => `      <extensionElements>
+        <activiti:taskListener event="create"
+          class="com.reltio.workflow.activiti.service.TaskStartEventListener" />
+        <activiti:taskListener event="create" class="${className}" />
+      </extensionElements>`;
+	const DCR = 'com.reltio.workflow.activiti.service.DCRTypeTaskListener';
+	const ENTITY = 'com.reltio.workflow.activiti.service.EntityTypeTaskListener';
+	const hits = (processId, className) => findingsFor(
+		buildFixture({ processId, reviewListeners: className ? only(className) : '' }),
+		'reltio-bpmn/user-task-listeners', { fileProcessId: processId },
+	);
+
+	assert.strictEqual(hits('potentialMatchReview', ENTITY).length, 0, 'entity listener satisfies potentialMatchReview');
+	assert.strictEqual(hits('potentialMatchReview', DCR).length, 1, 'the DCR listener does not satisfy potentialMatchReview');
+	assert.strictEqual(hits('dataChangeRequestReview', DCR).length, 0);
+	assert.strictEqual(hits('dataChangeRequestReview', ENTITY).length, 1, 'the entity listener does not satisfy a DCR review');
+	assert.strictEqual(hits('dataChangeRequestReview', undefined).length, 1);
+	for (const listener of [DCR, ENTITY, 'com.reltio.workflow.activiti.service.RelationTypeTaskListener']) {
+		assert.strictEqual(hits('customReview', listener).length, 0, `any process accepts ${listener}`);
+	}
+	assert.strictEqual(hits('customReview', undefined).length, 1);
 }
 
 // ── 8. §10.6 The class allow-list ───────────────────────────────────────────

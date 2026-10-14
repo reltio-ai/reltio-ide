@@ -64,9 +64,10 @@ export const RELTIO_OOTB_CLASSES: readonly string[] = [
 ];
 
 /**
- * The two `create` listeners every `userTask` must carry (§3). Omitting either
+ * The two `create` listeners a DCR review task must carry (§3). Omitting either
  * produces `errorCode 10044` at runtime — not at deploy, which is what makes it
- * worth flagging in the editor.
+ * worth flagging in the editor. Other process kinds need `TaskStartEventListener`
+ * plus their own type listener; see `missingListeners`.
  */
 export const REQUIRED_USER_TASK_LISTENERS: readonly string[] = [
 	'com.reltio.workflow.activiti.service.TaskStartEventListener',
@@ -272,9 +273,10 @@ function flowEndpointFindings(model: BpmnProcessModel): BpmnFinding[] {
 // ─── §10.3 and §10.4 — gateways ──────────────────────────────────────────────
 
 /**
- * The four gateway rules from §4, three of which Activiti rejects at deploy and
- * one of which — a missing `default` — it accepts and then hangs on forever with
- * no error at all. That last one is the reason this rule set exists.
+  * The gateway rules from §4, most of which Activiti rejects at deploy and one of
+ * which — a missing `default` — it accepts and then hangs on forever with no error
+ * at all. That last one is the reason this rule set exists. A join (several
+ * incoming flows, one outgoing) is valid and is never reported.
  */
 function gatewayFindings(model: BpmnProcessModel): BpmnFinding[] {
 	const findings: BpmnFinding[] = [];
@@ -285,16 +287,33 @@ function gatewayFindings(model: BpmnProcessModel): BpmnFinding[] {
 		const outgoing = model.flows.filter(flow => flow.sourceRef === node.id);
 		const at = { offset: node.offset, length: node.length };
 
-		if (outgoing.length < 2) {
+		const incoming = model.flows.filter(flow => flow.targetRef === node.id);
+
+		// Activiti rejects a gateway nothing leaves, and a pass-through that merely
+		// relays one flow to one flow. A join (several in, one out) is valid: it is how
+		// branches rejoin, and the exclusive form of it chooses nothing so needs no default.
+		if (outgoing.length === 0) {
 			findings.push({
 				...at,
 				severity: 'error',
 				code: 'reltio-bpmn/gateway-outgoing-flows',
 				message:
-					`Gateway "${node.id}" has ${outgoing.length} outgoing flow${outgoing.length === 1 ? '' : 's'}. ` +
-					'Activiti rejects a gateway with fewer than two; connect the elements directly instead.',
+					`Gateway "${node.id}" has 0 outgoing flows. Activiti rejects a gateway with ` +
+					'nowhere to go; connect it onward or remove it.',
+			});
+		} else if (outgoing.length === 1 && incoming.length <= 1) {
+			findings.push({
+				...at,
+				severity: 'error',
+				code: 'reltio-bpmn/gateway-outgoing-flows',
+				message:
+					`Gateway "${node.id}" has 1 outgoing flow and ${incoming.length} incoming flow${incoming.length === 1 ? '' : 's'}, ` +
+					'so it decides nothing. Activiti rejects a pass-through gateway; connect the elements ' +
+					'directly instead (a gateway that joins several incoming flows into one is fine).',
 			});
 		}
+
+		if (outgoing.length < 2) continue;
 
 		// Only the exclusive gateway chooses one branch, so only it needs a
 		// fallback. A parallel gateway takes every branch and has no default.
@@ -355,7 +374,30 @@ function gatewayFindings(model: BpmnProcessModel): BpmnFinding[] {
 	return findings;
 }
 
-// ─── §10.5 — every userTask carries both create listeners ────────────────────
+// ─── §10.5 — every userTask carries its create listeners ─────────────────────
+
+const START_LISTENER = 'com.reltio.workflow.activiti.service.TaskStartEventListener';
+const DCR_TYPE_LISTENER = 'com.reltio.workflow.activiti.service.DCRTypeTaskListener';
+const ENTITY_TYPE_LISTENER = 'com.reltio.workflow.activiti.service.EntityTypeTaskListener';
+const RELATION_TYPE_LISTENER = 'com.reltio.workflow.activiti.service.RelationTypeTaskListener';
+
+/**
+ * What a task still needs, by process kind: a `dataChangeRequestReview` task needs the DCR type
+ * listener, a `potentialMatchReview` task the entity one, and any other process one of the three.
+ * The kind comes from the process id, so a custom id falls back to "one of the three".
+ */
+function missingListeners(present: ReadonlySet<string>, processId: string | undefined): string[] {
+	const missing: string[] = [];
+	if (!present.has(START_LISTENER)) missing.push(START_LISTENER);
+	if (processId === 'dataChangeRequestReview') {
+		if (!present.has(DCR_TYPE_LISTENER)) missing.push(DCR_TYPE_LISTENER);
+	} else if (processId === 'potentialMatchReview') {
+		if (!present.has(ENTITY_TYPE_LISTENER)) missing.push(ENTITY_TYPE_LISTENER);
+	} else if (![DCR_TYPE_LISTENER, ENTITY_TYPE_LISTENER, RELATION_TYPE_LISTENER].some(c => present.has(c))) {
+		missing.push(`one of ${DCR_TYPE_LISTENER}, ${ENTITY_TYPE_LISTENER} or ${RELATION_TYPE_LISTENER}`);
+	}
+	return missing;
+}
 
 function userTaskListenerFindings(model: BpmnProcessModel): BpmnFinding[] {
 	const findings: BpmnFinding[] = [];
@@ -368,7 +410,7 @@ function userTaskListenerFindings(model: BpmnProcessModel): BpmnFinding[] {
 				.filter(listener => listener.event === 'create' && listener.className)
 				.map(listener => listener.className as string),
 		);
-		const missing = REQUIRED_USER_TASK_LISTENERS.filter(required => !present.has(required));
+		const missing = missingListeners(present, model.processId);
 		if (missing.length === 0) continue;
 
 		findings.push({
@@ -377,9 +419,8 @@ function userTaskListenerFindings(model: BpmnProcessModel): BpmnFinding[] {
 			severity: 'error',
 			code: 'reltio-bpmn/user-task-listeners',
 			message:
-				`User task "${node.id}" is missing ${missing.length === 1 ? 'the' : 'both'} required ` +
-				`create listener${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}. ` +
-				'Omitting either produces errorCode 10044 at runtime.',
+				`User task "${node.id}" is missing the required create listener${missing.length === 1 ? '' : 's'}: ` +
+				`${missing.join(' ')}. Omitting it produces errorCode 10044 at runtime.`,
 		});
 	}
 

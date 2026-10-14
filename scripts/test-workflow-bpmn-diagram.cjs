@@ -394,6 +394,55 @@ function disjoint(a, b) {
 	}
 }
 
+// ── 8b. Inserting a section declares the namespaces it uses ─────────────────
+{
+	// An older skeleton has four declarations and no diagram section; inserting DI
+	// without declaring the prefixes left the file unparseable.
+	const sax = require('sax');
+	const parses = xml => {
+		const parser = sax.parser(true, { xmlns: true });
+		let failure;
+		parser.onerror = err => { failure = failure ?? err; parser.resume(); };
+		parser.write(xml).close();
+		return failure;
+	};
+	const older = `<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+             xmlns:activiti="http://activiti.org/bpmn"
+             targetNamespace="http://reltio.com/workflow">
+  <process id="review" name="R" isExecutable="true">
+    <startEvent id="start" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="end" />
+    <endEvent id="end" />
+  </process>
+</definitions>
+`;
+	const model = extractProcessModel(older);
+	const section = renderDiagramSection('review', model, layoutChain(model.nodes, model.flows));
+	const out = withDiagramSection(older, section);
+	for (const [prefix, uri] of [
+		['bpmndi', 'http://www.omg.org/spec/BPMN/20100524/DI'],
+		['omgdc', 'http://www.omg.org/spec/DD/20100524/DC'],
+		['omgdi', 'http://www.omg.org/spec/DD/20100524/DI'],
+	]) {
+		assert.ok(out.includes(`xmlns:${prefix}="${uri}"`), `${prefix} must be declared on the root`);
+	}
+	assert.strictEqual(parses(out), undefined, 'the result must parse with no unbound prefix');
+	// Declared once only, and a second insertion does not add them again.
+	const again = withDiagramSection(out, section);
+	assert.strictEqual(again, out);
+	assert.strictEqual((out.match(/xmlns:bpmndi=/g) || []).length, 1);
+	// A definition that already binds them is left byte-identical in its root.
+	const full = withDiagramSection(BRANCHING, section);
+	assert.strictEqual(
+		(full.match(/xmlns:(bpmndi|omgdc|omgdi)=/g) || []).length,
+		(BRANCHING.match(/xmlns:(bpmndi|omgdc|omgdi)=/g) || []).length || 3,
+	);
+	assert.strictEqual(parses(full), undefined);
+}
+
 // ── 9. Partial DI is incomplete ─────────────────────────────────────────────
 {
 	const model = extractProcessModel(BRANCHING);
