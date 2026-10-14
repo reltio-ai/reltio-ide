@@ -723,7 +723,7 @@
         "label": { "type": "string", "description": "Human-readable label (required)" },
         "scope": { "$ref": "#/$defs/MatchGroupScope" },
         "matchServiceClass": { "type": "string" },
-        "useOvOnly": { "type": "string" },
+        "useOvOnly": { "type": ["boolean", "string"], "description": "Match on operational values only. Boolean is preferred; the string form (\"true\"/\"false\") is accepted because existing configurations use it." },
         "scoreStandalone": { "type": ["string", "number"] },
         "scoreIncremental": { "type": ["string", "number"] },
         "matchMethod": { "$ref": "#/$defs/MatchMethod" },

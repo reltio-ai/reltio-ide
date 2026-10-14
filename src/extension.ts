@@ -82,7 +82,9 @@ import {
 	listLocalHistorySnapshots,
 	writeHistorySnapshot,
 } from './workspace/configurationHistory';
-import { syncReltioAgentAssets } from './workspace/reltioAgentSync';
+import { createModeSyncTrigger, syncReltioAgentAssets, type ReltioAgentSyncReport } from './workspace/reltioAgentSync';
+import { AGENT_SKILLS_SETTING, OVERRIDES_SEGMENTS } from './workspace/agentSkillDiscovery';
+import { MATCH_VERIFICATION_SETTING, registerMatchVerificationBridge } from './workspace/matchVerification';
 import { registerReltioAutoSave } from './workspace/reltioAutoSave';
 import {
 	isGitRepo,
@@ -473,22 +475,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	let workspaceSource: WorkspaceSource = undefined;
 	let fetchConfigFromGitInFlight = false;
-	let agentAssetsSynced = false;
-	/** Deferred until a mode (tenant or git) is actually chosen — syncing eagerly would create `.reltio/`
-	 *  before the user decides, which made a freshly-opened folder look non-empty to `reltio.fetchConfigFromGit`. */
-	function ensureAgentAssetsSynced(): void {
-		if (agentAssetsSynced) return;
-		agentAssetsSynced = true;
-		void syncReltioAgentAssets(context).catch(err => {
-			console.error('Reltio agent asset sync failed:', err);
-		});
+	/** Syncs agent assets when a mode is chosen, and again after the mode is lost and regained. */
+	const syncOnModeChange = createModeSyncTrigger(() => void runAgentAssetSync(false));
+
+	/**
+	 * Syncs agent assets and tells the user when skills could not be installed.
+	 *
+	 * Agents only use a skill they can find, so a silent failure here means an agent improvising
+	 * Reltio configuration without one. Every problem is surfaced with a way to retry.
+	 */
+	async function runAgentAssetSync(force: boolean): Promise<ReltioAgentSyncReport | undefined> {
+		let report: ReltioAgentSyncReport;
+		try {
+			report = await syncReltioAgentAssets(context, { force });
+		} catch (e) {
+			void offerResync(`Reltio agent skills could not be installed: ${(e as Error).message}`);
+			return undefined;
+		}
+		const problems = [
+			...report.conflicts.map(p => `${p} already exists and is not managed by Reltio IDE, so it was left as is`),
+			...report.invalid,
+		];
+		if (problems.length > 0) {
+			void offerResync(`Some Reltio agent skills are unavailable to AI agents: ${problems.join('; ')}.`);
+		}
+		return report;
+	}
+
+	async function offerResync(message: string): Promise<void> {
+		const pick = await vscode.window.showWarningMessage(message, 'Resync Agent Assets');
+		if (pick) await vscode.commands.executeCommand('reltio.resyncAgentAssets');
 	}
 	function setWorkspaceSource(source: WorkspaceSource): void {
 		workspaceSource = source;
 		void publishWorkspaceSourceContext(workspaceSource);
-		if (source !== undefined) {
-			ensureAgentAssetsSynced();
-		}
+		syncOnModeChange(source);
 	}
 
 	/**
@@ -722,22 +743,69 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('reltio.resyncAgentAssets', async () => {
-			try {
-				await vscode.window.withProgress(
-					{
-						location: vscode.ProgressLocation.Notification,
-						title: 'Resyncing Reltio agent assets…',
-					},
-					() => syncReltioAgentAssets(context, { force: true }),
-				);
+			const report = await vscode.window.withProgress(
+				{
+					location: vscode.ProgressLocation.Notification,
+					title: 'Resyncing Reltio agent assets…',
+				},
+				() => runAgentAssetSync(true),
+			);
+			if (report && report.conflicts.length === 0 && report.invalid.length === 0) {
 				void vscode.window.showInformationMessage(
-					'Reltio agent skills and Velocity Packs were refreshed under .reltio/reltio-agent/ (workspace overrides were not changed).',
+					'Reltio agent skills and Velocity Packs were refreshed (workspace overrides were not changed).',
 				);
-			} catch (e) {
-				void vscode.window.showErrorMessage(`Resync failed: ${(e as Error).message}`);
+			}
+		}),
+		vscode.workspace.onDidChangeConfiguration(e => {
+			// Installs or removes the discoverable copies straight away, without waiting for a reload.
+			if (workspaceSource !== undefined && e.affectsConfiguration(`reltio.${AGENT_SKILLS_SETTING}`)) {
+				void runAgentAssetSync(false);
 			}
 		}),
 	);
+
+	if (folder) {
+		// A team override must reach agents when it is edited, not at the next window reload, or the
+		// discoverable copy would keep serving the default the team meant to replace.
+		const overrides = vscode.workspace.createFileSystemWatcher(
+			new vscode.RelativePattern(folder, `${OVERRIDES_SEGMENTS.join('/')}/**`),
+		);
+		let overrideTimer: ReturnType<typeof setTimeout> | undefined;
+		const resyncOverrides = (): void => {
+			if (workspaceSource === undefined) return;
+			if (overrideTimer) clearTimeout(overrideTimer);
+			overrideTimer = setTimeout(() => void runAgentAssetSync(false), 500);
+		};
+		context.subscriptions.push(
+			overrides,
+			overrides.onDidCreate(resyncOverrides),
+			overrides.onDidChange(resyncOverrides),
+			overrides.onDidDelete(resyncOverrides),
+			{ dispose: () => overrideTimer && clearTimeout(overrideTimer) },
+		);
+	}
+
+	if (folder && environmentManager) {
+		const verificationLog = vscode.window.createOutputChannel('Reltio Match Verification');
+		context.subscriptions.push(
+			verificationLog,
+			registerMatchVerificationBridge({
+				workspaceRoot: folder.uri,
+				isEnabled: () =>
+					vscode.workspace.getConfiguration('reltio').get<boolean>(MATCH_VERIFICATION_SETTING, true),
+				isRepositoryMode: () => workspaceSource === 'git',
+				resolveTenant: async configFile => {
+					// Rescan so a tenant connected since activation resolves. Identity comes from the
+					// markers, never from the request, so the token only reaches its own environment.
+					await environmentManager.scanEnvironments();
+					return environmentManager.locFromPath(configFile.path);
+				},
+				getToken: env => tokenStore.getToken(env),
+				tryRefresh,
+				log: line => verificationLog.appendLine(line),
+			}),
+		);
+	}
 
 	context.subscriptions.push(
 		vscode.languages.registerDocumentLinkProvider(RELTIO_SELECTOR, linkProvider),

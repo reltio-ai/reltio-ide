@@ -396,6 +396,16 @@
           "default": "default",
           "description": "UX mode. 'default' enables the redesigned setup experience (wizard, walkthrough, status bar, next-step hints). 'classic' restores the pre-redesign behavior."
         },
+        "reltio.installAgentSkills": {
+          "type": "boolean",
+          "default": true,
+          "description": "Install the bundled Reltio skills where AI agents find them without an @-mention: '.claude/skills/reltio-*' (read by Claude Code, GitHub Copilot in VS Code and Cursor) and a second copy in this editor's own folder ('.cursor/skills' in Cursor, '.github/skills' in VS Code), plus short always-on instructions telling agents to report a missing skill instead of guessing. Only files the extension created are changed, and they are added to .gitignore. Turn off to remove them."
+        },
+        "reltio.enableMatchVerification": {
+          "type": "boolean",
+          "default": true,
+          "description": "Let AI agents test a candidate match rule against the connected tenant before inserting it. The extension answers requests written to '.reltio/reltio-agent/match-verification/request.json' using your signed-in session and the read-only _verifyMatches API, which never creates, merges or changes entities. When off, agents test rules without the tenant and label the results as not verified."
+        },
         "reltio.defaultEnvironments": {
           "type": "array",
           "default": [],
@@ -787,6 +797,7 @@
     "@types/vscode": "^1.85.0",
     "@vscode/codicons": "^0.0.45",
     "@vscode/vsce": "^3.7.1",
+    "ajv": "^8.20.0",
     "esbuild": "^0.20.0",
     "typescript": "^5.3.0"
   }
