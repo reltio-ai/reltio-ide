@@ -16,117 +16,11 @@ const path = require('path');
 const { importDist } = require('./lib/import-dist.cjs');
 const { loadCanonicalFixture, repoRoot } = require('./lib/load-canonical-fixture.cjs');
 
-// The shared stub's `workspace.fs` is inert. Install an in-memory filesystem on it so the real
-// folder-creation and migration code can be exercised without touching disk. Mutating the stub
-// object (rather than the shared file) keeps every other test script unaffected.
 const vscode = require('./lib/vscode-stub.cjs');
 
 const FileType = vscode.FileType;
 
-/** Directory set + file map keyed by the stub Uri's `fsPath`, normalized to forward slashes. */
-function createMemoryFs() {
-	const dirs = new Set();
-	const files = new Map();
-	const norm = u => (typeof u === 'string' ? u : u.fsPath).replace(/\\/g, '/').replace(/\/+$/, '');
-
-	const api = {
-		_dirs: dirs,
-		_files: files,
-		async createDirectory(uri) {
-			// Mirror real behaviour: parents come into existence too.
-			const p = norm(uri);
-			const parts = p.split('/');
-			for (let i = 1; i <= parts.length; i++) {
-				const prefix = parts.slice(0, i).join('/');
-				if (prefix) dirs.add(prefix);
-			}
-		},
-		async writeFile(uri, bytes) {
-			const p = norm(uri);
-			await api.createDirectory(p.slice(0, p.lastIndexOf('/')));
-			files.set(p, Buffer.from(bytes));
-		},
-		async readFile(uri) {
-			const p = norm(uri);
-			if (!files.has(p)) {
-				const e = new Error(`ENOENT ${p}`);
-				e.code = 'FileNotFound';
-				throw e;
-			}
-			return new Uint8Array(files.get(p));
-		},
-		async stat(uri) {
-			const p = norm(uri);
-			if (files.has(p)) return { type: FileType.File };
-			if (dirs.has(p)) return { type: FileType.Directory };
-			const e = new Error(`ENOENT ${p}`);
-			e.code = 'FileNotFound';
-			throw e;
-		},
-		async readDirectory(uri) {
-			const p = norm(uri);
-			if (!dirs.has(p)) {
-				const e = new Error(`ENOENT ${p}`);
-				e.code = 'FileNotFound';
-				throw e;
-			}
-			const out = new Map();
-			for (const f of files.keys()) {
-				if (!f.startsWith(p + '/')) continue;
-				const rest = f.slice(p.length + 1);
-				const head = rest.split('/')[0];
-				out.set(head, rest.includes('/') ? FileType.Directory : FileType.File);
-			}
-			for (const d of dirs) {
-				if (!d.startsWith(p + '/')) continue;
-				out.set(d.slice(p.length + 1).split('/')[0], FileType.Directory);
-			}
-			return [...out.entries()];
-		},
-		async delete(uri) {
-			const p = norm(uri);
-			files.delete(p);
-			dirs.delete(p);
-			for (const f of [...files.keys()]) if (f.startsWith(p + '/')) files.delete(f);
-			for (const d of [...dirs]) if (d.startsWith(p + '/')) dirs.delete(d);
-		},
-		async rename(from, to) {
-			const a = norm(from);
-			const b = norm(to);
-			if (files.has(a)) {
-				await api.writeFile(b, files.get(a));
-				files.delete(a);
-				return;
-			}
-			for (const f of [...files.keys()]) {
-				if (!f.startsWith(a + '/')) continue;
-				await api.writeFile(b + f.slice(a.length), files.get(f));
-				files.delete(f);
-			}
-			dirs.delete(a);
-			dirs.add(b);
-		},
-		async copy(from, to) {
-			const a = norm(from);
-			const b = norm(to);
-			if (files.has(a)) {
-				await api.writeFile(b, files.get(a));
-				return;
-			}
-			for (const f of [...files.keys()]) {
-				if (f.startsWith(a + '/')) await api.writeFile(b + f.slice(a.length), files.get(f));
-			}
-			dirs.add(b);
-		},
-	};
-	return api;
-}
-
-function installMemoryFs() {
-	const mem = createMemoryFs();
-	vscode.workspace.fs = mem;
-	return mem;
-}
+const { installMemoryFs } = require('./lib/memory-fs.cjs');
 
 const text = s => Buffer.from(s).toString('utf8');
 let pkgCache;
