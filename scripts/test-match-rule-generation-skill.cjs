@@ -339,6 +339,15 @@ async function testAgentSkillSync() {
 	await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(bad, 'Bad_Name', 'SKILL.md'), Buffer.from('---\nname: Bad_Name\ndescription: x\n---\n'));
 	const rejected = await discovery.syncAgentSkills(ROOT, bad, [], { install: true, host: 'cursor' });
 	assert.strictEqual(rejected.invalid.length, 1);
+
+	// The naming rule, case by case (now checked without a repeated-group pattern).
+	const fm = name => ({ name, description: 'd' });
+	for (const ok of ['a', 'reltio-match-groups-from-concept', 'a1-b2-c3', 'x'.repeat(64)]) {
+		assert.strictEqual(discovery.skillProblem('p', fm(ok)), undefined, `${ok} accepted`);
+	}
+	for (const bad of ['-a', 'a-', 'a--b', 'A', 'a_b', 'a b', 'x'.repeat(65), 'a-'.repeat(40) + 'a']) {
+		assert.ok(discovery.skillProblem('p', fm(bad)), `${bad.slice(0, 20)} rejected`);
+	}
 	assert.ok(!(await exists(vscode.Uri.joinPath(ROOT, '.claude', 'skills', 'Bad_Name'))));
 }
 

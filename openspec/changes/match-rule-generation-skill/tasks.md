@@ -62,3 +62,7 @@
 - [x] 8.3 Report: one row per pair with both records and all attributes; per-attribute scores only on request; bridge passes each rule's `explanation` through (design D16).
 - [x] 8.4 Tests for host detection and layouts, folder pruning, the schema copy, the pass-through and the report format; mutation-checked.
 - [x] 8.5 `skillsBundleVersion` 4 → 5.
+
+## Bugfix Round 2 (Wiz SAST, PR #14, 2026-10-14)
+
+- [x] B2.1 Skill-name validation used `^[a-z0-9]+(-[a-z0-9]+)*$`. Not exploitable (each repeat starts with `-`), but flagged as ReDoS. Now checks the 64-character limit first, then each hyphen-separated part with `^[a-z0-9]+$`; naming cases tested and mutation-checked.

@@ -54,9 +54,16 @@ export function detectHost(env: { uriScheme?: string; appName?: string } | undef
 	return 'other';
 }
 
-/** The Agent Skills naming rule shared by Claude Code, Cursor and VS Code. */
-const SKILL_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const MAX_NAME = 64;
+
+/**
+ * The Agent Skills naming rule shared by Claude Code, Cursor and VS Code: lowercase letters and
+ * digits in non-empty parts joined by single hyphens, at most 64 characters. Checked part by part,
+ * after the length, so no input reaches a pattern with a repeated group.
+ */
+function isValidSkillName(name: string): boolean {
+	return name.length <= MAX_NAME && name.split('-').every(part => /^[a-z0-9]+$/.test(part));
+}
 const MAX_DESCRIPTION = 1024;
 
 export interface BundledSkill {
@@ -91,7 +98,7 @@ export function readFrontmatter(markdown: string): { name?: string; description?
 /** Why a skill cannot be installed as-is, or undefined when it can. */
 export function skillProblem(playbook: string, fm: { name?: string; description?: string }): string | undefined {
 	if (!fm.name) return `${playbook}: SKILL.md has no frontmatter "name"`;
-	if (!SKILL_NAME.test(fm.name) || fm.name.length > MAX_NAME) {
+	if (!isValidSkillName(fm.name)) {
 		return `${playbook}: name "${fm.name}" must be lowercase letters, digits and single hyphens, at most ${MAX_NAME} characters`;
 	}
 	if (!fm.description) return `${playbook}: SKILL.md has no frontmatter "description"`;
