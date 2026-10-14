@@ -12,7 +12,9 @@
  */
 import * as vscode from 'vscode';
 import { extractProcessModel } from '../workflow/bpmnModel';
+import { isValidProcessId } from './workflowBpmnFiles';
 import type { EnvironmentManager } from './environmentManager';
+import { nearestModuleFor } from './workflowRepoModule';
 
 /** Mirrors `l3Discovery.ts`'s constant — reused, not reinvented. */
 const MAX_DEPTH = 10;
@@ -20,6 +22,16 @@ const MAX_DEPTH = 10;
 export interface DiscoveredBpmnFile {
 	readonly fileUri: vscode.Uri;
 	readonly processId: string;
+	/**
+	 * Owning Maven module: the nearest ancestor directory holding a `pom.xml`, via the
+	 * same walk `workflowRepoJavaDiscovery.ts` uses (`nearestModuleFor()`). `undefined`
+	 * means no such ancestor exists within the repository root — expected and common,
+	 * since BPMN is never provisioned by Reltio and a customer may place it anywhere,
+	 * including entirely outside every Maven module (e.g. a flat `bpmn/` folder at the
+	 * repository root). Unlike Java's `moduleName`, this is never defaulted to the
+	 * repository folder's own name — see `nearestModuleFor()`'s doc comment.
+	 */
+	readonly moduleName: string | undefined;
 }
 
 function hasBpmnLikeExtension(fileName: string): boolean {
@@ -36,12 +48,24 @@ function hasBpmnLikeExtension(fileName: string): boolean {
  */
 export async function discoverBpmnFiles(root: vscode.Uri): Promise<DiscoveredBpmnFile[]> {
 	const found: DiscoveredBpmnFile[] = [];
-	await walk(root, 0, found);
+	await walk(root, 0, [], undefined, found);
 	found.sort((a, b) => a.processId.localeCompare(b.processId));
 	return found;
 }
 
-async function walk(dir: vscode.Uri, depth: number, found: DiscoveredBpmnFile[]): Promise<void> {
+/**
+ * `relParts`/`moduleName` mirror `workflowRepoJavaDiscovery.ts`'s own `walk()`: the path
+ * from the repository root to `dir`, and the nearest enclosing `pom.xml` directory found so
+ * far on this path. Unlike Java's walk, `moduleName` starts `undefined` rather than seeded
+ * with the repository folder's name — see `DiscoveredBpmnFile.moduleName`'s doc comment.
+ */
+async function walk(
+	dir: vscode.Uri,
+	depth: number,
+	relParts: readonly string[],
+	moduleName: string | undefined,
+	found: DiscoveredBpmnFile[],
+): Promise<void> {
 	if (depth > MAX_DEPTH) return;
 	let entries: [string, vscode.FileType][];
 	try {
@@ -49,11 +73,12 @@ async function walk(dir: vscode.Uri, depth: number, found: DiscoveredBpmnFile[])
 	} catch {
 		return;
 	}
+	const module = nearestModuleFor(entries, relParts, moduleName);
 	for (const [name, type] of entries) {
 		if (name.startsWith('.')) continue;
 		const child = vscode.Uri.joinPath(dir, name);
 		if (type === vscode.FileType.Directory) {
-			await walk(child, depth + 1, found);
+			await walk(child, depth + 1, [...relParts, name], module, found);
 			continue;
 		}
 		if (type !== vscode.FileType.File || !hasBpmnLikeExtension(name)) continue;
@@ -65,7 +90,7 @@ async function walk(dir: vscode.Uri, depth: number, found: DiscoveredBpmnFile[])
 			continue;
 		}
 		const processId = extractProcessModel(text).processId;
-		if (processId) found.push({ fileUri: child, processId });
+		if (processId) found.push({ fileUri: child, processId, moduleName: module });
 	}
 }
 
@@ -124,7 +149,11 @@ export async function resolveRepoBpmnContext(
 		return undefined;
 	}
 	const processId = extractProcessModel(text).processId;
-	if (!processId) return undefined;
+	// A customer's own repository is untrusted content, same as an adapter response — this
+	// id goes on to build a local baseline path (`getWorkflowBpmnBaselineUri`) in the deploy
+	// flow that calls this function, so it must pass the same filesystem-path-safety check
+	// `isProcessDefinition()` applies to a server-returned `type`, not just "non-empty".
+	if (!processId || !isValidProcessId(processId)) return undefined;
 
 	return { environmentName: loc.environmentName, tenantId: loc.tenantId, processId };
 }

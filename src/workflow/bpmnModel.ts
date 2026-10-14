@@ -348,8 +348,17 @@ function extractSequenceFlows(scannable: string): BpmnSequenceFlow[] {
  * right.
  */
 function readCondition(scannable: string, bodyStart: number): string | undefined {
-	const closeIndex = scannable.indexOf('sequenceFlow>', bodyStart);
-	const body = scannable.slice(bodyStart, closeIndex === -1 ? undefined : closeIndex);
+	// Tag-aware, not a literal `indexOf('sequenceFlow>', …)`: a condition's text or CDATA content
+	// that happens to contain that literal substring — e.g. referencing another flow's tag name in
+	// a comment-like string — would otherwise truncate the body early. Optional namespace prefix
+	// matches the convention `BPMNDI_BLOCK` in `workflowBpmnFiles.ts` uses for the same kind of
+	// closing-tag search. Constructed per call and sought with `lastIndex` the same way
+	// `readTaskListeners()` above does — safe here because the hazard noted at the top of this
+	// file is a *shared* global regex, not one built fresh for this call.
+	const closing = /<\/(?:[\w.-]+:)?sequenceFlow\s*>/g;
+	closing.lastIndex = bodyStart;
+	const closeMatch = closing.exec(scannable);
+	const body = scannable.slice(bodyStart, closeMatch ? closeMatch.index : undefined);
 	const expression = CONDITION_EXPRESSION.exec(body);
 	if (!expression?.[1]) return undefined;
 

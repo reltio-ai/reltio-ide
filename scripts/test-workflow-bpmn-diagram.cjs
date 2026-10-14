@@ -15,6 +15,8 @@
  *   5.  A condition belongs to the flow that encloses it: a conditionless
  *       default flow must not pick up the next flow's condition, which is the
  *       exact pair Activiti rejects.
+ *   5b. A condition whose CDATA contains the literal substring "sequenceFlow>"
+ *       must not have its body truncated there (security/code-quality review).
  *   6.  Serialization: shapes before edges, the plane names the process, every
  *       value XML-escaped, and elements without positions skipped rather than
  *       stacked at the origin.
@@ -121,6 +123,27 @@ const BRANCHING = `<?xml version="1.0" encoding="UTF-8"?>
     <bpmn:sequenceFlow id="f4" sourceRef="applyTask" targetRef="end" />
     <bpmn:userTask id="reviewTask" name="Review" activiti:candidateGroups="ROLE_REVIEWER" />
     <bpmn:endEvent id="end" name="End" />
+  </bpmn:process>
+</bpmn:definitions>
+`;
+
+/**
+ * A condition whose CDATA happens to contain the literal substring `sequenceFlow>` —
+ * the exact shape that broke `readCondition()`'s old `indexOf('sequenceFlow>', …)` closing-tag
+ * search (security/code-quality review pass). Prefixed, like `BRANCHING` above, so the fix's
+ * optional-namespace-prefix handling is exercised too.
+ */
+const TRICKY_CDATA = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <bpmn:process id="trickyProcess" isExecutable="true">
+    <bpmn:startEvent id="s" />
+    <bpmn:exclusiveGateway id="g" />
+    <bpmn:sequenceFlow id="fTricky" sourceRef="g" targetRef="e1">
+      <bpmn:conditionExpression><![CDATA[\${note == 'see sequenceFlow> above for details'}]]></bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="fOther" sourceRef="g" targetRef="e2" />
+    <bpmn:endEvent id="e1" />
+    <bpmn:endEvent id="e2" />
   </bpmn:process>
 </bpmn:definitions>
 `;
@@ -270,6 +293,24 @@ function disjoint(a, b) {
 		'a default flow must not inherit the previous flow\'s condition',
 	);
 	assert.strictEqual(byId.get('f1').condition, undefined, 'a self-closing flow has no condition');
+}
+
+// ── 5b. A literal "sequenceFlow>" inside a condition's CDATA must not truncate it ──
+// Regression guard: `readCondition()` used to search for the closing tag with a literal
+// `indexOf('sequenceFlow>', …)`. A condition whose text or CDATA happens to contain that exact
+// substring — e.g. referencing another flow's tag name in a comment-like string — found the
+// substring inside its own CDATA instead of the real closing tag, truncated its body mid-CDATA,
+// and silently lost the whole condition (no `</conditionExpression>` left inside the truncated
+// body for `CONDITION_EXPRESSION` to match).
+{
+	const model = extractProcessModel(TRICKY_CDATA);
+	const byId = new Map(model.flows.map(f => [f.id, f]));
+	assert.strictEqual(
+		byId.get('fTricky').condition,
+		"${note == 'see sequenceFlow> above for details'}",
+		'a literal "sequenceFlow>" substring inside the CDATA must not truncate the condition',
+	);
+	assert.strictEqual(byId.get('fOther').condition, undefined, 'the sibling flow must not inherit anything from the truncation');
 }
 
 // ── 6. Serialization ────────────────────────────────────────────────────────

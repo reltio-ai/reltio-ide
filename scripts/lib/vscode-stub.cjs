@@ -3,10 +3,11 @@
 /** Minimal vscode API stub for CLI unit tests importing compiled `dist/` modules. */
 
 class Uri {
-	constructor(fsPath) {
+	constructor(fsPath, scheme = 'file', authority = '') {
 		this.fsPath = fsPath;
 		this.path = fsPath.startsWith('/') ? fsPath : `/${fsPath}`;
-		this.scheme = 'file';
+		this.scheme = scheme;
+		this.authority = authority;
 	}
 	static file(fsPath) {
 		return new Uri(fsPath);
@@ -17,18 +18,30 @@ class Uri {
 			const seg = String(s).replace(/^[/\\]+/, '');
 			p = `${p}/${seg}`;
 		}
-		return new Uri(p);
+		return new Uri(p, base.scheme, base.authority);
 	}
 	static parse(value) {
 		const fsPath = value.replace(/^file:\/\//, '');
 		return new Uri(fsPath);
 	}
+	/** Non-`file` schemes (e.g. `reltio-workflow-bpmn://env/tenant/processType`) — see `BpmnContentProvider`. */
+	static from({ scheme, authority = '', path = '' }) {
+		return new Uri(path, scheme, authority);
+	}
 	with(change) {
-		const next = new Uri(typeof change?.path === 'string' ? change.path : this.fsPath);
-		if (typeof change?.scheme === 'string') next.scheme = change.scheme;
+		const next = new Uri(
+			typeof change?.path === 'string' ? change.path : this.fsPath,
+			typeof change?.scheme === 'string' ? change.scheme : this.scheme,
+			typeof change?.authority === 'string' ? change.authority : this.authority,
+		);
 		return next;
 	}
 	toString() {
+		// A non-`file` scheme round-trips as `scheme://authority/path` (what `BpmnContentProvider`
+		// keys its cache on); `file` keeps its original, authority-less form unchanged.
+		if (this.scheme !== 'file') {
+			return `${this.scheme}://${this.authority}${this.path}`;
+		}
 		return `file://${this.fsPath}`;
 	}
 }

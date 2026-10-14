@@ -70,7 +70,6 @@ import {
 	fetchConfigurationHistory,
 	putL3Configuration,
 	ReltioApiError,
-	UntrustedHostError,
 	toHttpsBase,
 	setTrustedHostSuffixes,
 } from './api/reltioClient';
@@ -104,9 +103,9 @@ import {
 	getProcessDefinitionXml,
 	deployProcessDefinition,
 	guessWorkflowAdapterUrl,
-	WorkflowConnectionError,
 } from './api/workflowAdapterClient';
 import { lookupWorkflowAdapterUrl } from './workflow/workflowAdapterRegistry';
+import { classifyWorkflowError } from './workflow/workflowErrorReporting';
 import { hasDiagramSection } from './workflow/bpmnModel';
 import { withGeneratedDiagram } from './workflow/bpmnLayout';
 import { BpmnPanelManager } from './workflow/bpmnPanel';
@@ -185,6 +184,7 @@ import {
 	reconcileWorkflowRepoGitignore,
 } from './workspace/workflowRepoGitignore';
 import { discoverBpmnFiles, resolveRepoBpmnContext } from './workspace/workflowRepoDiscovery';
+import { discoverJavaSources } from './workspace/workflowRepoJavaDiscovery';
 import { compareBpmnContent, type RepoSyncState } from './workspace/workflowRepoSync';
 
 /** Remote shared by every tenant in a promotion flow; pre-fills the Connect to Git prompt. */
@@ -2175,14 +2175,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		 * `WorkflowRepo.reltio.json` (D3). A second, distinct remote from whatever
 		 * the tenant itself may be bound to via `reltio.connectTenantToGit` — see
 		 * `workflowRepoGitignore.ts` for how the two stay safely nested.
+		 *
+		 * Takes a tree node or a `WorkflowCommandArgs` object, so an agent can call it
+		 * without one. The modal confirmation below is unchanged either way: cloning
+		 * into the tenant folder is the irreversible half of this command.
 		 */
-		vscode.commands.registerCommand('reltio.connectWorkflowRepository', async (node?: WorkflowRepoNode) => {
-			if (!node || !environmentManager) return;
+		vscode.commands.registerCommand(
+			'reltio.connectWorkflowRepository',
+			async (arg?: WorkflowRepoNode | WorkflowCommandArgs) => {
+			const args = workflowCommandArgs(arg);
+			if (!args || !environmentManager) return;
+			const loc = await resolveWorkflowTenant(args);
+			if (!loc) return;
+			const { environmentName, tenantId } = loc;
 
-			const repoConfigUri = environmentManager.getWorkflowRepoConfigUri(node.environmentName, node.tenantId);
+			const repoConfigUri = environmentManager.getWorkflowRepoConfigUri(environmentName, tenantId);
 			if (await loadWorkflowRepoConfig(repoConfigUri)) {
 				void vscode.window.showInformationMessage(
-					`Tenant "${node.tenantId}" already has a Custom Workflow Repository connected.`,
+					`Tenant "${tenantId}" already has a Custom Workflow Repository connected.`,
 				);
 				return;
 			}
@@ -2195,7 +2205,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			});
 			if (!repoUrl?.trim()) return;
 
-			const repoDir = environmentManager.getWorkflowRepoDirectoryUri(node.environmentName, node.tenantId);
+			const repoDir = environmentManager.getWorkflowRepoDirectoryUri(environmentName, tenantId);
 			const relativePath = 'Workflows/Custom Workflows';
 
 			try {
@@ -2206,7 +2216,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 				if (await isGitRepoWithRemote(repoDir)) {
 					void vscode.window.showInformationMessage(
-						`Tenant "${node.tenantId}" already has a Custom Workflow Repository connected.`,
+						`Tenant "${tenantId}" already has a Custom Workflow Repository connected.`,
 					);
 					return;
 				}
@@ -2227,17 +2237,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				// moment, so fix the outer .gitignore immediately rather than waiting for the
 				// next activation/refresh sweep.
 				await reconcileWorkflowRepoGitignore(
-					environmentManager.getTenantRootUri(node.environmentName, node.tenantId),
+					environmentManager.getTenantRootUri(environmentName, tenantId),
 					repoConfigUri,
 				);
 
-				await refreshWorkflowRepoSyncState(node.environmentName, node.tenantId);
+				await refreshWorkflowRepoSyncState(environmentName, tenantId);
 				treeProvider.refresh();
 				uxBus.fire();
 
 				// D8: no code changes to JAR registration, just a one-time nudge toward it.
 				void vscode.window.showInformationMessage(
-					`Connected the Custom Workflow Repository for "${node.tenantId}". If it built a new JAR, use Refresh JARs to pick it up.`,
+					`Connected the Custom Workflow Repository for "${tenantId}". If it built a new JAR, use Refresh JARs to pick it up.`,
 				);
 			} catch (e) {
 				if (e instanceof GitNotFoundError) {
@@ -2253,27 +2263,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		 * reltio.disconnectWorkflowRepository
 		 * Removes only `.git` and the sidecar (D2.2) — the cloned files stay
 		 * exactly where they are, same contract as `reltio.disconnectTenantFromGit`.
+		 *
+		 * Agent-callable, and the modal warning stays: discarding local history is not
+		 * recoverable from inside the IDE.
 		 */
-		vscode.commands.registerCommand('reltio.disconnectWorkflowRepository', async (node?: WorkflowRepoNode) => {
-			if (!node || !environmentManager) return;
-			const repoDir = environmentManager.getWorkflowRepoDirectoryUri(node.environmentName, node.tenantId);
-			const repoConfigUri = environmentManager.getWorkflowRepoConfigUri(node.environmentName, node.tenantId);
+		vscode.commands.registerCommand(
+			'reltio.disconnectWorkflowRepository',
+			async (arg?: WorkflowRepoNode | WorkflowCommandArgs) => {
+			const args = workflowCommandArgs(arg);
+			if (!args || !environmentManager) return;
+			const loc = await resolveWorkflowTenant(args);
+			if (!loc) return;
+			const { environmentName, tenantId } = loc;
+
+			const repoDir = environmentManager.getWorkflowRepoDirectoryUri(environmentName, tenantId);
+			const repoConfigUri = environmentManager.getWorkflowRepoConfigUri(environmentName, tenantId);
 
 			const dirty = await hasUncommittedChanges(repoDir);
 			const warning = dirty
-				? `Disconnect the Custom Workflow Repository for "${node.tenantId}"? It has uncommitted changes. Your files stay exactly as they are, but the repository and its local history are removed and unpushed commits are lost.`
-				: `Disconnect the Custom Workflow Repository for "${node.tenantId}"? Your files stay exactly as they are; the repository and its local history are removed.`;
+				? `Disconnect the Custom Workflow Repository for "${tenantId}"? It has uncommitted changes. Your files stay exactly as they are, but the repository and its local history are removed and unpushed commits are lost.`
+				: `Disconnect the Custom Workflow Repository for "${tenantId}"? Your files stay exactly as they are; the repository and its local history are removed.`;
 			const pick = await vscode.window.showWarningMessage(warning, { modal: true }, 'Disconnect');
 			if (pick !== 'Disconnect') return;
 
 			try {
 				await disconnectFromGit(repoDir);
 				await deleteWorkflowRepoConfig(repoConfigUri);
-				await refreshWorkflowRepoSyncState(node.environmentName, node.tenantId);
+				await refreshWorkflowRepoSyncState(environmentName, tenantId);
 				treeProvider.refresh();
 				uxBus.fire();
 				void vscode.window.showInformationMessage(
-					`Tenant "${node.tenantId}" is no longer connected to a Custom Workflow Repository. Its files are untouched.`,
+					`Tenant "${tenantId}" is no longer connected to a Custom Workflow Repository. Its files are untouched.`,
 				);
 			} catch (e) {
 				void vscode.window.showErrorMessage(`Failed to disconnect: ${(e as Error).message}`);
@@ -2281,13 +2301,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}),
 		/**
 		 * reltio.openWorkflowRepoFolder
-		 * Reveals the connected repository's root in the OS file explorer — the
-		 * only "browser" this feature offers (D7): VS Code's own Explorer and
-		 * Source Control panel already show it as a real, nested folder.
+		 * Reveals the connected repository's root in the OS file explorer. Still the
+		 * escape hatch for everything the tree deliberately does not list — `pom.xml`,
+		 * `pipeline/`, `repository.properties` — now that the row groups BPMN and Java
+		 * rather than mirroring the repository's folders.
 		 */
-		vscode.commands.registerCommand('reltio.openWorkflowRepoFolder', async (node?: WorkflowRepoNode) => {
-			if (!node || !environmentManager) return;
-			const repoDir = environmentManager.getWorkflowRepoDirectoryUri(node.environmentName, node.tenantId);
+		vscode.commands.registerCommand(
+			'reltio.openWorkflowRepoFolder',
+			async (arg?: WorkflowRepoNode | WorkflowCommandArgs) => {
+			const args = workflowCommandArgs(arg);
+			if (!args || !environmentManager) return;
+			const loc = await resolveWorkflowTenant(args);
+			if (!loc) return;
+			const repoDir = environmentManager.getWorkflowRepoDirectoryUri(loc.environmentName, loc.tenantId);
 			await vscode.commands.executeCommand('revealFileInOS', repoDir);
 		}),
 		/**
@@ -2296,9 +2322,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		 * in the system browser. No Bitbucket API call, no in-IDE browser — just
 		 * handing a URL to `openExternal`.
 		 */
-		vscode.commands.registerCommand('reltio.openWorkflowRepoInBrowser', async (node?: WorkflowRepoNode) => {
-			if (!node || !environmentManager) return;
-			const repoConfigUri = environmentManager.getWorkflowRepoConfigUri(node.environmentName, node.tenantId);
+		vscode.commands.registerCommand(
+			'reltio.openWorkflowRepoInBrowser',
+			async (arg?: WorkflowRepoNode | WorkflowCommandArgs) => {
+			const args = workflowCommandArgs(arg);
+			if (!args || !environmentManager) return;
+			const loc = await resolveWorkflowTenant(args);
+			if (!loc) return;
+			const repoConfigUri = environmentManager.getWorkflowRepoConfigUri(loc.environmentName, loc.tenantId);
 			const config = await loadWorkflowRepoConfig(repoConfigUri);
 			if (!config) return;
 			try {
@@ -2310,11 +2341,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		/**
 		 * reltio.refreshWorkflowRepoSync
 		 * Manual recompute of the sync badge (D5), for a repo file edited outside
-		 * a Fetch/Deploy cycle. No filesystem watcher backs this — see `design.md`.
+		 * a Fetch/Deploy cycle. A watcher *invalidates* stale state but never recomputes
+		 * it — the comparison fetches deployed XML, which is not a per-keystroke call.
 		 */
-		vscode.commands.registerCommand('reltio.refreshWorkflowRepoSync', async (node?: WorkflowRepoNode) => {
-			if (!node) return;
-			await refreshWorkflowRepoSyncState(node.environmentName, node.tenantId);
+		vscode.commands.registerCommand(
+			'reltio.refreshWorkflowRepoSync',
+			async (arg?: WorkflowRepoNode | WorkflowCommandArgs) => {
+			const args = workflowCommandArgs(arg);
+			if (!args) return;
+			const loc = await resolveWorkflowTenant(args);
+			if (!loc) return;
+			await refreshWorkflowRepoSyncState(loc.environmentName, loc.tenantId);
 			treeProvider.refresh();
 		}),
 		vscode.commands.registerCommand('reltio.removeTenant', async (node?: TenantNode) => {
@@ -2741,39 +2778,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	 * response string. Returns `true` when the caller should treat the error as
 	 * handled.
 	 *
-	 * The action offered is decided by the error *class*, never by matching on
-	 * message text: `WorkflowConnectionError` and `UntrustedHostError` implicate
-	 * the URL, an HTTP status does not.
+	 * The decision of *what* to say is `classifyWorkflowError()` in
+	 * `workflowErrorReporting.ts` — a pure function with no `vscode` dependency,
+	 * so its branch set (401/403/404-on-deploy/429/`WorkflowConnectionError`/
+	 * `UntrustedHostError`/generic) is unit-testable on its own. This function is
+	 * only the `vscode.window`/`vscode.commands` plumbing around that decision:
+	 * showing the message, offering "Edit Adapter URL", and re-authenticating on
+	 * a 401.
 	 */
 	async function reportWorkflowError(
 		e: unknown,
 		ctx: { environmentName: string; tenantId: string; operation: 'fetch' | 'open' | 'deploy' | 'register' },
 	): Promise<boolean> {
-		if (e instanceof ReltioApiError && e.statusCode === 401) {
+		const action = classifyWorkflowError(e, ctx);
+		if (action.kind === 'reauthenticate') {
 			await handle401(ctx.environmentName);
 			return true;
 		}
-		if (e instanceof ReltioApiError && e.statusCode === 403) {
-			// The extension cannot know the signed-in user's Reltio roles — it never
-			// decodes the JWT and there is no roles endpoint — so a 403 is the first
-			// point at which a permissions problem is knowable. Name the role rather
-			// than leaving the user to guess, and say the draft is safe.
-			void vscode.window.showErrorMessage(
-				ctx.operation === 'deploy'
-					? `Deploy refused (403). Deploying a workflow requires the ROLE_WORKFLOW_MANAGER role on tenant "${ctx.tenantId}". Your draft is saved and unchanged — ask a tenant admin to grant the role, then deploy again.`
-					: ctx.operation === 'register'
-						? `Registration refused (403). Registering a JAR requires the ROLE_WORKFLOW_MANAGER role on tenant "${ctx.tenantId}". Ask a tenant admin to grant the role, then try again.`
-						: `Access denied (403). Your account may not have sufficient permissions on tenant "${ctx.tenantId}". Ask a tenant admin to grant access.`,
-			);
-			return true;
-		}
-		if (e instanceof ReltioApiError && e.statusCode === 404 && ctx.operation === 'deploy') {
-			// The read endpoints and the deployments endpoint share a host, so a 404
-			// here is far more likely a wrong Adapter URL than a missing resource.
-			const choice = await vscode.window.showErrorMessage(
-				`Deploy failed (404). The Workflow Adapter URL saved for "${ctx.tenantId}" may be wrong.`,
-				'Edit Adapter URL',
-			);
+		if (action.kind === 'message-with-edit-adapter-url') {
+			const choice = await vscode.window.showErrorMessage(action.message, 'Edit Adapter URL');
 			if (choice === 'Edit Adapter URL') {
 				await vscode.commands.executeCommand('reltio.editWorkflowAdapterUrl', {
 					environmentName: ctx.environmentName,
@@ -2782,17 +2805,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			}
 			return true;
 		}
-		if (e instanceof WorkflowConnectionError || e instanceof UntrustedHostError) {
-			const choice = await vscode.window.showErrorMessage((e as Error).message, 'Edit Adapter URL');
-			if (choice === 'Edit Adapter URL') {
-				await vscode.commands.executeCommand('reltio.editWorkflowAdapterUrl', {
-					environmentName: ctx.environmentName,
-					tenantId: ctx.tenantId,
-				});
-			}
-			return true;
-		}
-		void vscode.window.showErrorMessage((e as Error).message);
+		void vscode.window.showErrorMessage(action.message);
 		return true;
 	}
 
@@ -2843,6 +2856,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			void vscode.window.showErrorMessage('Provide a token for this environment before fetching workflows.');
 			return false;
 		}
+		// Claimed before the network call starts, so an overlapping fetch of the same kind for the
+		// same tenant (e.g. a deploy's own post-deploy re-fetch) cannot have its newer result
+		// clobbered by this one resolving later — see `markWorkflowsLoaded()`.
+		const generation = treeProvider.beginWorkflowFetch('workflows', environmentName, tenantId);
 		let result: [ProcessDefinition[], JarDeployment[]] | undefined;
 		let unregisteredJars: AvailableJar[] | undefined;
 
@@ -2878,7 +2895,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 		if (!result) return false; // withProgress was cancelled (shouldn't happen; cancellable: false)
 		const [definitions, jars] = result;
-		treeProvider.markWorkflowsLoaded(environmentName, tenantId, definitions, jars, unregisteredJars);
+		treeProvider.markWorkflowsLoaded(environmentName, tenantId, definitions, jars, unregisteredJars, generation);
 		await refreshWorkflowRepoSyncState(environmentName, tenantId);
 		return true;
 	}
@@ -2899,6 +2916,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			void vscode.window.showErrorMessage('Provide a token for this environment before fetching workflows.');
 			return false;
 		}
+		// See `doFetchWorkflows()` — claimed before the fetch starts so a slower, earlier-started
+		// refresh cannot overwrite a faster, later-started one (e.g. a post-deploy re-fetch).
+		const generation = treeProvider.beginWorkflowFetch('processDefinitions', environmentName, tenantId);
 		let definitions: ProcessDefinition[] | undefined;
 		try {
 			const environmentUrl = toHttpsBase(environmentName);
@@ -2917,7 +2937,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			return false;
 		}
 		if (!definitions) return false;
-		treeProvider.markProcessDefinitionsLoaded(environmentName, tenantId, definitions);
+		treeProvider.markProcessDefinitionsLoaded(environmentName, tenantId, definitions, generation);
 		await refreshWorkflowRepoSyncState(environmentName, tenantId);
 		return true;
 	}
@@ -2933,6 +2953,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			void vscode.window.showErrorMessage('Provide a token for this environment before fetching workflows.');
 			return false;
 		}
+		// See `doFetchWorkflows()`.
+		const generation = treeProvider.beginWorkflowFetch('jarDeployments', environmentName, tenantId);
 		let jars: JarDeployment[] | undefined;
 		let unregisteredJars: AvailableJar[] | undefined;
 		try {
@@ -2955,7 +2977,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			return false;
 		}
 		if (!jars) return false;
-		treeProvider.markJarDeploymentsLoaded(environmentName, tenantId, jars, unregisteredJars);
+		treeProvider.markJarDeploymentsLoaded(environmentName, tenantId, jars, unregisteredJars, generation);
 		return true;
 	}
 
@@ -3487,15 +3509,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	 */
 	async function refreshWorkflowRepoSyncState(environmentName: string, tenantId: string): Promise<void> {
 		if (!environmentManager) return;
+		// Claimed up front, before any of the awaits below, so a disconnect (or another sync
+		// recomputation) started after this one wins regardless of which finishes first — see
+		// `markWorkflowRepoSync()`.
+		const generation = treeProvider.beginWorkflowFetch('repoSync', environmentName, tenantId);
 		const repoConfigUri = environmentManager.getWorkflowRepoConfigUri(environmentName, tenantId);
 		const config = await loadWorkflowRepoConfig(repoConfigUri);
 		if (!config) {
-			treeProvider.markWorkflowRepoSync(environmentName, tenantId, undefined, new Map());
+			treeProvider.markWorkflowRepoSync(environmentName, tenantId, undefined, new Map(), [], [], generation);
 			return;
 		}
 
 		const repoDir = environmentManager.getWorkflowRepoDirectoryUri(environmentName, tenantId);
-		const discovered = await discoverBpmnFiles(repoDir);
+		// Both walks happen before the tenant call below, and Java discovery is purely
+		// local — so the Java groups populate even on a tenant whose Adapter URL or
+		// token is missing, where `workflowCallContext()` returns nothing and no badge
+		// can be computed. A provisioned repository is mostly Java; its contents should
+		// not be hostage to the sync comparison succeeding.
+		const [discovered, javaSources] = await Promise.all([
+			discoverBpmnFiles(repoDir),
+			discoverJavaSources(repoDir),
+		]);
 
 		const ctx = await workflowCallContext(environmentName, tenantId);
 		const definitionTypes = new Set(
@@ -3522,7 +3556,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				}
 			}
 		}
-		treeProvider.markWorkflowRepoSync(environmentName, tenantId, discovered.length, sync, discovered);
+		treeProvider.markWorkflowRepoSync(
+			environmentName,
+			tenantId,
+			discovered.length,
+			sync,
+			discovered,
+			javaSources,
+			generation,
+		);
 	}
 
 	/**
@@ -4537,6 +4579,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			watcher.onDidCreate(() => treeProvider.notifyWorkflowDraftsChanged());
 			watcher.onDidChange(() => treeProvider.notifyWorkflowDraftsChanged());
 			watcher.onDidDelete(() => treeProvider.notifyWorkflowDraftsChanged());
+			return watcher;
+		})(),
+	);
+
+	/**
+	 * The same problem one folder over: a BPMN edited inside the connected Custom
+	 * Workflow Repository was covered by no watcher at all, because the glob above
+	 * names `Workflows/BPMN/` and the repository is cloned into
+	 * `Workflows/Custom Workflows/`. Its sync badge therefore went on asserting
+	 * `synced` against content that had since changed.
+	 *
+	 * Invalidates, never recomputes — see `invalidateWorkflowRepoSync()`.
+	 *
+	 * The glob has to be `*.xml` rather than `*.bpmn20*.xml`, since D4 forbids treating
+	 * a customer's filename as identity. That means `pom.xml` matches it too, so the
+	 * handler filters against the files content-driven discovery actually found: a
+	 * `pom.xml` save must not blank out the BPMN badges, and a file nobody has
+	 * discovered yet has no stale badge to invalidate in the first place.
+	 */
+	context.subscriptions.push(
+		(() => {
+			const watcher = vscode.workspace.createFileSystemWatcher(
+				'**/Workflows/Custom Workflows/**/*.xml',
+			);
+			const samePath = (a: string, b: string): boolean =>
+				process.platform === 'win32'
+					? a.toLowerCase() === b.toLowerCase()
+					: a === b;
+			const invalidateIfDiscovered = (uri: vscode.Uri): void => {
+				const loc = environmentManager?.locFromPath(uri.fsPath);
+				if (!loc) return;
+				const discovered = treeProvider.getCachedWorkflowRepoFiles(
+					loc.environmentName,
+					loc.tenantId,
+				);
+				if (!discovered?.some(file => samePath(file.fileUri.fsPath, uri.fsPath))) return;
+				treeProvider.invalidateWorkflowRepoSync(loc.environmentName, loc.tenantId);
+			};
+			watcher.onDidChange(invalidateIfDiscovered);
+			watcher.onDidDelete(invalidateIfDiscovered);
 			return watcher;
 		})(),
 	);

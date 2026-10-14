@@ -32,6 +32,12 @@
  *   - Read-only BPMN viewer has no dirty indicator.
  *   - "Edit Adapter URL" on a WorkflowConnectionError corrects the URL and retries.
  *   - 403 shows the permissions message, not "Edit Adapter URL".
+ *
+ * Added in the security/code-quality review pass:
+ *  22.  `BpmnContentProvider`'s cache is capped — inserting past the cap evicts the oldest entry.
+ *  23.  A 429 response's `Retry-After` header reaches `ReltioApiError.retryAfterSeconds`.
+ *  24.  `classifyWorkflowError()` — the pure branch set behind `reportWorkflowError()` in
+ *       extension.ts: 401/403/404-on-deploy/429/WorkflowConnectionError/UntrustedHostError/generic.
  */
 
 const assert = require('assert');
@@ -72,6 +78,8 @@ const {
 	jarModuleFileName,
 } = importDist('tree/workflowNodes');
 const { deriveTenantNamings } = importDist('workspace/l3Discovery');
+const { BpmnContentProvider } = importDist('providers/bpmnContentProvider');
+const { classifyWorkflowError } = importDist('workflow/workflowErrorReporting');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -199,6 +207,23 @@ function textResponse(status, text) {
 			() => listProcessDefinitions('demo-01-workflow.reltio.com', 'T1', 'https://demo-01.reltio.com', 'tok'),
 		);
 		assert.deepStrictEqual(result, [good], 'listProcessDefinitions must drop rows without a usable type');
+	}
+
+	// ── 3c. A path-traversal-shaped `type` is dropped, not just a non-empty one ──
+	// `type` reaches `bpmnFileName(processId)` unmodified (environmentManager's
+	// getWorkflowBpmnUri/getWorkflowBpmnBaselineUri), so an adapter response that
+	// returns e.g. `../../../../whatever` must be rejected by the same rule as
+	// user-typed input (`isValidProcessId`), not merely required to be non-empty.
+	{
+		const good = { id: 'a:1:2', type: 'goodType', displayName: 'G', deploymentId: '2', deployTime: 0, deployedBy: 'x', generic: false, fileName: 'f', manualStart: false };
+		const traversal = { ...good, type: '../../../../etc/evil' };
+		const dotdot = { ...good, type: '..' };
+		const absolute = { ...good, type: '/etc/passwd' };
+		const { result } = await withFetch(
+			() => jsonResponse(200, { status: 'OK', data: [traversal, dotdot, absolute, good], total: 4 }),
+			() => listProcessDefinitions('demo-01-workflow.reltio.com', 'T1', 'https://demo-01.reltio.com', 'tok'),
+		);
+		assert.deepStrictEqual(result, [good], 'listProcessDefinitions must drop a path-traversal-shaped type, keeping only the valid row');
 	}
 
 	// ── 4. Missing / non-array `data` → empty array ───────────────────────────
@@ -649,6 +674,119 @@ function textResponse(status, text) {
 			menuItems.some(m => m.command === 'reltio.refreshJarDeployments' && m.when?.includes('reltio.workflows.unregisteredJars.folder')),
 			'view/item/context must offer Refresh JARs on the Unregistered subfolder too',
 		);
+	}
+
+	// ── 22. BpmnContentProvider: cache is capped ──────────────────────────────
+	// Added in the security/code-quality review pass: `store()` previously grew an
+	// unbounded `Map` for the lifetime of the window. 50 (CAP below) must match
+	// `MAX_CACHE_ENTRIES` in bpmnContentProvider.ts.
+	{
+		const provider = new BpmnContentProvider();
+		const CAP = 50;
+		const OVERFLOW = 5;
+		const uris = [];
+		for (let i = 0; i < CAP + OVERFLOW; i++) {
+			uris.push(provider.store('env', 'tenant', `processType${i}`, `<xml id="${i}"/>`));
+		}
+		for (let i = 0; i < OVERFLOW; i++) {
+			assert.ok(
+				provider.provideTextDocumentContent(uris[i]).includes('unavailable'),
+				`entry ${i} should have been evicted once the cache exceeded its cap`,
+			);
+		}
+		for (let i = OVERFLOW; i < CAP + OVERFLOW; i++) {
+			assert.strictEqual(
+				provider.provideTextDocumentContent(uris[i]),
+				`<xml id="${i}"/>`,
+				`entry ${i} is within the last ${CAP} inserted and must still be cached`,
+			);
+		}
+	}
+
+	// ── 23. 429 response → ReltioApiError carries retryAfterSeconds ───────────
+	{
+		const responseWithRetryAfter = (status, body, retryAfterHeader) => ({
+			status,
+			ok: status >= 200 && status < 300,
+			json: async () => body,
+			text: async () => JSON.stringify(body),
+			headers: { get: name => (name === 'Retry-After' ? retryAfterHeader : null) },
+		});
+
+		await assert.rejects(
+			() => withFetch(
+				() => responseWithRetryAfter(429, { error: 'Too Many Requests' }, '30'),
+				() => listJarDeployments('demo-01-workflow.reltio.com', 'T', 'https://demo-01.reltio.com', 'tok'),
+			),
+			e => {
+				assert.ok(e instanceof ReltioApiError && e.statusCode === 429, 'must throw ReltioApiError with statusCode 429');
+				assert.strictEqual(e.retryAfterSeconds, 30, 'a numeric Retry-After header must be parsed to seconds');
+				return true;
+			},
+		);
+
+		// No Retry-After header at all → retryAfterSeconds stays undefined, never invented.
+		await assert.rejects(
+			() => withFetch(
+				() => responseWithRetryAfter(429, {}, null),
+				() => listProcessDefinitions('demo-01-workflow.reltio.com', 'T', 'https://demo-01.reltio.com', 'tok'),
+			),
+			e => {
+				assert.ok(e instanceof ReltioApiError && e.statusCode === 429);
+				assert.strictEqual(e.retryAfterSeconds, undefined, 'absent header must not produce an invented retry time');
+				return true;
+			},
+		);
+	}
+
+	// ── 24. classifyWorkflowError: the full branch set ────────────────────────
+	// Pure logic behind `reportWorkflowError()` in extension.ts — see workflowErrorReporting.ts.
+	{
+		const ctx = operation => ({ tenantId: 'AcmeTenant', operation });
+
+		assert.deepStrictEqual(
+			classifyWorkflowError(new ReltioApiError('nope', 401), ctx('fetch')),
+			{ kind: 'reauthenticate' },
+			'401 must hand back a reauthenticate action, regardless of operation',
+		);
+
+		const deploy403 = classifyWorkflowError(new ReltioApiError('nope', 403), ctx('deploy'));
+		assert.strictEqual(deploy403.kind, 'message');
+		assert.ok(deploy403.message.includes('Deploy refused (403)') && deploy403.message.includes('ROLE_WORKFLOW_MANAGER'));
+
+		const register403 = classifyWorkflowError(new ReltioApiError('nope', 403), ctx('register'));
+		assert.ok(register403.message.includes('Registration refused (403)'));
+
+		const fetch403 = classifyWorkflowError(new ReltioApiError('nope', 403), ctx('fetch'));
+		assert.ok(fetch403.message.includes('Access denied (403)'));
+
+		const deploy404 = classifyWorkflowError(new ReltioApiError('nope', 404), ctx('deploy'));
+		assert.strictEqual(deploy404.kind, 'message-with-edit-adapter-url', '404 on deploy must offer Edit Adapter URL');
+		assert.ok(deploy404.message.includes('Deploy failed (404)'));
+
+		const fetch404 = classifyWorkflowError(new ReltioApiError('Workflow Adapter returned 404.', 404), ctx('fetch'));
+		assert.strictEqual(fetch404.kind, 'message', '404 outside deploy must not offer Edit Adapter URL');
+		assert.strictEqual(fetch404.message, 'Workflow Adapter returned 404.');
+
+		const withRetry = classifyWorkflowError(new ReltioApiError('rate limited', 429, 30), ctx('fetch'));
+		assert.strictEqual(withRetry.kind, 'message');
+		assert.ok(withRetry.message.includes('Rate limited (429)'));
+		assert.ok(withRetry.message.includes('retry-after of 30 seconds'), 'a real Retry-After header must be reflected in the message');
+
+		const withoutRetry = classifyWorkflowError(new ReltioApiError('rate limited', 429), ctx('fetch'));
+		assert.ok(withoutRetry.message.includes('Wait a moment before retrying.'));
+		assert.ok(!withoutRetry.message.includes('retry-after of'), 'no invented wait time without a real Retry-After header');
+
+		const connErr = classifyWorkflowError(new WorkflowConnectionError(new Error('could not reach host')), ctx('fetch'));
+		assert.strictEqual(connErr.kind, 'message-with-edit-adapter-url');
+		assert.ok(connErr.message.includes('could not reach host'));
+
+		const untrustedErr = classifyWorkflowError(new UntrustedHostError('untrusted host'), ctx('open'));
+		assert.strictEqual(untrustedErr.kind, 'message-with-edit-adapter-url');
+		assert.strictEqual(untrustedErr.message, 'untrusted host');
+
+		const generic = classifyWorkflowError(new Error('boom'), ctx('fetch'));
+		assert.deepStrictEqual(generic, { kind: 'message', message: 'boom' }, 'anything else falls through to the generic message');
 	}
 
 	console.log('test-workflow-inspector: OK');

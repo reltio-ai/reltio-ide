@@ -4,6 +4,10 @@
  * OpenSpec change: multi-tenant-tree-view
  * Tier A: pathTenantLoc, historyExposedStorageKey, fetch guard, tenantIdFromTreeContext
  * Tier C (manual): environment validate API, fetch L3 overwrite modal — ARCHITECTURE.md manual verification
+ *
+ * Added in the security/code-quality review pass: the `beginWorkflowFetch()`/`mark*()` fetch-
+ * generation guard on `MultiTenantTreeProvider` — a later-started fetch must win over an earlier
+ * one that happens to resolve after it, for all four workflow-cache halves.
  */
 const assert = require('assert');
 const fs = require('fs');
@@ -40,7 +44,8 @@ function methodBody(source, methodName) {
 }
 
 const { pathTenantLocFromL3Path } = importDist('util/pathTenantLoc');
-const { historyExposedStorageKey } = importDist('tree/multiTenantTreeProvider');
+const { historyExposedStorageKey, MultiTenantTreeProvider } = importDist('tree/multiTenantTreeProvider');
+const { TokenStore } = importDist('api/tokenStore');
 const {
 	hasUnpublishedLocalChangesFromText,
 	remoteMatchesBaseline,
@@ -104,5 +109,79 @@ assert.strictEqual(tenantIdFromTreeContext({ contextValue: 'reltio.tenant.l3', l
 
 assert.strictEqual(jsonDeepEqual({ a: [1, 2] }, { a: [1, 2] }), true);
 assert.strictEqual(jsonDeepEqual({ a: 1 }, { a: 2 }), false);
+
+// Fetch-generation guard: a later-started fetch must win regardless of resolution order
+// (security/code-quality review pass). `environmentManager` can be `null` here — none of the
+// `mark*`/getter methods exercised below touch it.
+{
+	const memento = { get: () => undefined, update: async () => undefined };
+	const provider = new MultiTenantTreeProvider(null, new TokenStore(), memento, null);
+	const env = 'env1';
+	const tenant = 'tenantA';
+
+	// markProcessDefinitionsLoaded: an older fetch resolving after a newer one must not win.
+	{
+		const genOld = provider.beginWorkflowFetch('processDefinitions', env, tenant);
+		const genNew = provider.beginWorkflowFetch('processDefinitions', env, tenant);
+		assert.notStrictEqual(genOld, genNew, 'each beginWorkflowFetch() call must claim a distinct generation');
+
+		// The newer, later-started fetch resolves first...
+		provider.markProcessDefinitionsLoaded(env, tenant, [{ type: 'new-def' }], genNew);
+		assert.deepStrictEqual(provider.getCachedProcessDefinitions(env, tenant).map(d => d.type), ['new-def']);
+
+		// ...then the older, slower fetch resolves after it — its stale result must be dropped.
+		provider.markProcessDefinitionsLoaded(env, tenant, [{ type: 'old-def' }], genOld);
+		assert.deepStrictEqual(
+			provider.getCachedProcessDefinitions(env, tenant).map(d => d.type),
+			['new-def'],
+			'a fetch that started before the currently-cached one must not overwrite its result',
+		);
+	}
+
+	// markJarDeploymentsLoaded: same guard, independent of the process-definitions one above.
+	{
+		const genOld = provider.beginWorkflowFetch('jarDeployments', env, tenant);
+		const genNew = provider.beginWorkflowFetch('jarDeployments', env, tenant);
+		provider.markJarDeploymentsLoaded(env, tenant, [{ module: 'new.jar' }], undefined, genNew);
+		provider.markJarDeploymentsLoaded(env, tenant, [{ module: 'old.jar' }], undefined, genOld);
+		assert.deepStrictEqual(
+			provider.getCachedJarDeployments(env, tenant).map(j => j.module),
+			['new.jar'],
+			'markJarDeploymentsLoaded must drop a result from a fetch older than the one already applied',
+		);
+	}
+
+	// markWorkflowsLoaded: same guard, on the combined fetch.
+	{
+		const genOld = provider.beginWorkflowFetch('workflows', env, tenant);
+		const genNew = provider.beginWorkflowFetch('workflows', env, tenant);
+		provider.markWorkflowsLoaded(env, tenant, [{ type: 'new-def' }], [{ module: 'new.jar' }], undefined, genNew);
+		provider.markWorkflowsLoaded(env, tenant, [{ type: 'old-def' }], [{ module: 'old.jar' }], undefined, genOld);
+		assert.deepStrictEqual(provider.getCachedProcessDefinitions(env, tenant).map(d => d.type), ['new-def']);
+		assert.deepStrictEqual(provider.getCachedJarDeployments(env, tenant).map(j => j.module), ['new.jar']);
+	}
+
+	// markWorkflowRepoSync: same guard, keyed independently per tenant+kind.
+	{
+		const genOld = provider.beginWorkflowFetch('repoSync', env, tenant);
+		const genNew = provider.beginWorkflowFetch('repoSync', env, tenant);
+		provider.markWorkflowRepoSync(env, tenant, 2, new Map(), [], [], genNew);
+		provider.markWorkflowRepoSync(env, tenant, 99, new Map(), [], [], genOld);
+		assert.strictEqual(
+			provider.getCachedWorkflowRepoTrackedCount(env, tenant),
+			2,
+			'markWorkflowRepoSync must drop a result from a fetch older than the one already applied',
+		);
+	}
+
+	// A call made without a generation (the pre-existing call shape) is never guarded — this is
+	// what keeps any caller that has no concurrency concern free to ignore the parameter entirely.
+	{
+		const other = 'tenantB';
+		provider.markProcessDefinitionsLoaded(env, other, [{ type: 'a' }]);
+		provider.markProcessDefinitionsLoaded(env, other, [{ type: 'b' }]);
+		assert.deepStrictEqual(provider.getCachedProcessDefinitions(env, other).map(d => d.type), ['b']);
+	}
+}
 
 console.log('test-multi-tenant-tree-view: OK');

@@ -23,6 +23,7 @@ import * as vscode from 'vscode';
 import type { ProcessDefinition, JarDeployment, AvailableJar } from '../api/workflowAdapterClient';
 import type { WorkflowDraft } from '../workspace/workflowDrafts';
 import type { WorkflowRepoConfig } from '../workspace/workflowRepoConfig';
+import type { DiscoveredJavaSource } from '../workspace/workflowRepoJavaDiscovery';
 import type { RepoSyncState } from '../workspace/workflowRepoSync';
 
 // ─── Tooltip helpers ─────────────────────────────────────────────────────────
@@ -380,12 +381,12 @@ export class UnregisteredJarNode extends vscode.TreeItem {
  * clicking it in that state starts the connect flow, same pattern as
  * `WorkflowsFolderNode` itself before its first fetch.
  *
- * Expandable once connected and at least one BPMN file has been discovered —
- * see `WorkflowRepoBpmnFileNode` below. D7 originally ruled this out ("VS
- * Code's own Explorer already shows it"), but that's a real folder browser
- * with no sync-badge awareness; the actual point of connecting a repository
- * — "is this file clean or changed against the tenant?" — is invisible there.
- * Revised, not silently dropped: see `design.md`'s D7 addendum.
+ * Expandable once connected and at least one file has been discovered — into
+ * the `WorkflowRepoGroupNode` groups below. D7 originally ruled any in-tree
+ * browsing out ("VS Code's own Explorer already shows it"), but that's a real
+ * folder browser with no sync-badge awareness; the actual point of connecting a
+ * repository — "is this file clean or changed against the tenant?" — is
+ * invisible there. Revised, not silently dropped: see `design.md`'s D7 addendum.
  */
 export class WorkflowRepoNode extends vscode.TreeItem {
 	constructor(
@@ -394,10 +395,17 @@ export class WorkflowRepoNode extends vscode.TreeItem {
 		readonly config: WorkflowRepoConfig | undefined,
 		/** Files `discoverBpmnFiles()` found inside the connected repository, or 0 when not connected. */
 		readonly trackedBpmnCount: number = 0,
+		/** `src/main/java` sources `discoverJavaSources()` found, or 0 when not connected. */
+		readonly javaMainCount: number = 0,
+		/** `src/test/java` sources `discoverJavaSources()` found, or 0 when not connected. */
+		readonly javaTestCount: number = 0,
 	) {
 		super(
 			'Custom Workflow Repository',
-			config && trackedBpmnCount > 0
+			// Any discovered content at all, not BPMN alone: the repository Reltio
+			// provisions ships Java modules and no BPMN whatsoever, so gating on the
+			// BPMN count rendered the commonest case as an unexpandable leaf.
+			config && trackedBpmnCount + javaMainCount + javaTestCount > 0
 				? vscode.TreeItemCollapsibleState.Collapsed
 				: vscode.TreeItemCollapsibleState.None,
 		);
@@ -409,11 +417,17 @@ export class WorkflowRepoNode extends vscode.TreeItem {
 
 		if (config) {
 			const count = this.trackedBpmnCount;
-			this.description = `Connected — ${count} BPMN file${count === 1 ? '' : 's'} tracked`;
+			const summary = [
+				count > 0 ? `${count} BPMN file${count === 1 ? '' : 's'} tracked` : undefined,
+				javaMainCount > 0 ? `${javaMainCount} class${javaMainCount === 1 ? '' : 'es'}` : undefined,
+			].filter(Boolean);
+			this.description = summary.length > 0 ? `Connected — ${summary.join(' · ')}` : 'Connected';
 			this.tooltip = buildTooltip('Custom Workflow Repository', [
 				['Repository', config.repoUrl],
 				['Path', config.relativePath],
 				['BPMN files tracked', String(count)],
+				['Java classes', String(javaMainCount)],
+				['Java tests', String(javaTestCount)],
 			]);
 		} else {
 			this.description = 'Not connected';
@@ -427,9 +441,147 @@ export class WorkflowRepoNode extends vscode.TreeItem {
 	}
 }
 
+/** Which kind of repository content a `WorkflowRepoGroupNode` stands for. */
+export type WorkflowRepoGroupKind = 'bpmn' | 'javaMain' | 'javaTest';
+
+const GROUP_LABELS: Record<WorkflowRepoGroupKind, string> = {
+	bpmn: 'BPMN',
+	javaMain: 'Java Classes',
+	javaTest: 'Java Tests',
+};
+
+const GROUP_ICONS: Record<WorkflowRepoGroupKind, string> = {
+	bpmn: 'type-hierarchy-sub',
+	javaMain: 'symbol-class',
+	javaTest: 'beaker',
+};
+
+const GROUP_TOOLTIPS: Record<WorkflowRepoGroupKind, string> = {
+	bpmn: 'BPMN process definitions found in the connected repository, badged against what is deployed on this tenant.',
+	javaMain: 'Java sources under src/main/java. Edited in place; reaching the tenant still requires Reltio\u2019s review and JAR registration.',
+	javaTest: 'Java sources under src/test/java. The review gate requires 80% coverage, so these are part of getting a change merged.',
+};
+
+/**
+ * One kind of repository content, grouped by file kind rather than by folder (D1).
+ *
+ * The repository is *not* mirrored as a directory tree: the provisioned template
+ * buries its deepest class nine levels down, and the BPMN-to-Java relationship is
+ * many-to-many, so no nesting is both faithful to disk and useful to navigate.
+ * Grouping by kind is flat, stable, and independent of a customer's layout.
+ *
+ * A group with nothing in it is never constructed — the provider omits it, the
+ * same way `WorkflowDraftsFolderNode` is omitted on a tenant with no drafts.
+ * That is what keeps an empty `BPMN (0)` off the commonest repository.
+ */
+export class WorkflowRepoGroupNode extends vscode.TreeItem {
+	constructor(
+		readonly environmentName: string,
+		readonly tenantId: string,
+		readonly kind: WorkflowRepoGroupKind,
+		readonly count: number,
+	) {
+		super(
+			`${GROUP_LABELS[kind]} (${count})`,
+			// Tests start collapsed; the other two do not. Main sources and BPMN are
+			// what the customer came to look at, whereas tests are opened when a
+			// coverage gate fails — a deliberate second step, not the default view.
+			kind === 'javaTest'
+				? vscode.TreeItemCollapsibleState.Collapsed
+				: vscode.TreeItemCollapsibleState.Expanded,
+		);
+		this.contextValue = `reltio.workflows.customRepo.group.${kind}`;
+		this.iconPath = new vscode.ThemeIcon(GROUP_ICONS[kind]);
+		this.id = `workflowRepoGroup:${environmentName}/${tenantId}/${kind}`;
+		this.tooltip = GROUP_TOOLTIPS[kind];
+	}
+}
+
+/** Label and id-segment for a file with no detected Maven module — see `nearestModuleFor()`. */
+const NO_MODULE_LABEL = '(no module)';
+const NO_MODULE_ID_SEGMENT = '\u0000no-module';
+
+/**
+ * The optional grouping layer between a `WorkflowRepoGroupNode` (BPMN / Java Classes /
+ * Java Tests) and its file rows, inserted by `multiTenantTreeProvider.ts`'s `getChildren()`
+ * only when a group's files actually span more than one distinct Maven module — so a
+ * typical single-module repository (today's common case, and the freshly-provisioned
+ * template's starting shape) renders identically to before this node existed.
+ *
+ * Modeled directly on `WorkflowRepoGroupNode`: the same collapsed-by-default state, the
+ * same `tenant/environment + kind`-based id convention with the module name appended, and
+ * `vscode.ThemeIcon.Folder` — already used for `GitFolderNode` elsewhere in this tree —
+ * rather than a new icon, since a Maven module is, physically, a directory.
+ *
+ * This claims only that these files share a Maven module's directory — never that they
+ * implement the same logical workflow, and never that one calls the other. `bpmnModel.ts`
+ * extracts the literal `activiti:class` string only, not delegate expressions or listener
+ * bindings, so a stronger claim would misreport shared helper classes — and every test
+ * class — as unrelated (`workflow-repo-contents-and-agent-access` design.md, decision D4).
+ * A file with no detected module is never dropped to keep this grouping tidy; it renders
+ * in the literal `(no module)` bucket instead, matching how a `WorkflowRepoGroupNode` is
+ * only ever omitted on confirmed absence, never on a file it could not place.
+ */
+export class WorkflowRepoModuleNode extends vscode.TreeItem {
+	constructor(
+		readonly environmentName: string,
+		readonly tenantId: string,
+		readonly kind: WorkflowRepoGroupKind,
+		/** `undefined` for the `(no module)` bucket — no `pom.xml` ancestor was found. */
+		readonly moduleName: string | undefined,
+		readonly count: number,
+	) {
+		super(`${moduleName ?? NO_MODULE_LABEL} (${count})`, vscode.TreeItemCollapsibleState.Collapsed);
+		this.contextValue = `reltio.workflows.customRepo.module.${kind}`;
+		this.iconPath = vscode.ThemeIcon.Folder;
+		this.id = `workflowRepoModule:${environmentName}/${tenantId}/${kind}/${moduleName ?? NO_MODULE_ID_SEGMENT}`;
+		this.tooltip = moduleName
+			? `${GROUP_LABELS[kind]} files that live under the "${moduleName}" Maven module directory — a shared folder, not a claim that they implement the same workflow (see design.md D4).`
+			: `${GROUP_LABELS[kind]} files with no enclosing Maven module found — no pom.xml between the file and the repository root.`;
+	}
+}
+
+/**
+ * One Java source `discoverJavaSources()` found inside the connected repository.
+ *
+ * Read-only by construction (D6): the label, the package in `description`, and a
+ * single `vscode.open` command. No action here writes, moves, renames or deletes
+ * anything — editing and saving go through the ordinary editor, which already
+ * works, and that is what bounds what this node can break.
+ *
+ * It deliberately makes no claim about which BPMN files reference the class (D4).
+ * `bpmnModel.ts` extracts `activiti:class` only, so shared helpers called from
+ * other Java, delegates bound via `activiti:delegateExpression` or a listener, and
+ * every test class would all read as referenced by nothing — a confident wrong
+ * answer being worse than no answer.
+ */
+export class WorkflowRepoJavaFileNode extends vscode.TreeItem {
+	constructor(
+		readonly environmentName: string,
+		readonly tenantId: string,
+		readonly source: DiscoveredJavaSource,
+	) {
+		super(source.simpleName, vscode.TreeItemCollapsibleState.None);
+		this.contextValue = 'reltio.workflows.customRepo.javaFile';
+		this.resourceUri = source.fileUri;
+		this.description = source.packageName || '(default package)';
+		this.iconPath = new vscode.ThemeIcon('symbol-class');
+		this.tooltip = buildTooltip('Custom workflow Java source', [
+			['Class', source.fullyQualifiedName],
+			['Maven module', source.moduleName],
+		]);
+		this.id = `workflowRepoJava:${environmentName}/${tenantId}/${source.relativePath}`;
+		this.command = {
+			command: 'vscode.open',
+			title: 'Open Java source',
+			arguments: [source.fileUri],
+		};
+	}
+}
+
 /**
  * One BPMN file `discoverBpmnFiles()` found inside the connected repository —
- * a child of `WorkflowRepoNode`, one per discovered file, sorted by process id
+ * a child of the `BPMN` group, one per discovered file, sorted by process id
  * (the order `discoverBpmnFiles()` already returns them in).
  *
  * `syncState` is `undefined` when this file's process id has no matching
@@ -459,8 +611,7 @@ export class WorkflowRepoBpmnFileNode extends vscode.TreeItem {
 		this.tooltip = buildTooltip(
 			'Custom Workflow Repository file',
 			[
-				['Process ID', processId],
-				['File', fileUri.fsPath],
+				['ID', processId],
 			],
 			syncState === 'changed'
 				? 'Differs from the version deployed on this tenant.'

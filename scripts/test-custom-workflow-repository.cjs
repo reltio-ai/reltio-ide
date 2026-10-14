@@ -3,9 +3,9 @@
 /**
  * OpenSpec change: custom-workflow-repository (Part 3)
  *
- * Tier A — pure logic, with a real in-memory filesystem (`createMemoryFs()`, mirrored
- *   from `test-git-ready-tenant-folder-structure.cjs`) standing in for `vscode.workspace.fs`
- *   so directory discovery is genuine, not hand-listed:
+ * Tier A — pure logic, with a real in-memory filesystem (`scripts/lib/memory-fs.cjs`)
+ *   standing in for `vscode.workspace.fs` so directory discovery is genuine, not
+ *   hand-listed:
  *   1. `discoverBpmnFiles()`: content-driven gate (D4) — extension alone is never
  *      enough, a non-empty `<process id>` is required; dotfolder skip; the
  *      depth limit shared with `l3Discovery.ts`.
@@ -30,6 +30,7 @@ const fs = require('fs');
 const path = require('path');
 const { importDist } = require('./lib/import-dist.cjs');
 const vscode = require('./lib/vscode-stub.cjs');
+const { installMemoryFs } = require('./lib/memory-fs.cjs');
 
 const { discoverBpmnFiles, resolveRepoBpmnContext } = importDist('workspace/workflowRepoDiscovery');
 const { compareBpmnContent } = importDist('workspace/workflowRepoSync');
@@ -43,88 +44,16 @@ const {
 	reconcileAllWorkflowRepoGitignores,
 } = importDist('workspace/workflowRepoGitignore');
 const { EnvironmentManager } = importDist('workspace/environmentManager');
-
-const FileType = vscode.FileType;
-
-// ─── In-memory filesystem, mirrored from test-git-ready-tenant-folder-structure.cjs ──
-// Kept local rather than shared: a generic vscode.workspace.fs stand-in, not specific
-// to either OpenSpec change, but not (yet) promoted to scripts/lib/ either.
-
-/** Directory set + file map keyed by the stub Uri's `fsPath`, normalized to forward slashes. */
-function createMemoryFs() {
-	const dirs = new Set();
-	const files = new Map();
-	const norm = u => (typeof u === 'string' ? u : u.fsPath).replace(/\\/g, '/').replace(/\/+$/, '');
-
-	const api = {
-		_dirs: dirs,
-		_files: files,
-		async createDirectory(uri) {
-			const p = norm(uri);
-			const parts = p.split('/');
-			for (let i = 1; i <= parts.length; i++) {
-				const prefix = parts.slice(0, i).join('/');
-				if (prefix) dirs.add(prefix);
-			}
-		},
-		async writeFile(uri, bytes) {
-			const p = norm(uri);
-			await api.createDirectory(p.slice(0, p.lastIndexOf('/')));
-			files.set(p, Buffer.from(bytes));
-		},
-		async readFile(uri) {
-			const p = norm(uri);
-			if (!files.has(p)) {
-				const e = new Error(`ENOENT ${p}`);
-				e.code = 'FileNotFound';
-				throw e;
-			}
-			return new Uint8Array(files.get(p));
-		},
-		async stat(uri) {
-			const p = norm(uri);
-			if (files.has(p)) return { type: FileType.File };
-			if (dirs.has(p)) return { type: FileType.Directory };
-			const e = new Error(`ENOENT ${p}`);
-			e.code = 'FileNotFound';
-			throw e;
-		},
-		async readDirectory(uri) {
-			const p = norm(uri);
-			if (!dirs.has(p)) {
-				const e = new Error(`ENOENT ${p}`);
-				e.code = 'FileNotFound';
-				throw e;
-			}
-			const out = new Map();
-			for (const f of files.keys()) {
-				if (!f.startsWith(p + '/')) continue;
-				const rest = f.slice(p.length + 1);
-				const head = rest.split('/')[0];
-				out.set(head, rest.includes('/') ? FileType.Directory : FileType.File);
-			}
-			for (const d of dirs) {
-				if (!d.startsWith(p + '/')) continue;
-				out.set(d.slice(p.length + 1).split('/')[0], FileType.Directory);
-			}
-			return [...out.entries()];
-		},
-		async delete(uri) {
-			const p = norm(uri);
-			files.delete(p);
-			dirs.delete(p);
-			for (const f of [...files.keys()]) if (f.startsWith(p + '/')) files.delete(f);
-			for (const d of [...dirs]) if (d.startsWith(p + '/')) dirs.delete(d);
-		},
-	};
-	return api;
-}
-
-function installMemoryFs() {
-	const mem = createMemoryFs();
-	vscode.workspace.fs = mem;
-	return mem;
-}
+const { discoverJavaSources } = importDist('workspace/workflowRepoJavaDiscovery');
+const { clearGeneratedReadmeBeforeClone } = importDist('workspace/workflowRepoConnect');
+const { MultiTenantTreeProvider } = importDist('tree/multiTenantTreeProvider');
+const { TokenStore } = importDist('api/tokenStore');
+const {
+	WorkflowRepoGroupNode,
+	WorkflowRepoModuleNode,
+	WorkflowRepoBpmnFileNode,
+	WorkflowRepoJavaFileNode,
+} = importDist('tree/workflowNodes');
 
 const enc = s => new TextEncoder().encode(s);
 const text = buf => new TextDecoder().decode(buf);
@@ -227,6 +156,17 @@ function bpmnXml(processId) {
 		assert.strictEqual(
 			await resolveRepoBpmnContext(nestedUri.fsPath, freshMgr), undefined,
 			'an unrecognized tenant path must not resolve',
+		);
+
+		// A path-traversal-shaped <process id> must not resolve. This id goes on to
+		// build a local baseline path (getWorkflowBpmnBaselineUri) in the deploy
+		// flow, so a customer's own (or a maliciously committed) BPMN content is as
+		// untrusted here as a server-returned processDefinitions row is.
+		const traversalUri = vscode.Uri.joinPath(repoDir, 'evil.xml');
+		await vscode.workspace.fs.writeFile(traversalUri, enc(bpmnXml('../../../../etc/evil')));
+		assert.strictEqual(
+			await resolveRepoBpmnContext(traversalUri.fsPath, mgr), undefined,
+			'a path-traversal-shaped process id must not resolve',
 		);
 	}
 
@@ -523,9 +463,47 @@ function bpmnXml(processId) {
 			'getParent() must route a discovered-file row back to its WorkflowRepoNode',
 		);
 
-		const extSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf-8');
+		// ── workflow-repo-contents-and-agent-access: Java groups on the same row ──
+		// The repository Reltio provisions has Java modules and no BPMN, so a row that
+		// only ever expands to BPMN is a leaf in the commonest case.
+		for (const cls of ['WorkflowRepoGroupNode', 'WorkflowRepoJavaFileNode']) {
+			assert.ok(
+				treeSource.includes(`export class ${cls}`),
+				`${cls} must be exported from workflowNodes.ts`,
+			);
+		}
 		assert.ok(
-			/markWorkflowRepoSync\([^)]*discovered\)/.test(extSource),
+			/trackedBpmnCount \+ javaMainCount \+ javaTestCount > 0/.test(treeSource),
+			'WorkflowRepoNode must be collapsible on any discovered content, not BPMN alone — a Java-only repository is the provisioned default',
+		);
+		assert.ok(
+			!/command:\s*'reltio\.(deleteWorkflowDraft|deployWorkflow)'/.test(
+				treeSource.slice(treeSource.indexOf('export class WorkflowRepoJavaFileNode')),
+			),
+			'a Java row must carry no mutating command (D6) — it opens the file and nothing else',
+		);
+		assert.ok(
+			providerSource.includes('getCachedWorkflowRepoJava'),
+			'the tree provider must cache discovered Java sources, or the Java groups cannot render children',
+		);
+		assert.ok(
+			/element instanceof WorkflowRepoGroupNode\)\s*\{/.test(providerSource),
+			'getChildren() must handle WorkflowRepoGroupNode, which now owns the file rows',
+		);
+		assert.ok(
+			providerSource.includes('element instanceof WorkflowRepoJavaFileNode'),
+			'getParent() must route a Java row back to its group, or reveal() cannot reach it',
+		);
+		assert.ok(
+			providerSource.includes('invalidateWorkflowRepoSync'),
+			'the provider must be able to drop stale sync badges without recomputing them',
+		);
+
+		const extSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf-8');
+		// Matched across newlines: the call grew a sixth argument (Java sources) and
+		// wrapped, so a single-line pattern no longer describes correct code.
+		assert.ok(
+			/markWorkflowRepoSync\([\s\S]{0,200}?\bdiscovered\b/.test(extSource),
 			'refreshWorkflowRepoSyncState() must pass the discovered file list into markWorkflowRepoSync(), not just the count',
 		);
 		for (const command of ['reltio.deployWorkflow', 'reltio.previewWorkflowDiagram']) {
@@ -541,15 +519,328 @@ function bpmnXml(processId) {
 				`"${command}"'s handler must accept a WorkflowRepoBpmnFileNode, or Deploy/Preview from the inline row does nothing`,
 			);
 		}
+
+		// ── workflow-repo-contents-and-agent-access: agent-callable commands ─────
+		// Each of these was `(node?: WorkflowRepoNode) => { if (!node) return; }`, which
+		// is a silent no-op for any caller without a tree node — i.e. every agent.
+		for (const command of [
+			'reltio.connectWorkflowRepository',
+			'reltio.disconnectWorkflowRepository',
+			'reltio.openWorkflowRepoFolder',
+			'reltio.openWorkflowRepoInBrowser',
+			'reltio.refreshWorkflowRepoSync',
+		]) {
+			const idx = extSource.indexOf(`'${command}'`);
+			assert.ok(idx >= 0, `"${command}" registration not found in extension.ts`);
+			const handlerSlice = extSource.slice(idx, idx + 400);
+			assert.ok(
+				handlerSlice.includes('workflowCommandArgs'),
+				`"${command}" must narrow its argument through workflowCommandArgs(), or an agent calling it does nothing`,
+			);
+			assert.ok(
+				handlerSlice.includes('resolveWorkflowTenant'),
+				`"${command}" must resolve its tenant through resolveWorkflowTenant(), so a call with no arguments prompts rather than returning`,
+			);
+		}
+
+		// The repository is cloned into `Workflows/Custom Workflows/`, which the Drafts
+		// watcher's `Workflows/BPMN/` glob cannot match — so a repository edit left the
+		// badge asserting `synced` against content that had already changed.
+		assert.ok(
+			extSource.includes("'**/Workflows/Custom Workflows/**/*.xml'"),
+			'a watcher must cover BPMN inside the connected repository, or its sync badge goes stale silently',
+		);
+		assert.ok(
+			extSource.includes('invalidateIfDiscovered'),
+			'the repository watcher must invalidate cached sync state rather than recompute it (D5/D7)',
+		);
 	}
 
-	// ── 8. Tier B: this script is actually registered in the runner ───────────
+	// ── 8. Module-grouping layer: single-module flat, multi-module grouped, ──
+	// ── BPMN moduleName attribution end to end (workflow-repo-contents-and- ──
+	// ── agent-access follow-up: optional per-module layer under each group) ──
+	//
+	// `WorkflowRepoGroupNode`'s children are rendered flat, exactly as before this
+	// feature existed, unless the group actually spans 2+ distinct Maven modules
+	// (the `(no module)` bucket for `undefined` counting as one distinct value).
+	// Built against real `discoverBpmnFiles()`/`discoverJavaSources()` output over
+	// an in-memory tree, not hand-built node lists, so the moduleName plumbing is
+	// exercised end to end rather than assumed.
+	{
+		const ENV = 'module-grouping-test.reltio.com';
+		const TENANT = 'ModuleGroupingTenant';
+
+		function makeProvider() {
+			const mgr = new EnvironmentManager(vscode.Uri.file('/mgws'));
+			const tokenStore = new TokenStore();
+			const memento = { get: () => undefined, update: async () => undefined };
+			return new MultiTenantTreeProvider(mgr, tokenStore, memento, null);
+		}
+
+		// ── 8a. Single-module repo: today's exact shape — a true regression guard ──
+		{
+			const mem = installMemoryFs();
+			await mem.writeFile(vscode.Uri.file('/repo/pom.xml'), enc('<project/>'));
+			await mem.writeFile(
+				vscode.Uri.file('/repo/src/main/java/com/acme/OnlyClass.java'),
+				enc('public class OnlyClass {}\n'),
+			);
+			await mem.writeFile(
+				vscode.Uri.file('/repo/src/test/java/com/acme/OnlyClassTest.java'),
+				enc('public class OnlyClassTest {}\n'),
+			);
+			await mem.writeFile(vscode.Uri.file('/repo/approval.bpmn20.xml'), enc(bpmnXml('soleApproval')));
+
+			const files = await discoverBpmnFiles(vscode.Uri.file('/repo'));
+			const javaSources = await discoverJavaSources(vscode.Uri.file('/repo'));
+			// A root-level `pom.xml` is a no-op for naming purposes in both walks (there is
+			// no path segment below the root to name a module after) — what differs is each
+			// walk's seed. Java's seed is the repository folder's own name, so its one file
+			// still reports a module; BPMN's seed is `undefined` (D4: never borrow a folder
+			// name as a false module), so a BPMN file sitting at the very root — outside any
+			// *nested* module directory — is correctly "(no module)", same as the root-level
+			// BPMN file in the two-module fixture below.
+			assert.strictEqual(files[0].moduleName, undefined, 'a BPMN file at the repository root, not nested in any module directory, has no module');
+			assert.strictEqual(javaSources[0].moduleName, 'repo', 'java’s existing root-seeded fallback is unchanged by this feature');
+
+			const provider = makeProvider();
+			provider.markWorkflowRepoSync(ENV, TENANT, files.length, new Map(), files, javaSources);
+
+			const bpmnGroup = new WorkflowRepoGroupNode(ENV, TENANT, 'bpmn', files.length);
+			const javaGroup = new WorkflowRepoGroupNode(
+				ENV, TENANT, 'javaMain', javaSources.filter(s => s.kind === 'main').length,
+			);
+			const testGroup = new WorkflowRepoGroupNode(
+				ENV, TENANT, 'javaTest', javaSources.filter(s => s.kind === 'test').length,
+			);
+
+			const bpmnChildren = await provider.getChildren(bpmnGroup);
+			assert.deepStrictEqual(
+				bpmnChildren.map(c => c.constructor.name), ['WorkflowRepoBpmnFileNode'],
+				'a single-module repo must render BPMN as plain file rows, no module node — identical to before this change',
+			);
+			const javaChildren = await provider.getChildren(javaGroup);
+			assert.deepStrictEqual(javaChildren.map(c => c.constructor.name), ['WorkflowRepoJavaFileNode']);
+			const testChildren = await provider.getChildren(testGroup);
+			assert.deepStrictEqual(testChildren.map(c => c.constructor.name), ['WorkflowRepoJavaFileNode']);
+
+			// Tooltip wording matches the normal Process Definitions tree ("ID", not "Process
+			// ID") and never repeats the file path already visible via resourceUri/Reveal.
+			const bpmnTooltip = bpmnChildren[0].tooltip.value;
+			assert.ok(bpmnTooltip.includes('ID:'), 'repo BPMN tooltip must label the process id "ID", matching ProcessDefinitionNode');
+			assert.ok(!bpmnTooltip.includes('Process ID:'), '"Process ID" is the old, inconsistent wording');
+			assert.ok(!bpmnTooltip.includes('File:'), 'repo BPMN tooltip must not repeat the file path');
+
+			const javaTooltip = javaChildren[0].tooltip.value;
+			assert.ok(!javaTooltip.includes('Path in repository'), 'repo Java tooltip must not repeat the file path');
+
+			// getParent must resolve the file straight back to its group, not a module node.
+			const parent = await provider.getParent(bpmnChildren[0]);
+			assert.ok(
+				parent instanceof WorkflowRepoGroupNode,
+				'a flat group’s file must resolve its getParent() directly to the group, as today',
+			);
+		}
+
+		// ── 8b/8c. The real two-module fixture; BPMN both inside and outside a module ──
+		{
+			const mem = installMemoryFs();
+			await mem.writeFile(vscode.Uri.file('/repo/pom.xml'), enc('<project/>'));
+			await mem.writeFile(vscode.Uri.file('/repo/delete-review/pom.xml'), enc('<project/>'));
+			await mem.writeFile(vscode.Uri.file('/repo/workflow-external-dcr/pom.xml'), enc('<project/>'));
+
+			await mem.writeFile(
+				vscode.Uri.file('/repo/delete-review/src/main/java/com/company/workflow/delete/DeleteReviewValidator.java'),
+				enc('public class DeleteReviewValidator {}\n'),
+			);
+			await mem.writeFile(
+				vscode.Uri.file('/repo/delete-review/src/test/java/com/company/workflow/delete/DeleteReviewValidatorTest.java'),
+				enc('public class DeleteReviewValidatorTest {}\n'),
+			);
+			await mem.writeFile(
+				vscode.Uri.file(
+					'/repo/workflow-external-dcr/src/main/java/com/reltio/workflow/external/services/beans/ChangeRequest.java',
+				),
+				enc('public class ChangeRequest {}\n'),
+			);
+			await mem.writeFile(
+				vscode.Uri.file(
+					'/repo/workflow-external-dcr/src/test/java/com/reltio/workflow/external/services/beans/ChangeRequestTest.java',
+				),
+				enc('public class ChangeRequestTest {}\n'),
+			);
+
+			// One BPMN file physically inside a module's directory tree, one at the
+			// repository root, outside every module — BPMN is never provisioned by
+			// Reltio, so a customer is free to place it either way, even in the same repo.
+			await mem.writeFile(
+				vscode.Uri.file('/repo/delete-review/src/main/resources/deleteReview.bpmn20.xml'),
+				enc(bpmnXml('deleteReview')),
+			);
+			await mem.writeFile(vscode.Uri.file('/repo/rootLevel.bpmn20.xml'), enc(bpmnXml('rootLevel')));
+
+			const files = await discoverBpmnFiles(vscode.Uri.file('/repo'));
+			const javaSources = await discoverJavaSources(vscode.Uri.file('/repo'));
+
+			assert.deepStrictEqual(
+				files
+					.map(f => ({ processId: f.processId, moduleName: f.moduleName }))
+					.sort((a, b) => a.processId.localeCompare(b.processId)),
+				[
+					{ processId: 'deleteReview', moduleName: 'delete-review' },
+					{ processId: 'rootLevel', moduleName: undefined },
+				],
+				'BPMN moduleName attribution must work end to end: inside a module vs. outside every module',
+			);
+
+			const provider = makeProvider();
+			provider.markWorkflowRepoSync(ENV, TENANT, files.length, new Map(), files, javaSources);
+
+			// BPMN group: the named module, and a "(no module)" bucket, each with the right file.
+			const bpmnGroup = new WorkflowRepoGroupNode(ENV, TENANT, 'bpmn', files.length);
+			const bpmnChildren = await provider.getChildren(bpmnGroup);
+			assert.strictEqual(bpmnChildren.length, 2, 'BPMN must render exactly 2 module buckets');
+			assert.ok(bpmnChildren.every(c => c instanceof WorkflowRepoModuleNode));
+			assert.strictEqual(bpmnChildren[0].moduleName, 'delete-review', 'the named module sorts first');
+			assert.strictEqual(bpmnChildren[0].label, 'delete-review (1)');
+			assert.strictEqual(
+				bpmnChildren[1].moduleName, undefined,
+				'the "(no module)" bucket is forced last, never sorted alphabetically against a real module',
+			);
+			assert.strictEqual(bpmnChildren[1].label, '(no module) (1)');
+
+			const deleteReviewBpmnFiles = await provider.getChildren(bpmnChildren[0]);
+			assert.deepStrictEqual(deleteReviewBpmnFiles.map(f => f.processId), ['deleteReview']);
+			const noModuleBpmnFiles = await provider.getChildren(bpmnChildren[1]);
+			assert.deepStrictEqual(noModuleBpmnFiles.map(f => f.processId), ['rootLevel']);
+
+			const deleteReviewBpmnParent = await provider.getParent(deleteReviewBpmnFiles[0]);
+			assert.ok(deleteReviewBpmnParent instanceof WorkflowRepoModuleNode);
+			assert.strictEqual(deleteReviewBpmnParent.moduleName, 'delete-review');
+
+			// Java Classes / Java Tests: 2 modules apiece, sorted alphabetically, correctly counted.
+			for (const kind of ['javaMain', 'javaTest']) {
+				const javaKind = kind === 'javaMain' ? 'main' : 'test';
+				const count = javaSources.filter(s => s.kind === javaKind).length;
+				const group = new WorkflowRepoGroupNode(ENV, TENANT, kind, count);
+				const children = await provider.getChildren(group);
+				assert.strictEqual(children.length, 2, `${kind} group must render 2 module nodes`);
+				assert.ok(children.every(c => c instanceof WorkflowRepoModuleNode));
+				assert.deepStrictEqual(
+					children.map(c => c.moduleName), ['delete-review', 'workflow-external-dcr'],
+					`${kind} module nodes must be sorted alphabetically`,
+				);
+				assert.deepStrictEqual(children.map(c => c.count), [1, 1], `${kind} module counts must be correct`);
+
+				const deleteReviewFiles = await provider.getChildren(children[0]);
+				assert.strictEqual(deleteReviewFiles.length, 1);
+				assert.ok(deleteReviewFiles[0] instanceof WorkflowRepoJavaFileNode);
+				assert.strictEqual(deleteReviewFiles[0].source.moduleName, 'delete-review');
+
+				const externalDcrFiles = await provider.getChildren(children[1]);
+				assert.strictEqual(externalDcrFiles.length, 1);
+				assert.strictEqual(externalDcrFiles[0].source.moduleName, 'workflow-external-dcr');
+
+				const parent = await provider.getParent(deleteReviewFiles[0]);
+				assert.ok(parent instanceof WorkflowRepoModuleNode);
+				assert.strictEqual(parent.moduleName, 'delete-review');
+				assert.strictEqual(parent.kind, kind);
+			}
+		}
+
+		// ── 8d. A file with no detected module, in an otherwise module-less repo ──
+		// Still only 1 distinct value ("(no module)" alone) → flat, per the "0 or 1
+		// distinct → flat" rule — a module layer must never appear just because a
+		// file happens to lack a module.
+		{
+			const mem = installMemoryFs();
+			await mem.writeFile(
+				vscode.Uri.file('/repo/mod/src/main/java/com/acme/InModule.java'),
+				enc('public class InModule {}\n'),
+			);
+			// No pom.xml anywhere, including the repository root.
+			await mem.writeFile(vscode.Uri.file('/repo/stray.bpmn20.xml'), enc(bpmnXml('strayProcess')));
+
+			const files = await discoverBpmnFiles(vscode.Uri.file('/repo'));
+			assert.strictEqual(files[0].moduleName, undefined, 'no pom.xml ancestor anywhere means moduleName is undefined');
+
+			const provider = makeProvider();
+			provider.markWorkflowRepoSync(ENV, TENANT, files.length, new Map(), files, []);
+			const bpmnGroup = new WorkflowRepoGroupNode(ENV, TENANT, 'bpmn', files.length);
+			const children = await provider.getChildren(bpmnGroup);
+			assert.deepStrictEqual(
+				children.map(c => c.constructor.name), ['WorkflowRepoBpmnFileNode'],
+				'a single file with no detected module is 1 distinct value, not 2 — must still render flat',
+			);
+		}
+	}
+
+	// ── 9. Tier B: this script is actually registered in the runner ───────────
 	{
 		const runner = fs.readFileSync(path.join(__dirname, 'run-unit-tests.cjs'), 'utf-8');
 		assert.ok(
 			runner.includes("'test-custom-workflow-repository.cjs'"),
 			'test-custom-workflow-repository.cjs must be registered in the SCRIPTS array, or it never runs',
 		);
+	}
+
+	// ── 10. clearGeneratedReadmeBeforeClone: pre-clone placeholder cleanup ────
+	// Added in the security/code-quality review pass — previously had zero test coverage.
+	{
+		// The actual deletion case: the sole entry is the generated README, marker and all.
+		{
+			const mem = installMemoryFs();
+			const root = vscode.Uri.file('/tenant/Workflows/Custom Workflows');
+			await mem.writeFile(
+				vscode.Uri.joinPath(root, 'README.md'),
+				enc('# Custom Workflows\n\nThis folder is not yet managed by Reltio IDE.'),
+			);
+			await clearGeneratedReadmeBeforeClone(root);
+			await assert.rejects(
+				() => mem.readFile(vscode.Uri.joinPath(root, 'README.md')),
+				'the generated README must be deleted so `isFolderEmpty()` reports the folder as cloneable',
+			);
+		}
+
+		// No-op: the folder does not exist yet.
+		{
+			installMemoryFs();
+			const root = vscode.Uri.file('/tenant/Workflows/Custom Workflows');
+			// Must not throw even though nothing was ever created at this path.
+			await clearGeneratedReadmeBeforeClone(root);
+		}
+
+		// No-op: more than one entry in the folder — a real file sits alongside the README.
+		{
+			const mem = installMemoryFs();
+			const root = vscode.Uri.file('/tenant/Workflows/Custom Workflows');
+			await mem.writeFile(
+				vscode.Uri.joinPath(root, 'README.md'),
+				enc('This folder is not yet managed by Reltio IDE.'),
+			);
+			await mem.writeFile(vscode.Uri.joinPath(root, 'pom.xml'), enc('<project/>'));
+			await clearGeneratedReadmeBeforeClone(root);
+			const stillThere = await mem.readFile(vscode.Uri.joinPath(root, 'README.md'));
+			assert.strictEqual(
+				text(stillThere),
+				'This folder is not yet managed by Reltio IDE.',
+				'a folder with more than one entry must be left completely alone, generated README included',
+			);
+		}
+
+		// No-op: the lone README.md does not carry the generated-marker string.
+		{
+			const mem = installMemoryFs();
+			const root = vscode.Uri.file('/tenant/Workflows/Custom Workflows');
+			await mem.writeFile(vscode.Uri.joinPath(root, 'README.md'), enc('# A README the user wrote themselves.'));
+			await clearGeneratedReadmeBeforeClone(root);
+			const stillThere = await mem.readFile(vscode.Uri.joinPath(root, 'README.md'));
+			assert.strictEqual(
+				text(stillThere),
+				'# A README the user wrote themselves.',
+				'a README without the generated marker must never be deleted, even if it is the sole entry',
+			);
+		}
 	}
 
 	console.log('test-custom-workflow-repository: OK');

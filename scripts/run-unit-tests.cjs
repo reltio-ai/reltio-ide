@@ -42,6 +42,7 @@ const SCRIPTS = [
 	'test-workflow-bpmn-diagnostics.cjs',
 	'test-workflow-bpmn-diagram.cjs',
 	'test-workflow-inspector.cjs',
+	'test-workflow-repo-java-discovery.cjs',
 	'test-workflow-skills-library.cjs',
 ];
 

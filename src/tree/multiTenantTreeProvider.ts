@@ -29,6 +29,10 @@ import {
 	WorkflowDraftNode,
 	WorkflowRepoNode,
 	WorkflowRepoBpmnFileNode,
+	WorkflowRepoGroupNode,
+	WorkflowRepoModuleNode,
+	WorkflowRepoJavaFileNode,
+	type WorkflowRepoGroupKind,
 } from './workflowNodes';
 import { loadWorkflowAdapterUrl } from '../workspace/workflowAdapterConfig';
 import { bpmnFileName, listLocalBpmnFiles } from '../workspace/workflowBpmnFiles';
@@ -36,6 +40,7 @@ import type { RepoSyncState } from '../workspace/workflowRepoSync';
 import { loadWorkflowRepoConfig } from '../workspace/workflowRepoConfig';
 import { reconcileWorkflowRepoGitignore } from '../workspace/workflowRepoGitignore';
 import type { DiscoveredBpmnFile } from '../workspace/workflowRepoDiscovery';
+import type { DiscoveredJavaSource, JavaSourceKind } from '../workspace/workflowRepoJavaDiscovery';
 import type { ProcessDefinition, JarDeployment, AvailableJar } from '../api/workflowAdapterClient';
 import type { EState, TState, UxState } from '../ux/uxState';
 import { ConfigTreeItem } from './treeNodes';
@@ -67,10 +72,16 @@ export type MultiTenantTreeElement =
 	| WorkflowDraftsFolderNode
 	| WorkflowDraftNode
 	| WorkflowRepoNode
-	| WorkflowRepoBpmnFileNode;
+	| WorkflowRepoBpmnFileNode
+	| WorkflowRepoGroupNode
+	| WorkflowRepoModuleNode
+	| WorkflowRepoJavaFileNode;
 
 /** Shared by the key builder and the by-environment sweep in `removeEnvironment`. */
 const HISTORY_EXPOSED_PREFIX = 'reltio.history.exposed::';
+
+/** One of the four independently-fetched halves of a tenant's workflow cache — see `fetchGenerations`. */
+export type WorkflowFetchKind = 'workflows' | 'processDefinitions' | 'jarDeployments' | 'repoSync';
 
 /**
  * Key for the "history has been fetched for this tenant" marker.
@@ -169,8 +180,54 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			 * even before this list is populated.
 			 */
 			repoFiles?: DiscoveredBpmnFile[];
+			/**
+			 * Java sources found in the connected repository, both kinds in one list —
+			 * `getChildren()` splits them by `kind` rather than storing two arrays,
+			 * since `discoverJavaSources()` returns them already sorted together and
+			 * splitting at render time keeps one write path for one walk.
+			 */
+			repoJavaSources?: DiscoveredJavaSource[];
 		}
 	>();
+
+	/**
+	 * Per-tenant "fetch generation" counters, one sequence per `(kind, environmentName, tenantId)`.
+	 *
+	 * `markWorkflowsLoaded`/`markProcessDefinitionsLoaded`/`markJarDeploymentsLoaded`/
+	 * `markWorkflowRepoSync` each do a synchronous read-merge-write of `workflowCache`, but nothing
+	 * stops two overlapping *async* fetches for the same tenant from resolving out of order — e.g.
+	 * a deploy's own post-deploy process-definitions re-fetch racing a separately user-triggered
+	 * refresh, where the earlier fetch happens to finish last and would overwrite the newer result.
+	 *
+	 * `beginWorkflowFetch()` is called right before a fetch's network call starts and hands back the
+	 * generation it claimed; the corresponding `mark*` call is later given that same number and
+	 * silently no-ops if a newer fetch of the same kind for the same tenant has started since — that
+	 * newer fetch is already in flight and will supersede this result on its own.
+	 *
+	 * Scoped narrowly to this one problem rather than a generic "stale request" abstraction: nothing
+	 * else in this codebase has a request-id/generation guard to reuse, and a counter per call site
+	 * is simpler than inventing one.
+	 */
+	private readonly fetchGenerations = new Map<string, number>();
+
+	/** Claim the next fetch generation for `kind` on one tenant; pass the result to the matching `mark*` call. */
+	beginWorkflowFetch(kind: WorkflowFetchKind, environmentName: string, tenantId: string): number {
+		const key = `${kind}:${environmentName}/${tenantId}`;
+		const next = (this.fetchGenerations.get(key) ?? 0) + 1;
+		this.fetchGenerations.set(key, next);
+		return next;
+	}
+
+	/** True when `generation` is still the latest one claimed for `kind` on this tenant. */
+	private isLatestWorkflowFetch(
+		kind: WorkflowFetchKind,
+		environmentName: string,
+		tenantId: string,
+		generation: number,
+	): boolean {
+		const key = `${kind}:${environmentName}/${tenantId}`;
+		return this.fetchGenerations.get(key) === generation;
+	}
 
 	constructor(
 		private readonly environmentManager: EnvironmentManager | null,
@@ -247,7 +304,13 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		definitions: ProcessDefinition[],
 		jars: JarDeployment[],
 		unregisteredJars: AvailableJar[] | undefined = undefined,
+		generation?: number,
 	): void {
+		// A newer 'workflows' fetch for this tenant has started since `generation` was claimed —
+		// that fetch's own result will land here shortly and must not be overwritten by this one.
+		if (generation !== undefined && !this.isLatestWorkflowFetch('workflows', environmentName, tenantId, generation)) {
+			return;
+		}
 		const key = `${environmentName}/${tenantId}`;
 		const existing = this.workflowCache.get(key);
 		this.workflowCache.set(key, {
@@ -257,6 +320,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			repoTrackedCount: existing?.repoTrackedCount,
 			repoSync: existing?.repoSync,
 			repoFiles: existing?.repoFiles,
+			repoJavaSources: existing?.repoJavaSources,
 		});
 		this.scheduleTreeRefresh();
 	}
@@ -273,7 +337,13 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		environmentName: string,
 		tenantId: string,
 		definitions: ProcessDefinition[],
+		generation?: number,
 	): void {
+		// Same race guard as `markWorkflowsLoaded()`, scoped to the 'processDefinitions' half —
+		// e.g. a deploy's own post-deploy re-fetch resolving after a separately user-triggered one.
+		if (generation !== undefined && !this.isLatestWorkflowFetch('processDefinitions', environmentName, tenantId, generation)) {
+			return;
+		}
 		const key = `${environmentName}/${tenantId}`;
 		const existing = this.workflowCache.get(key);
 		this.workflowCache.set(key, {
@@ -283,6 +353,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			repoTrackedCount: existing?.repoTrackedCount,
 			repoSync: existing?.repoSync,
 			repoFiles: existing?.repoFiles,
+			repoJavaSources: existing?.repoJavaSources,
 		});
 		this.scheduleTreeRefresh();
 	}
@@ -300,7 +371,12 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		tenantId: string,
 		jars: JarDeployment[],
 		unregisteredJars: AvailableJar[] | undefined = undefined,
+		generation?: number,
 	): void {
+		// Same race guard again, scoped to the 'jarDeployments' half.
+		if (generation !== undefined && !this.isLatestWorkflowFetch('jarDeployments', environmentName, tenantId, generation)) {
+			return;
+		}
 		const key = `${environmentName}/${tenantId}`;
 		const existing = this.workflowCache.get(key);
 		this.workflowCache.set(key, {
@@ -310,6 +386,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			repoTrackedCount: existing?.repoTrackedCount,
 			repoSync: existing?.repoSync,
 			repoFiles: existing?.repoFiles,
+			repoJavaSources: existing?.repoJavaSources,
 		});
 		this.scheduleTreeRefresh();
 	}
@@ -328,7 +405,14 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		trackedCount: number | undefined,
 		sync: Map<string, RepoSyncState>,
 		files: DiscoveredBpmnFile[] = [],
+		javaSources: DiscoveredJavaSource[] = [],
+		generation?: number,
 	): void {
+		// Same race guard again, scoped to the 'repoSync' half — a disconnect or a manual
+		// `reltio.refreshWorkflowRepoSync` racing an automatic post-Fetch/Deploy recomputation.
+		if (generation !== undefined && !this.isLatestWorkflowFetch('repoSync', environmentName, tenantId, generation)) {
+			return;
+		}
 		const key = `${environmentName}/${tenantId}`;
 		const existing = this.workflowCache.get(key);
 		this.workflowCache.set(key, {
@@ -338,7 +422,27 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			repoTrackedCount: trackedCount,
 			repoSync: sync,
 			repoFiles: files,
+			repoJavaSources: javaSources,
 		});
+		this.scheduleTreeRefresh();
+	}
+
+	/**
+	 * Drop one tenant's cached sync badges, keeping the discovered file lists.
+	 *
+	 * The badge asserts a byte-exact comparison against deployed XML. Once a repository
+	 * file changes on disk that assertion is no longer true of anything, so continuing to
+	 * render `synced` is a confident wrong answer — worse than the blank state this
+	 * leaves behind until `reltio.refreshWorkflowRepoSync` or the next Fetch/Deploy
+	 * recomputes it. Deliberately does not recompute: that fetches deployed XML per file,
+	 * which is not something to do on a file save (D5, D7).
+	 */
+	invalidateWorkflowRepoSync(environmentName: string, tenantId: string): void {
+		const key = `${environmentName}/${tenantId}`;
+		const existing = this.workflowCache.get(key);
+		// Nothing computed yet means nothing stale to clear — and no refresh to schedule.
+		if (!existing?.repoSync || existing.repoSync.size === 0) return;
+		this.workflowCache.set(key, { ...existing, repoSync: new Map() });
 		this.scheduleTreeRefresh();
 	}
 
@@ -362,6 +466,21 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		tenantId: string,
 	): DiscoveredBpmnFile[] | undefined {
 		return this.workflowCache.get(`${environmentName}/${tenantId}`)?.repoFiles;
+	}
+
+	/**
+	 * Java sources `discoverJavaSources()` found on the last sync computation, of one
+	 * kind. Returns an empty list rather than `undefined` before the first computation:
+	 * unlike the BPMN count, nothing renders a "not yet computed" state for these, so
+	 * the two cases would be indistinguishable to every caller.
+	 */
+	getCachedWorkflowRepoJava(
+		environmentName: string,
+		tenantId: string,
+		kind: JavaSourceKind,
+	): DiscoveredJavaSource[] {
+		const all = this.workflowCache.get(`${environmentName}/${tenantId}`)?.repoJavaSources ?? [];
+		return all.filter(source => source.kind === kind);
 	}
 
 	/** Cached JAR deployments for one tenant, or an empty list when unfetched. */
@@ -580,8 +699,39 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		) {
 			return this.workflowsFolderFor(element.environmentName, element.tenantId);
 		}
-		if (element instanceof WorkflowRepoBpmnFileNode) {
+		if (element instanceof WorkflowRepoGroupNode) {
 			return this.workflowRepoNodeFor(element.environmentName, element.tenantId);
+		}
+		// A module node's parent is always its group — the module layer only ever
+		// wraps a group's files, it never nests inside another module.
+		if (element instanceof WorkflowRepoModuleNode) {
+			return this.workflowRepoGroupFor(element.environmentName, element.tenantId, element.kind);
+		}
+		// Files hang off their kind's group, unless that group actually has the module
+		// layer (2+ distinct modules) — in which case they hang off their module node
+		// instead. `workflowRepoFileParent()` re-derives which shape applies from the
+		// same cached lists `getChildren()` used to render it.
+		if (element instanceof WorkflowRepoBpmnFileNode) {
+			const files = this.getCachedWorkflowRepoFiles(element.environmentName, element.tenantId) ?? [];
+			const mine = files.find(f => f.fileUri.toString() === element.fileUri.toString());
+			return this.workflowRepoFileParent(
+				element.environmentName,
+				element.tenantId,
+				'bpmn',
+				files.map(f => f.moduleName),
+				mine?.moduleName,
+			);
+		}
+		if (element instanceof WorkflowRepoJavaFileNode) {
+			const kind: WorkflowRepoGroupKind = element.source.kind === 'main' ? 'javaMain' : 'javaTest';
+			const sources = this.getCachedWorkflowRepoJava(element.environmentName, element.tenantId, element.source.kind);
+			return this.workflowRepoFileParent(
+				element.environmentName,
+				element.tenantId,
+				kind,
+				sources.map(s => s.moduleName),
+				element.source.moduleName,
+			);
 		}
 		if (element instanceof ProcessDefinitionNode) {
 			const cached = this.workflowCache.get(`${element.environmentName}/${element.tenantId}`);
@@ -750,7 +900,91 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			).catch(() => undefined);
 		}
 		const trackedCount = this.getCachedWorkflowRepoTrackedCount(environmentName, tenantId) ?? 0;
-		return new WorkflowRepoNode(environmentName, tenantId, config, trackedCount);
+		return new WorkflowRepoNode(
+			environmentName,
+			tenantId,
+			config,
+			trackedCount,
+			this.getCachedWorkflowRepoJava(environmentName, tenantId, 'main').length,
+			this.getCachedWorkflowRepoJava(environmentName, tenantId, 'test').length,
+		);
+	}
+
+	/** One content group under the repository row, rebuilt for `getParent()`. */
+	private workflowRepoGroupFor(
+		environmentName: string,
+		tenantId: string,
+		kind: WorkflowRepoGroupKind,
+	): WorkflowRepoGroupNode {
+		const count =
+			kind === 'bpmn'
+				? (this.getCachedWorkflowRepoFiles(environmentName, tenantId) ?? []).length
+				: this.getCachedWorkflowRepoJava(
+						environmentName,
+						tenantId,
+						kind === 'javaMain' ? 'main' : 'test',
+					).length;
+		return new WorkflowRepoGroupNode(environmentName, tenantId, kind, count);
+	}
+
+	/**
+	 * `WorkflowRepoGroupNode`'s children: the plain file rows, byte-for-byte what
+	 * `getChildren()` rendered before module-grouping existed, when `items` spans at most
+	 * one distinct Maven module — `0` (an empty group) or `1`, counting the `(no module)`
+	 * bucket (`undefined`) as one distinct value like any named module. Otherwise, one
+	 * `WorkflowRepoModuleNode` per distinct module, sorted alphabetically by name with the
+	 * `(no module)` bucket forced last — it is a fallback bucket, not a real module, so it
+	 * does not compete alphabetically with ones that are.
+	 *
+	 * This is the one place that decides whether the module layer exists for a group at
+	 * all; `getParent()`'s file-node branches call `workflowRepoFileParent()` below, which
+	 * re-derives the same decision from the same cached lists so a file's parent always
+	 * matches whichever shape this method actually rendered.
+	 */
+	private moduleGroupedChildren<T>(
+		environmentName: string,
+		tenantId: string,
+		kind: WorkflowRepoGroupKind,
+		items: readonly T[],
+		moduleNameOf: (item: T) => string | undefined,
+		toFileNode: (item: T) => MultiTenantTreeElement,
+	): MultiTenantTreeElement[] {
+		const distinct = new Set(items.map(moduleNameOf));
+		if (distinct.size <= 1) return items.map(toFileNode);
+
+		const named = [...distinct]
+			.filter((m): m is string => m !== undefined)
+			.sort((a, b) => a.localeCompare(b));
+		const order: (string | undefined)[] = distinct.has(undefined) ? [...named, undefined] : named;
+		return order.map(
+			moduleName => new WorkflowRepoModuleNode(
+				environmentName,
+				tenantId,
+				kind,
+				moduleName,
+				items.filter(i => moduleNameOf(i) === moduleName).length,
+			),
+		);
+	}
+
+	/**
+	 * A file row's parent: the `WorkflowRepoModuleNode` for its module when the group it
+	 * belongs to actually has the module layer (2+ distinct modules, the same test
+	 * `moduleGroupedChildren()` applies), or the group node directly when it doesn't — so
+	 * `reveal()` always walks back up through whichever shape was actually rendered, not a
+	 * shape that assumes the module layer is always present.
+	 */
+	private workflowRepoFileParent(
+		environmentName: string,
+		tenantId: string,
+		kind: WorkflowRepoGroupKind,
+		allModuleNames: readonly (string | undefined)[],
+		thisFilesModule: string | undefined,
+	): MultiTenantTreeElement {
+		const distinct = new Set(allModuleNames);
+		if (distinct.size <= 1) return this.workflowRepoGroupFor(environmentName, tenantId, kind);
+		const count = allModuleNames.filter(m => m === thisFilesModule).length;
+		return new WorkflowRepoModuleNode(environmentName, tenantId, kind, thisFilesModule, count);
 	}
 
 	/**
@@ -953,21 +1187,76 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			);
 		}
 		if (element instanceof WorkflowRepoNode) {
-			// Only reachable once `WorkflowRepoNode` is collapsible, i.e. connected
-			// with at least one discovered file — see its constructor. `repoFiles`
-			// being `undefined` here (sync never computed this session) still safely
-			// renders nothing rather than throwing, though that case should not arise
-			// in practice: `trackedBpmnCount` and `repoFiles` are always written together
-			// by `markWorkflowRepoSync()`.
-			const files = this.getCachedWorkflowRepoFiles(element.environmentName, element.tenantId) ?? [];
-			return files.map(
-				f => new WorkflowRepoBpmnFileNode(
-					element.environmentName,
-					element.tenantId,
-					f.fileUri,
-					f.processId,
-					this.getCachedRepoSyncState(element.environmentName, element.tenantId, f.processId),
-				),
+			// Only reachable once `WorkflowRepoNode` is collapsible, i.e. connected with
+			// at least one discovered file of some kind — see its constructor. An empty
+			// group is omitted rather than shown as "(0)", the same rule Drafts follows:
+			// the repository Reltio provisions has Java and no BPMN, so a permanent
+			// `BPMN (0)` row would be the normal case rather than the exception.
+			const { environmentName, tenantId } = element;
+			const counts: readonly (readonly [WorkflowRepoGroupKind, number])[] = [
+				['bpmn', (this.getCachedWorkflowRepoFiles(environmentName, tenantId) ?? []).length],
+				['javaMain', this.getCachedWorkflowRepoJava(environmentName, tenantId, 'main').length],
+				['javaTest', this.getCachedWorkflowRepoJava(environmentName, tenantId, 'test').length],
+			];
+			return counts
+				.filter(([, count]) => count > 0)
+				.map(([kind, count]) => new WorkflowRepoGroupNode(environmentName, tenantId, kind, count));
+		}
+		if (element instanceof WorkflowRepoGroupNode) {
+			const { environmentName, tenantId, kind } = element;
+			if (kind === 'bpmn') {
+				const files = this.getCachedWorkflowRepoFiles(environmentName, tenantId) ?? [];
+				return this.moduleGroupedChildren(
+					environmentName,
+					tenantId,
+					'bpmn',
+					files,
+					f => f.moduleName,
+					f => new WorkflowRepoBpmnFileNode(
+						environmentName,
+						tenantId,
+						f.fileUri,
+						f.processId,
+						this.getCachedRepoSyncState(environmentName, tenantId, f.processId),
+					),
+				);
+			}
+			const sources = this.getCachedWorkflowRepoJava(
+				environmentName,
+				tenantId,
+				kind === 'javaMain' ? 'main' : 'test',
+			);
+			return this.moduleGroupedChildren(
+				environmentName,
+				tenantId,
+				kind,
+				sources,
+				s => s.moduleName,
+				source => new WorkflowRepoJavaFileNode(environmentName, tenantId, source),
+			);
+		}
+		if (element instanceof WorkflowRepoModuleNode) {
+			const { environmentName, tenantId, kind, moduleName } = element;
+			if (kind === 'bpmn') {
+				const files = (this.getCachedWorkflowRepoFiles(environmentName, tenantId) ?? [])
+					.filter(f => f.moduleName === moduleName);
+				return files.map(
+					f => new WorkflowRepoBpmnFileNode(
+						environmentName,
+						tenantId,
+						f.fileUri,
+						f.processId,
+						this.getCachedRepoSyncState(environmentName, tenantId, f.processId),
+					),
+				);
+			}
+			const sources = this.getCachedWorkflowRepoJava(
+				environmentName,
+				tenantId,
+				kind === 'javaMain' ? 'main' : 'test',
+			).filter(s => s.moduleName === moduleName);
+			return sources.map(
+				source => new WorkflowRepoJavaFileNode(environmentName, tenantId, source),
 			);
 		}
 		if (element instanceof ProcessDefinitionsFolderNode) {
