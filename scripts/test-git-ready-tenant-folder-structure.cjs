@@ -40,6 +40,21 @@ function testMissingBranchDetection() {
 }
 testMissingBranchDetection();
 
+/** A failed migration is shown to the user, says why, and says it will retry (Wiz SAST follow-up, PR #14). */
+function testMigrationFailureMessage() {
+	const { migrationFailureMessage } = importDist('workspace/layoutMigration');
+	const msg = migrationFailureMessage(new Error('EBUSY: resource busy or locked'));
+	assert.ok(msg.includes('EBUSY: resource busy or locked'), 'names the cause');
+	assert.ok(/try again the next time this workspace opens/.test(msg), 'says it will retry');
+	assert.ok(!/\n\s+at /.test(msg), 'no stack trace');
+	assert.ok(migrationFailureMessage('plain string').includes('plain string'));
+	// The failure path must not fall back to console logging.
+	const ext = fs.readFileSync(path.join(repoRoot, 'src', 'extension.ts'), 'utf8');
+	const catchBlock = ext.slice(ext.indexOf('report = await migrateWorkspace('), ext.indexOf('report.migrated.length === 0'));
+	assert.ok(catchBlock.includes('migrationFailureMessage(e)') && !catchBlock.includes('console.'), 'migration failure is shown, not logged');
+}
+testMigrationFailureMessage();
+
 const text = s => Buffer.from(s).toString('utf8');
 let pkgCache;
 const pkgJson = () => (pkgCache ??= JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')));

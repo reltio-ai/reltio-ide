@@ -195,4 +195,4 @@ Nothing stored the branch, so supporting this was additive.
 ## Bugfix Round (Wiz SAST, PR #14, 2026-10-14)
 
 - [x] B1 `isMissingBranchFailure` compiled the branch name into a regular expression. Git allows `(`, `+`, `.` and `{` in branch names, so `feature/(x` threw during Connect to Git and `a+b` matched `aab`. Now a plain-text comparison; exported and covered by `testMissingBranchDetection`, mutation-checked against the old code.
-- [x] B2 A failed layout migration logged the whole error object, stack included. Now logs the message only.
+- [x] B2 A failed layout migration logged the whole error object, stack included, and the user never saw it. It is now shown as a warning naming the cause and saying it will retry on next open (`migrationFailureMessage`), and nothing is logged; tested, including that the catch block no longer writes to the console.

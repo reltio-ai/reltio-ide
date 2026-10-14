@@ -418,3 +418,13 @@ export async function undoMigration(
 export async function hasMigrationBackup(workspaceRoot: vscode.Uri): Promise<boolean> {
 	return exists(vscode.Uri.joinPath(workspaceRoot, MIGRATION_BACKUP_DIR));
 }
+
+/**
+ * What the user sees when the automatic migration throws. The stamp is written only on full
+ * success, so the migration runs again next time the workspace opens; the message says so rather
+ * than leaving the user to guess whether their tenants are in a half-moved state.
+ */
+export function migrationFailureMessage(error: unknown): string {
+	const detail = error instanceof Error ? error.message : String(error);
+	return `Reltio IDE could not move your tenants to the Git-ready folder structure: ${detail}. It will try again the next time this workspace opens.`;
+}

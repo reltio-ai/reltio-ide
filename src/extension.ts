@@ -117,6 +117,7 @@ import {
 	migrateWorkspace,
 	renderMigrationDetail,
 	undoMigration,
+	migrationFailureMessage,
 } from './workspace/layoutMigration';
 
 /** Remote shared by every tenant in a promotion flow; pre-fills the Connect to Git prompt. */
@@ -524,7 +525,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		try {
 			report = await migrateWorkspace(workspaceRoot, em, context.workspaceState);
 		} catch (e) {
-			console.error(`Reltio layout migration failed: ${e instanceof Error ? e.message : String(e)}`);
+			// Shown, not logged: a failure here used to reach only the console, so the user never knew.
+			void vscode.window.showWarningMessage(migrationFailureMessage(e));
 			return;
 		}
 		if (
