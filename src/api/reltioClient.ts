@@ -84,20 +84,31 @@ export function toHttpsBase(baseUrl: string): string {
 		: /^https:\/\//i.test(trimmed)
 			? trimmed
 			: `https://${trimmed}`;
-	const normalized = withScheme.replace(/\/+$/, '');
 
-	let hostname: string;
+	let parsed: URL;
 	try {
-		hostname = new URL(normalized).hostname;
+		parsed = new URL(withScheme);
 	} catch {
-		throw new UntrustedHostError(`Invalid Reltio environment URL: "${baseUrl}".`);
+		// The input is not echoed: it may carry credentials.
+		throw new UntrustedHostError('Invalid Reltio environment URL.');
 	}
+	// Only the origin is ever contacted. Userinfo would ride along into every request line and a
+	// path or query would silently redirect calls to somewhere the allowlist never looked at.
+	if (parsed.username || parsed.password) {
+		throw new UntrustedHostError('A Reltio environment URL must not contain credentials.');
+	}
+	if ((parsed.pathname !== '/' && parsed.pathname !== '') || parsed.search || parsed.hash) {
+		throw new UntrustedHostError(
+			`A Reltio environment URL must be a bare host (https://${parsed.host}), without a path or query.`,
+		);
+	}
+	const hostname = parsed.hostname;
 	if (!hostname || !isTrustedHost(hostname)) {
 		throw new UntrustedHostError(
 			`Refusing to contact untrusted host "${hostname}". If this is a sanctioned Reltio environment, add it to the "reltio.trustedHostSuffixes" setting.`,
 		);
 	}
-	return normalized;
+	return parsed.origin;
 }
 
 /**
@@ -112,14 +123,73 @@ export async function fetchWithTimeout(
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), timeoutMs);
 	try {
-		return await fetch(url, { ...init, signal: controller.signal });
+		// `redirect: 'error'`: a bearer token must never be replayed to wherever a 3xx points.
+		return await fetch(url, { redirect: 'error', ...init, signal: controller.signal });
 	} catch (e) {
 		if ((e as Error).name === 'AbortError') {
 			throw new Error(`Request timed out after ${timeoutMs}ms: ${url}`);
 		}
-		throw new Error(`Network error: ${(e as Error).message}`);
+		const cause = (e as { cause?: { message?: string } }).cause?.message;
+		throw new Error(`Network error: ${(e as Error).message}${cause ? ` (${cause})` : ''}`);
 	} finally {
 		clearTimeout(timer);
+	}
+}
+
+/** Largest response body any adapter call will buffer. Real payloads (BPMN, job lists) are far smaller. */
+export const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Reads a response body as text, bounded in time and size. `fetchWithTimeout`'s timer stops once
+ * headers arrive, so without this a server that sends headers and then stalls (or streams forever)
+ * would hang the progress notification and exhaust memory.
+ */
+export async function readResponseText(
+	response: Response,
+	timeoutMs: number,
+	maxBytes: number = MAX_RESPONSE_BYTES,
+): Promise<string> {
+	const declared = Number(response.headers?.get('Content-Length') ?? NaN);
+	if (Number.isFinite(declared) && declared > maxBytes) {
+		throw new Error(`Response body is too large (${declared} bytes, limit ${maxBytes}).`);
+	}
+
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	let cancel: (() => void) | undefined;
+	const timedOut = new Promise<never>((_, reject) => {
+		timer = setTimeout(() => {
+			cancel?.();
+			reject(new Error(`Reading the response timed out after ${timeoutMs}ms.`));
+		}, timeoutMs);
+	});
+	const read = async (): Promise<string> => {
+		const reader = response.body?.getReader?.();
+		if (!reader) {
+			const text = await response.text();
+			if (Buffer.byteLength(text, 'utf-8') > maxBytes) {
+				throw new Error(`Response body is too large (limit ${maxBytes} bytes).`);
+			}
+			return text;
+		}
+		cancel = () => { void reader.cancel().catch(() => undefined); };
+		const chunks: Uint8Array[] = [];
+		let total = 0;
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			total += value.byteLength;
+			if (total > maxBytes) {
+				cancel();
+				throw new Error(`Response body is too large (limit ${maxBytes} bytes).`);
+			}
+			chunks.push(value);
+		}
+		return Buffer.concat(chunks).toString('utf-8');
+	};
+	try {
+		return await Promise.race([read(), timedOut]);
+	} finally {
+		if (timer) clearTimeout(timer);
 	}
 }
 

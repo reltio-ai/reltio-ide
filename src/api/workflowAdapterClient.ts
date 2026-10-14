@@ -19,7 +19,13 @@
  * service, so it is intentionally omitted here.
  */
 import * as crypto from 'crypto';
-import { toHttpsBase, fetchWithTimeout, ReltioApiError, UntrustedHostError } from './reltioClient';
+import {
+	toHttpsBase,
+	fetchWithTimeout,
+	readResponseText,
+	ReltioApiError,
+	UntrustedHostError,
+} from './reltioClient';
 import { isValidProcessId } from '../workspace/workflowBpmnFiles';
 
 const WORKFLOW_TIMEOUT_MS = 15_000;
@@ -209,10 +215,10 @@ function parseRetryAfterSeconds(header: string | null): number | undefined {
  * Shared by every endpoint so the truncation cannot be forgotten at one call
  * site — which is how an unbounded body would reach the UI.
  */
-async function adapterHttpError(response: Response): Promise<ReltioApiError> {
+async function adapterHttpError(response: Response, alreadyRead?: string): Promise<ReltioApiError> {
 	let detail = '';
 	try {
-		detail = (await response.text()).trim();
+		detail = (alreadyRead ?? (await readResponseText(response, WORKFLOW_TIMEOUT_MS))).trim();
 	} catch {
 		// best-effort: if reading the body fails just use the status line
 	}
@@ -313,7 +319,7 @@ async function fetchList<T>(
 
 	let body: unknown;
 	try {
-		body = await response.json() as unknown;
+		body = JSON.parse(await readResponseText(response, WORKFLOW_TIMEOUT_MS)) as unknown;
 	} catch {
 		// A non-JSON response for a list endpoint is unexpected; treat as empty.
 		return [];
@@ -477,28 +483,23 @@ export async function listAvailableJars(
 	}
 
 	if (!response.ok) {
+		// Read once for the 10089 check, then hand the same text to the shared error mapper
+		// so `Retry-After` and the truncation rules are not re-implemented here.
 		let text = '';
 		try {
-			text = await response.text();
+			text = await readResponseText(response, WORKFLOW_TIMEOUT_MS);
 		} catch {
 			// best-effort: if reading the body fails, fall through with empty text
 		}
 		if (errorCodeFromBody(text) === JARS_LOCATION_NOT_CONFIGURED_ERROR_CODE) {
 			return { kind: 'notConfigured' };
 		}
-		let detail = text.trim();
-		if (detail.length > MAX_ERROR_DETAIL_CHARS) {
-			detail = `${detail.slice(0, MAX_ERROR_DETAIL_CHARS)}…`;
-		}
-		throw new ReltioApiError(
-			`Workflow Adapter returned ${response.status}${detail ? `: ${detail}` : ''}.`,
-			response.status,
-		);
+		throw await adapterHttpError(response, text);
 	}
 
 	let body: unknown;
 	try {
-		body = await response.json() as unknown;
+		body = JSON.parse(await readResponseText(response, WORKFLOW_TIMEOUT_MS)) as unknown;
 	} catch {
 		return { kind: 'ok', jars: [] };
 	}
@@ -655,7 +656,7 @@ export async function guessWorkflowAdapterUrl(
 			{ method: 'GET', headers: workflowHeaders(token, environmentUrl) },
 			WORKFLOW_TIMEOUT_MS,
 		);
-		text = await response.text();
+		text = await readResponseText(response, WORKFLOW_TIMEOUT_MS);
 	} catch {
 		return undefined; // DNS failure, connection refused, timeout — no adapter here.
 	}
@@ -724,7 +725,7 @@ export async function getProcessDefinitionXml(
 	// envelope, because `status` is enumerated first — and Part 2 writes whatever
 	// comes back to disk as both the editable BPMN and its baseline, so a wrong
 	// unwrap silently replaces the customer's workflow with that word.
-	const text = await response.text();
+	const text = await readResponseText(response, WORKFLOW_TIMEOUT_MS);
 	try {
 		const parsed = JSON.parse(text) as unknown;
 		if (parsed !== null && typeof parsed === 'object') {
@@ -821,7 +822,7 @@ export async function deployProcessDefinition(
 	if (!response.ok) {
 		throw await adapterHttpError(response);
 	}
-	return parseDeploymentResult(await response.text());
+	return parseDeploymentResult(await readResponseText(response, WORKFLOW_DEPLOY_TIMEOUT_MS));
 }
 
 /** The Adapter's `Deployment response` schema, both fields optional by spec. */

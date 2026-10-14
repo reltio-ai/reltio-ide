@@ -44,7 +44,12 @@ export class BpmnContentProvider implements vscode.TextDocumentContentProvider {
 			authority: environmentName,
 			path: `/${encodeURIComponent(tenantId)}/${encodeURIComponent(processType)}`,
 		});
-		this.cache.set(uri.toString(), xml);
+		const key = uri.toString();
+		const alreadyStored = this.cache.has(key);
+		this.cache.set(key, xml);
+		// An open editor keeps showing the old text until told the document changed; a first store
+		// has no open document yet, so there is nothing to refresh.
+		if (alreadyStored) this.onDidChangeEmitter.fire(uri);
 		// Insertion-order eviction, not a full LRU: `store()` is always called immediately before
 		// `vscode.workspace.openTextDocument(uri)` reads it back, so the entry that matters is
 		// always the one just inserted — a `Map` already iterates oldest-first, so the entry to

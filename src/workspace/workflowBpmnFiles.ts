@@ -60,8 +60,11 @@ export const BPMN_BASELINE_SUFFIX = '.bpmn20.baseline.xml';
  */
 const PROCESS_ID_PATTERN = /^[A-Za-z_][A-Za-z0-9_.-]{0,63}$/;
 
+/** Windows opens the device, not a file, for these names with or without an extension — `con.bpmn20.xml` would hit the console. */
+const WINDOWS_DEVICE_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+
 export function isValidProcessId(processId: string): boolean {
-	return PROCESS_ID_PATTERN.test(processId);
+	return PROCESS_ID_PATTERN.test(processId) && !WINDOWS_DEVICE_NAME.test(processId);
 }
 
 /**
@@ -75,6 +78,9 @@ export function processIdValidationMessage(raw: string): string | undefined {
 	if (!/^[A-Za-z_]/.test(id)) return 'A process ID must start with a letter or underscore.';
 	if (!PROCESS_ID_PATTERN.test(id)) {
 		return 'A process ID may contain only letters, digits, underscore, dot and hyphen.';
+	}
+	if (WINDOWS_DEVICE_NAME.test(id)) {
+		return 'A process ID must not be a reserved Windows device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9).';
 	}
 	return undefined;
 }

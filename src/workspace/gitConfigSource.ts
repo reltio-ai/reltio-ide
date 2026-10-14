@@ -110,8 +110,21 @@ export async function findEnclosingGitRepository(
 /** Raised when `git clone --branch <b>` fails specifically because the branch is not on the remote. */
 export class BranchNotFoundError extends Error {
 	constructor(readonly branch: string, readonly url: string) {
-		super(`Branch '${branch}' does not exist on ${url}.`);
+		super(`Branch '${branch}' does not exist on ${redactUrl(url)}.`);
 	}
+}
+
+/**
+ * Removes `user[:password]@` from every `scheme://` URL in `text`. The one redaction every message,
+ * tooltip and log line goes through: git echoes the URL it was given in its own stderr, and a sidecar
+ * written by an older version may still carry credentials. Works on a bare URL or on free text.
+ */
+export function redactUrl(text: string): string {
+	return text.replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^/@\s]*@/gi, '$1');
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /** git's wording for a missing ref, across the versions we support. */
@@ -119,7 +132,9 @@ function isMissingBranchFailure(stderr: string, branch: string): boolean {
 	return (
 		/Remote branch .* not found in upstream/i.test(stderr) ||
 		/warning: Could not find remote branch/i.test(stderr) ||
-		new RegExp(`pathspec '${branch}' did not match`, 'i').test(stderr)
+		// The branch is user text; unescaped, a name like `feat(x` would throw a SyntaxError here
+		// and hide git's real error.
+		new RegExp(`pathspec '${escapeRegExp(branch)}' did not match`, 'i').test(stderr)
 	);
 }
 
@@ -141,9 +156,25 @@ const SCP_LIKE_URL = /^[\w.-]+@[\w.-]+:.+$/;
  * system git. Accepting only the shapes above, rather than trying to deny-list every unsafe
  * scheme, is what keeps a future git transport this code has never heard of from slipping through.
  */
-function isAllowedCloneUrl(url: string): boolean {
-	if (/^(?:https?|ssh):\/\//i.test(url)) return true;
-	return SCP_LIKE_URL.test(url);
+export function cloneUrlProblem(url: string): string | undefined {
+	if (url.startsWith('-')) return 'A git URL must not start with "-".';
+	if (/[\u0000-\u0020\u007f]/.test(url)) return 'A git URL must not contain spaces or control characters.';
+	if (/^(?:https?|ssh):\/\//i.test(url)) {
+		let parsed: URL;
+		try {
+			parsed = new URL(url);
+		} catch {
+			return 'The git URL could not be parsed.';
+		}
+		// A password (or token) in the URL would be persisted in the committed sidecar and echoed by git.
+		if (parsed.password) return 'A git URL must not contain credentials.';
+		return undefined;
+	}
+	return SCP_LIKE_URL.test(url) ? undefined : 'Use an https://, ssh://, or git@host:path URL.';
+}
+
+export function isAllowedCloneUrl(url: string): boolean {
+	return cloneUrlProblem(url) === undefined;
 }
 
 /**
@@ -163,9 +194,10 @@ export async function cloneRepository(
 	destRoot: vscode.Uri,
 	branch?: string,
 ): Promise<void> {
-	if (!isAllowedCloneUrl(url)) {
+	const problem = cloneUrlProblem(url);
+	if (problem) {
 		throw new Error(
-			`Unsupported git URL: "${url}". Use an https://, ssh://, or git@host:path URL.`,
+			`Unsupported git URL: "${redactUrl(url)}". ${problem} Credentials do not belong in the URL: use SSH or your Git credential manager instead.`,
 		);
 	}
 	// Defense in depth: `isAllowedCloneUrl()` above should already exclude git's `ext::`/`fd::`
@@ -174,8 +206,8 @@ export async function cloneRepository(
 	// global options, so they must precede the `clone` subcommand.
 	const safetyFlags = ['-c', 'protocol.ext.allow=never', '-c', 'protocol.fd.allow=never'];
 	const args = branch
-		? [...safetyFlags, 'clone', '--branch', branch, url, '.']
-		: [...safetyFlags, 'clone', url, '.'];
+		? [...safetyFlags, 'clone', '--branch', branch, '--', url, '.']
+		: [...safetyFlags, 'clone', '--', url, '.'];
 	try {
 		await execFileAsync(getGitExecutable(), args, {
 			cwd: destRoot.fsPath,
@@ -211,5 +243,7 @@ export function describeGitFailure(e: unknown): Error {
 			`Git operation timed out after ${CLONE_TIMEOUT_MS / 60000} minutes. Check your network connection and git credentials, then try again.`,
 		);
 	}
-	return e instanceof Error ? e : new Error(String(e));
+	const message = redactUrl(e instanceof Error ? e.message : String(e));
+	if (e instanceof Error && message === e.message) return e;
+	return new Error(message);
 }

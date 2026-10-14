@@ -39,8 +39,32 @@ export const DRAFT_SUFFIX = BPMN_SUFFIX;
  */
 export { isValidProcessId, processIdValidationMessage } from './workflowBpmnFiles';
 
-/** Matches the first `<process …>` element, with or without a namespace prefix. */
-const FIRST_PROCESS_TAG = /<(?:[\w.-]+:)?process\b[^>]*>/;
+/**
+ * Matches the first `<process …>` start tag, with or without a namespace prefix. Quoted attribute
+ * values are consumed whole so a `>` inside one does not end the tag early.
+ */
+const FIRST_PROCESS_TAG = /<(?:[\w.-]+:)?process(?=[\s/>])(?:[^>"']|"[^"]*"|'[^']*')*>/;
+
+/** One `name="value"` attribute. Tokenised rather than regex-searched by name so `data-id=` or a quoted value that merely contains ` id="` is never mistaken for the `id` attribute. */
+const ATTRIBUTE = /([^\s=/>"']+)(\s*=\s*)("[^"]*"|'[^']*')/g;
+
+function attributeValue(tag: string, attribute: string): string | undefined {
+	for (const m of tag.matchAll(ATTRIBUTE)) {
+		if (m[1] === attribute) return m[3].slice(1, -1);
+	}
+	return undefined;
+}
+
+/** Replace attribute `attribute` on a start tag, or add it right after the tag name when absent. */
+function setAttribute(tag: string, attribute: string, escapedValue: string): string {
+	let found = false;
+	const replaced = tag.replace(ATTRIBUTE, (whole, name: string) => {
+		if (found || name !== attribute) return whole;
+		found = true;
+		return `${attribute}="${escapedValue}"`;
+	});
+	return found ? replaced : replaced.replace(/^<([\w.:-]+)/, `<$1 ${attribute}="${escapedValue}"`);
+}
 
 export interface WorkflowDraft {
 	readonly fileUri: vscode.Uri;
@@ -230,22 +254,16 @@ export function rewriteProcessIdentity(
 	const tag = match[0];
 	const id = escapeXml(newProcessId);
 	const name = escapeXml(newDisplayName);
-	const previousId = /\bid\s*=\s*["']([^"']*)["']/.exec(tag)?.[1];
+	const previousId = attributeValue(tag, 'id');
 
-	let rewritten = /\bid\s*=\s*["'][^"']*["']/.test(tag)
-		? tag.replace(/\bid\s*=\s*["'][^"']*["']/, `id="${id}"`)
-		: tag.replace(/^<([\w.:-]+)/, `<$1 id="${id}"`);
-
-	rewritten = /\bname\s*=\s*["'][^"']*["']/.test(rewritten)
-		? rewritten.replace(/\bname\s*=\s*["'][^"']*["']/, `name="${name}"`)
-		: rewritten.replace(/^<([\w.:-]+)/, `<$1 name="${name}"`);
+	const rewritten = setAttribute(setAttribute(tag, 'id', id), 'name', name);
 
 	const withProcess = xml.slice(0, match.index) + rewritten + xml.slice(match.index + tag.length);
 	return retargetDiagramPlane(withProcess, previousId, id);
 }
 
 /** `<bpmndi:BPMNPlane …>`, with or without a namespace prefix. */
-const BPMN_PLANE_TAG = /<(?:[\w.-]+:)?BPMNPlane\b[^>]*>/i;
+const BPMN_PLANE_TAG = /<(?:[\w.-]+:)?BPMNPlane(?=[\s/>])(?:[^>"']|"[^"]*"|'[^']*')*>/i;
 
 /**
  * Point the diagram plane's `bpmnElement` at the new process id.
@@ -264,13 +282,10 @@ function retargetDiagramPlane(
 	if (!match) return xml;
 
 	const tag = match[0];
-	const current = /\bbpmnElement\s*=\s*["']([^"']*)["']/.exec(tag)?.[1];
+	const current = attributeValue(tag, 'bpmnElement');
 	if (current !== previousProcessId) return xml;
 
-	const rewritten = tag.replace(
-		/\bbpmnElement\s*=\s*["'][^"']*["']/,
-		`bpmnElement="${escapedNewId}"`,
-	);
+	const rewritten = setAttribute(tag, 'bpmnElement', escapedNewId);
 	return xml.slice(0, match.index) + rewritten + xml.slice(match.index + tag.length);
 }
 
