@@ -25,6 +25,7 @@ import type { WorkflowDraft } from '../workspace/workflowDrafts';
 import type { WorkflowRepoConfig } from '../workspace/workflowRepoConfig';
 import type { DiscoveredJavaSource } from '../workspace/workflowRepoJavaDiscovery';
 import type { RepoSyncState } from '../workspace/workflowRepoSync';
+import { redactUrl } from '../workspace/gitConfigSource';
 
 // ─── Tooltip helpers ─────────────────────────────────────────────────────────
 
@@ -101,10 +102,16 @@ export class WorkflowsFolderNode extends vscode.TreeItem {
 		 * Present when the URL sidecar exists (may still be loading).
 		 */
 		readonly savedAdapterUrl: string | undefined,
+		/**
+		 * A connected Custom Workflow Repository needs no Adapter URL, so the row has children to
+		 * show even before one is saved. Without this the folder was not expandable and the
+		 * repository row below it could never be reached.
+		 */
+		readonly hasRepo = false,
 	) {
 		super(
 			'Workflows',
-			savedAdapterUrl === undefined
+			savedAdapterUrl === undefined && !hasRepo
 				? vscode.TreeItemCollapsibleState.None
 				: vscode.TreeItemCollapsibleState.Collapsed,
 		);
@@ -115,14 +122,20 @@ export class WorkflowsFolderNode extends vscode.TreeItem {
 		this.iconPath = new vscode.ThemeIcon('git-branch');
 		this.id = `workflows:${environmentName}/${tenantId}`;
 
-		// When no URL is saved, clicking the folder opens the prompt directly.
+		// When no URL is saved, clicking the folder opens the prompt directly — unless a repository is
+		// connected, where a click must expand the folder rather than interrupt with a prompt (the
+		// URL can still be set from the folder's context menu).
 		if (savedAdapterUrl === undefined) {
-			this.command = {
-				command: 'reltio.fetchWorkflows',
-				title: 'Fetch Workflows',
-				arguments: [this],
-			};
-			this.description = 'Click to configure';
+			if (hasRepo) {
+				this.description = 'Adapter URL not set';
+			} else {
+				this.command = {
+					command: 'reltio.fetchWorkflows',
+					title: 'Fetch Workflows',
+					arguments: [this],
+				};
+				this.description = 'Click to configure';
+			}
 		}
 	}
 }
@@ -245,6 +258,13 @@ export class ProcessDefinitionNode extends vscode.TreeItem {
 		 *   'changed' — downloaded and edited, not yet deployed
 		 */
 		readonly localState: 'none' | 'clean' | 'changed' = 'none',
+		/**
+		 * How the connected Custom Workflow Repository's file for this id compares with the tenant
+		 * (D5), or `undefined` when no repository file matches. Display only: the actions a row
+		 * offers follow `localState`, because Deploy, Compare and Discard all act on the downloaded
+		 * copy. The repository file is deployed from its own row under the repository.
+		 */
+		readonly repoState?: RepoSyncState,
 	) {
 		super(definition.displayName || definition.type, vscode.TreeItemCollapsibleState.None);
 		// A distinct contextValue for the edited case, so Deploy / Discard /
@@ -260,7 +280,9 @@ export class ProcessDefinitionNode extends vscode.TreeItem {
 		);
 		this.description = localState === 'changed'
 			? `${definition.type} • local changes`
-			: definition.type;
+			: repoState === 'changed'
+				? `${definition.type} • differs from repository`
+				: definition.type;
 		// Whether a definition is Reltio's or the customer's is the first thing
 		// that changes what you may safely do to it — redeploying an id that is
 		// already live replaces it — so it leads, in bold, rather than trailing
@@ -275,9 +297,11 @@ export class ProcessDefinitionNode extends vscode.TreeItem {
 			],
 			localState === 'changed'
 				? 'You have local changes that have not been deployed.'
-				: localState === 'clean'
-					? 'Downloaded locally; matches the tenant.'
-					: undefined,
+				: repoState === 'changed'
+					? 'The connected Custom Workflow Repository has a different version of this workflow. Deploy it from its row under the repository.'
+					: localState === 'clean'
+						? 'Downloaded locally; matches the tenant.'
+						: undefined,
 		);
 		this.id = `workflowDef:${environmentName}/${tenantId}/${definition.type}`;
 		this.command = {
@@ -423,7 +447,7 @@ export class WorkflowRepoNode extends vscode.TreeItem {
 			].filter(Boolean);
 			this.description = summary.length > 0 ? `Connected — ${summary.join(' · ')}` : 'Connected';
 			this.tooltip = buildTooltip('Custom Workflow Repository', [
-				['Repository', config.repoUrl],
+				['Repository', redactUrl(config.repoUrl)],
 				['Path', config.relativePath],
 				['BPMN files tracked', String(count)],
 				['Java classes', String(javaMainCount)],

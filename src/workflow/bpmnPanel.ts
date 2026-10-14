@@ -85,6 +85,20 @@ export class BpmnPanelManager {
 
 		this.panels.set(key, panel);
 
+		const subs: vscode.Disposable[] = [];
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		// Registered before the first await. Layout can throw, and a panel that is in `panels` with no
+		// dispose handler can never be removed: the next Show BPMN Diagram would `reveal()` a dead entry.
+		subs.push(
+			panel.onDidDispose(() => {
+				if (timer) clearTimeout(timer);
+				this.panels.delete(key);
+				for (const d of this.disposables.get(key) ?? []) d.dispose();
+				this.disposables.delete(key);
+			}),
+		);
+		this.disposables.set(key, subs);
+
 		const nonce = getNonce();
 		const scriptUri = panel.webview.asWebviewUri(
 			vscode.Uri.joinPath(extensionUri, 'dist', 'bpmnView.js'),
@@ -94,9 +108,13 @@ export class BpmnPanelManager {
 		);
 		panel.webview.html = getHtml(panel.webview, scriptUri, styleUri, nonce);
 
-		postDiagram(panel, await buildDiagramView(document.getText()));
-
-		const subs: vscode.Disposable[] = [];
+		try {
+			postDiagram(panel, await buildDiagramView(document.getText()));
+		} catch (e) {
+			void vscode.window.showErrorMessage(`Could not draw the diagram: ${(e as Error).message}`);
+			panel.dispose();
+			return;
+		}
 
 		subs.push(
 			panel.webview.onDidReceiveMessage(async (msg: WebviewMessage) => {
@@ -108,29 +126,24 @@ export class BpmnPanelManager {
 			}),
 		);
 
-		let timer: ReturnType<typeof setTimeout> | undefined;
 		subs.push(
 			vscode.workspace.onDidChangeTextDocument(e => {
 				if (e.document.uri.toString() !== key) return;
 				if (timer) clearTimeout(timer);
 				timer = setTimeout(async () => {
-					const view = await buildDiagramView(e.document.getText());
+					let view: DiagramView | undefined;
+					try {
+						view = await buildDiagramView(e.document.getText());
+					} catch (err) {
+						// A half-typed edit can be unlayoutable; show the "nothing to draw" state, not a stale or dead panel.
+						console.error('Reltio BPMN diagram update failed:', err);
+						view = undefined;
+					}
 					// Re-check: the panel can be disposed while the layout is awaited.
 					if (this.panels.has(key)) postDiagram(panel, view);
 				}, DEBOUNCE_MS);
 			}),
 		);
-
-		subs.push(
-			panel.onDidDispose(() => {
-				if (timer) clearTimeout(timer);
-				this.panels.delete(key);
-				for (const d of this.disposables.get(key) ?? []) d.dispose();
-				this.disposables.delete(key);
-			}),
-		);
-
-		this.disposables.set(key, subs);
 	}
 
 	dispose(): void {

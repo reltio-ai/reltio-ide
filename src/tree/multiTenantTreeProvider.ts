@@ -37,7 +37,7 @@ import {
 import { loadWorkflowAdapterUrl } from '../workspace/workflowAdapterConfig';
 import { bpmnFileName, listLocalBpmnFiles } from '../workspace/workflowBpmnFiles';
 import type { RepoSyncState } from '../workspace/workflowRepoSync';
-import { loadWorkflowRepoConfig } from '../workspace/workflowRepoConfig';
+import { inspectWorkflowRepoConfig, loadWorkflowRepoConfig } from '../workspace/workflowRepoConfig';
 import { reconcileWorkflowRepoGitignore } from '../workspace/workflowRepoGitignore';
 import type { DiscoveredBpmnFile } from '../workspace/workflowRepoDiscovery';
 import type { DiscoveredJavaSource, JavaSourceKind } from '../workspace/workflowRepoJavaDiscovery';
@@ -154,8 +154,14 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 	private readonly workflowCache = new Map<
 		string,
 		{
-			definitions: ProcessDefinition[];
-			jars: JarDeployment[];
+			/**
+			 * `undefined` means "never fetched this session", which is not the same as "fetched and
+			 * empty": a partial update (a repository sync, one half of a refresh) must not invent the
+			 * other half as an empty list, or the tree shows `(0)` folders for a tenant nobody has
+			 * loaded and drops the Fetch row.
+			 */
+			definitions: ProcessDefinition[] | undefined;
+			jars: JarDeployment[] | undefined;
 			/**
 			 * JARs on S3 not yet registered, or `undefined` when that discovery
 			 * hasn't been attempted this session or isn't available for this
@@ -210,12 +216,36 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 	 */
 	private readonly fetchGenerations = new Map<string, number>();
 
+	/**
+	 * One claim order per tenant, shared by every kind. The per-kind map above only answers "has a
+	 * newer fetch of the SAME kind started"; it cannot see that a combined load (`workflows`) that
+	 * started before a deploy's `processDefinitions` re-fetch is the older data. Comparing claim
+	 * numbers across kinds can.
+	 */
+	private readonly tenantClaims = new Map<string, number>();
+
+	/**
+	 * Highest claim already applied to each half of a tenant's cache. A result whose claim is not
+	 * above it is older than what the cache already holds and is dropped.
+	 */
+	private readonly appliedClaims = new Map<string, number>();
+
 	/** Claim the next fetch generation for `kind` on one tenant; pass the result to the matching `mark*` call. */
 	beginWorkflowFetch(kind: WorkflowFetchKind, environmentName: string, tenantId: string): number {
-		const key = `${kind}:${environmentName}/${tenantId}`;
-		const next = (this.fetchGenerations.get(key) ?? 0) + 1;
-		this.fetchGenerations.set(key, next);
+		const tenantKey = `${environmentName}/${tenantId}`;
+		const next = (this.tenantClaims.get(tenantKey) ?? 0) + 1;
+		this.tenantClaims.set(tenantKey, next);
+		this.fetchGenerations.set(`${kind}:${tenantKey}`, next);
 		return next;
+	}
+
+	/** True if `generation` is newer than whatever already landed in `half`; records it when so. */
+	private claimHalf(half: 'definitions' | 'jars', environmentName: string, tenantId: string, generation: number | undefined): boolean {
+		if (generation === undefined) return true;
+		const key = `${half}:${environmentName}/${tenantId}`;
+		if (generation <= (this.appliedClaims.get(key) ?? 0)) return false;
+		this.appliedClaims.set(key, generation);
+		return true;
 	}
 
 	/** True when `generation` is still the latest one claimed for `kind` on this tenant. */
@@ -313,10 +343,14 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		}
 		const key = `${environmentName}/${tenantId}`;
 		const existing = this.workflowCache.get(key);
+		// Each half is applied only if it is newer than what is already there, so a slow combined
+		// load cannot bury a deploy's fresher re-fetch (or the other way round).
+		const takeDefinitions = this.claimHalf('definitions', environmentName, tenantId, generation);
+		const takeJars = this.claimHalf('jars', environmentName, tenantId, generation);
 		this.workflowCache.set(key, {
-			definitions,
-			jars,
-			unregisteredJars,
+			definitions: takeDefinitions ? definitions : existing?.definitions,
+			jars: takeJars ? jars : existing?.jars,
+			unregisteredJars: takeJars ? unregisteredJars : existing?.unregisteredJars,
 			repoTrackedCount: existing?.repoTrackedCount,
 			repoSync: existing?.repoSync,
 			repoFiles: existing?.repoFiles,
@@ -330,8 +364,8 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 	 *
 	 * The two lists come from two independent endpoints, so refreshing one should
 	 * not require a round trip for the other. A partial update on a tenant that
-	 * has never been fetched still seeds the other half as empty, so the tree has
-	 * something coherent to render.
+	 * has never been fetched leaves the other half `undefined` ("not fetched"), never an
+	 * empty list, so the tree does not render a `(0)` folder nobody has loaded.
 	 */
 	markProcessDefinitionsLoaded(
 		environmentName: string,
@@ -346,9 +380,10 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		}
 		const key = `${environmentName}/${tenantId}`;
 		const existing = this.workflowCache.get(key);
+		if (!this.claimHalf('definitions', environmentName, tenantId, generation)) return;
 		this.workflowCache.set(key, {
 			definitions,
-			jars: existing?.jars ?? [],
+			jars: existing?.jars,
 			unregisteredJars: existing?.unregisteredJars,
 			repoTrackedCount: existing?.repoTrackedCount,
 			repoSync: existing?.repoSync,
@@ -379,8 +414,9 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		}
 		const key = `${environmentName}/${tenantId}`;
 		const existing = this.workflowCache.get(key);
+		if (!this.claimHalf('jars', environmentName, tenantId, generation)) return;
 		this.workflowCache.set(key, {
-			definitions: existing?.definitions ?? [],
+			definitions: existing?.definitions,
 			jars,
 			unregisteredJars,
 			repoTrackedCount: existing?.repoTrackedCount,
@@ -416,11 +452,36 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		const key = `${environmentName}/${tenantId}`;
 		const existing = this.workflowCache.get(key);
 		this.workflowCache.set(key, {
-			definitions: existing?.definitions ?? [],
-			jars: existing?.jars ?? [],
+			definitions: existing?.definitions,
+			jars: existing?.jars,
 			unregisteredJars: existing?.unregisteredJars,
 			repoTrackedCount: trackedCount,
 			repoSync: sync,
+			repoFiles: files,
+			repoJavaSources: javaSources,
+		});
+		this.scheduleTreeRefresh();
+	}
+
+	/**
+	 * Record what a purely local walk of the connected repository found, keeping any sync badges
+	 * already computed. Used for the first render after a reload and when a file is created or
+	 * deleted: neither needs the tenant, and neither should throw away a badge that is still true.
+	 */
+	markWorkflowRepoFilesDiscovered(
+		environmentName: string,
+		tenantId: string,
+		files: DiscoveredBpmnFile[],
+		javaSources: DiscoveredJavaSource[],
+	): void {
+		const key = `${environmentName}/${tenantId}`;
+		const existing = this.workflowCache.get(key);
+		this.workflowCache.set(key, {
+			definitions: existing?.definitions,
+			jars: existing?.jars,
+			unregisteredJars: existing?.unregisteredJars,
+			repoTrackedCount: files.length,
+			repoSync: existing?.repoSync,
 			repoFiles: files,
 			repoJavaSources: javaSources,
 		});
@@ -483,6 +544,11 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		return all.filter(source => source.kind === kind);
 	}
 
+	/** True once process definitions have been fetched for this tenant this session (an empty result counts). */
+	hasFetchedProcessDefinitions(environmentName: string, tenantId: string): boolean {
+		return this.workflowCache.get(`${environmentName}/${tenantId}`)?.definitions !== undefined;
+	}
+
 	/** Cached JAR deployments for one tenant, or an empty list when unfetched. */
 	getCachedJarDeployments(environmentName: string, tenantId: string): JarDeployment[] {
 		return this.workflowCache.get(`${environmentName}/${tenantId}`)?.jars ?? [];
@@ -530,6 +596,56 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 	/** Clear cached workflow data for one tenant (e.g. after removing the tenant). */
 	clearWorkflowCache(environmentName: string, tenantId: string): void {
 		this.workflowCache.delete(`${environmentName}/${tenantId}`);
+		this.repoDiscoveryRequested.delete(`${environmentName}/${tenantId}`);
+	}
+
+	/**
+	 * The provider has no filesystem walk of its own (see `markWorkflowRepoSync()`), so it asks
+	 * whoever owns discovery to run one. Called at most once per tenant per session, the first
+	 * time a connected repository's row is rendered with nothing discovered — which is exactly
+	 * the state after a window reload, when the row otherwise said "Connected" with no children
+	 * until the user ran Fetch or Refresh Sync by hand.
+	 */
+	setWorkflowRepoDiscoveryHandler(handler: ((environmentName: string, tenantId: string) => void) | undefined): void {
+		this.repoDiscoveryHandler = handler;
+	}
+
+	private repoDiscoveryHandler: ((environmentName: string, tenantId: string) => void) | undefined;
+	private invalidRepoConfigHandler: ((environmentName: string, tenantId: string, reason: string) => void) | undefined;
+	private readonly invalidRepoConfigReported = new Set<string>();
+
+	/**
+	 * `WorkflowRepo.reltio.json` is committed, so a cloned tenant repository decides what is in it.
+	 * An invalid one is ignored; this tells whoever owns UI once per session why the row says "not connected".
+	 */
+	setInvalidRepoConfigHandler(handler: ((environmentName: string, tenantId: string, reason: string) => void) | undefined): void {
+		this.invalidRepoConfigHandler = handler;
+	}
+
+	private reportInvalidRepoConfigOnce(environmentName: string, tenantId: string, reason: string): void {
+		const key = `${environmentName}/${tenantId}`;
+		if (this.invalidRepoConfigReported.has(key)) return;
+		this.invalidRepoConfigReported.add(key);
+		this.invalidRepoConfigHandler?.(environmentName, tenantId, reason);
+	}
+	private readonly repoDiscoveryRequested = new Set<string>();
+
+	private requestRepoDiscoveryOnce(environmentName: string, tenantId: string): void {
+		if (!this.repoDiscoveryHandler) return;
+		if (this.getCachedWorkflowRepoFiles(environmentName, tenantId) !== undefined) return;
+		const key = `${environmentName}/${tenantId}`;
+		if (this.repoDiscoveryRequested.has(key)) return;
+		this.repoDiscoveryRequested.add(key);
+		this.repoDiscoveryHandler(environmentName, tenantId);
+	}
+
+	/** Whether a Custom Workflow Repository is connected for this tenant (sidecar present and valid). */
+	private async hasWorkflowRepo(environmentName: string, tenantId: string): Promise<boolean> {
+		if (!this.environmentManager) return false;
+		const config = await loadWorkflowRepoConfig(
+			this.environmentManager.getWorkflowRepoConfigUri(environmentName, tenantId),
+		);
+		return config !== undefined;
 	}
 
 	/** L3 / history edits: refresh tree labels only (no SecretStorage, no env rescan). */
@@ -842,7 +958,9 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 				this.environmentManager.getWorkflowAdapterConfigUri(environmentName, tenantId),
 			)
 			: undefined;
-		return new WorkflowsFolderNode(environmentName, tenantId, savedAdapterUrl);
+		return new WorkflowsFolderNode(
+			environmentName, tenantId, savedAdapterUrl, await this.hasWorkflowRepo(environmentName, tenantId),
+		);
 	}
 
 	/**
@@ -892,12 +1010,17 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			return new WorkflowRepoNode(environmentName, tenantId, undefined, 0);
 		}
 		const repoConfigUri = this.environmentManager.getWorkflowRepoConfigUri(environmentName, tenantId);
-		const config = await loadWorkflowRepoConfig(repoConfigUri);
+		const read = await inspectWorkflowRepoConfig(repoConfigUri);
+		const config = read.config;
+		if (read.invalidReason) this.reportInvalidRepoConfigOnce(environmentName, tenantId, read.invalidReason);
 		if (config) {
 			await reconcileWorkflowRepoGitignore(
 				this.environmentManager.getTenantRootUri(environmentName, tenantId),
 				repoConfigUri,
 			).catch(() => undefined);
+			this.requestRepoDiscoveryOnce(environmentName, tenantId);
+		} else {
+			this.repoDiscoveryRequested.delete(`${environmentName}/${tenantId}`);
 		}
 		const trackedCount = this.getCachedWorkflowRepoTrackedCount(environmentName, tenantId) ?? 0;
 		return new WorkflowRepoNode(
@@ -1119,7 +1242,12 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 				);
 				const savedAdapterUrl = await loadWorkflowAdapterUrl(configUri);
 				children.push(
-					new WorkflowsFolderNode(element.environmentName, element.tenantId, savedAdapterUrl),
+					new WorkflowsFolderNode(
+						element.environmentName,
+						element.tenantId,
+						savedAdapterUrl,
+						await this.hasWorkflowRepo(element.environmentName, element.tenantId),
+					),
 				);
 			}
 
@@ -1150,7 +1278,9 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			// been loaded this session — so this row is independent of `cached` below.
 			const repoRow = await this.workflowRepoNodeFor(element.environmentName, element.tenantId);
 			const cached = this.workflowCache.get(`${element.environmentName}/${element.tenantId}`);
-			if (cached === undefined) {
+			// Only a fetch of the tenant's own lists counts as "loaded". A cache entry that exists
+			// solely because the repository sync wrote into it is still "not fetched".
+			if (cached === undefined || (cached.definitions === undefined && cached.jars === undefined)) {
 				// URL saved but not yet loaded this session — show a fetch action row.
 				const children: MultiTenantTreeElement[] = element.savedAdapterUrl !== undefined
 					? [new WorkflowFetchActionNode(element.environmentName, element.tenantId)]
@@ -1158,20 +1288,31 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 				children.push(repoRow);
 				return children;
 			}
-			const children: MultiTenantTreeElement[] = [
-				new ProcessDefinitionsFolderNode(
-					element.environmentName,
-					element.tenantId,
-					cached.definitions,
-				),
-				new JarDeploymentsFolderNode(
-					element.environmentName,
-					element.tenantId,
-					cached.jars,
-					cached.unregisteredJars,
-				),
-				repoRow,
-			];
+			const children: MultiTenantTreeElement[] = [];
+			if (cached.definitions !== undefined) {
+				children.push(
+					new ProcessDefinitionsFolderNode(
+						element.environmentName,
+						element.tenantId,
+						cached.definitions,
+					),
+				);
+			}
+			if (cached.jars !== undefined) {
+				children.push(
+					new JarDeploymentsFolderNode(
+						element.environmentName,
+						element.tenantId,
+						cached.jars,
+						cached.unregisteredJars,
+					),
+				);
+			}
+			// One half loaded, the other not: say so with the fetch row rather than a fake empty folder.
+			if ((cached.definitions === undefined || cached.jars === undefined) && element.savedAdapterUrl !== undefined) {
+				children.push(new WorkflowFetchActionNode(element.environmentName, element.tenantId));
+			}
+			children.push(repoRow);
 			// Drafts appear only when at least one exists — same rule as History.
 			const drafts = await this.workflowDraftsFor(element.environmentName, element.tenantId);
 			if (drafts.length > 0) {
@@ -1272,11 +1413,17 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 				const repoState = this.getCachedRepoSyncState(
 					element.environmentName, element.tenantId, d.type,
 				);
+				// Two different questions, two different inputs. `localState` is about the
+				// DOWNLOADED copy and alone decides which actions the row offers (Deploy, Compare and
+				// Discard all act on that copy). `repoState` is only what the badge says. Merging them
+				// made a repo `changed` offer Deploy on a copy that had not changed (or did not exist),
+				// and a repo `clean` hide real edits to a downloaded draft.
 				return new ProcessDefinitionNode(
 					element.environmentName,
 					element.tenantId,
 					d,
-					repoState ?? (changed.has(d.type) ? 'changed' : downloaded.has(d.type) ? 'clean' : 'none'),
+					changed.has(d.type) ? 'changed' : downloaded.has(d.type) ? 'clean' : 'none',
+					repoState,
 				);
 			});
 		}

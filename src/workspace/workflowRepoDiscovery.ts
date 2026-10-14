@@ -34,23 +34,42 @@ export interface DiscoveredBpmnFile {
 	readonly moduleName: string | undefined;
 }
 
-function hasBpmnLikeExtension(fileName: string): boolean {
-	const lower = fileName.toLowerCase();
-	return lower.endsWith('.bpmn20.xml') || lower.endsWith('.xml');
+/**
+ * Directories that hold build output or vendored copies, never authored BPMN. A Maven build
+ * copies `src/main/resources` into `target/classes`, so without this every BPMN appeared
+ * twice, the two rows collided on one process id, and a deploy could pick the stale copy.
+ */
+const SKIP_DIRS: ReadonlySet<string> = new Set(['target', 'node_modules']);
+
+/** A BPMN is a few kilobytes; anything near this size is not one, and every candidate is read whole. */
+const MAX_BPMN_BYTES = 1024 * 1024;
+
+/** Upper bound on .xml files read per sync, so a repository full of generated XML cannot stall the tree. */
+const MAX_XML_CANDIDATES = 2000;
+
+export interface BpmnDiscovery {
+	readonly files: DiscoveredBpmnFile[];
+	/** True when the candidate limit stopped the walk early; callers say so instead of listing a silently partial result. */
+	readonly truncated: boolean;
 }
 
 /**
  * Depth-limited walk of a connected repository, collecting every file whose
- * extension is `.xml`/`.bpmn20.xml` **and** which parses to a non-empty
+ * extension is `.xml` (which includes `.bpmn20.xml`) **and** which parses to a non-empty
  * `<process id>` (D4). A file that merely has the right extension but no
  * process id — a schema, a README with an `.xml` typo — is silently excluded
  * rather than surfaced as a broken row.
  */
-export async function discoverBpmnFiles(root: vscode.Uri): Promise<DiscoveredBpmnFile[]> {
+export async function discoverBpmnFilesDetailed(root: vscode.Uri): Promise<BpmnDiscovery> {
 	const found: DiscoveredBpmnFile[] = [];
-	await walk(root, 0, [], undefined, found);
+	const budget = { candidates: 0, truncated: false };
+	await walk(root, 0, [], undefined, found, budget);
 	found.sort((a, b) => a.processId.localeCompare(b.processId));
-	return found;
+	return { files: found, truncated: budget.truncated };
+}
+
+export async function discoverBpmnFiles(root: vscode.Uri): Promise<DiscoveredBpmnFile[]> {
+	return (await discoverBpmnFilesDetailed(root)).files;
 }
 
 /**
@@ -65,8 +84,9 @@ async function walk(
 	relParts: readonly string[],
 	moduleName: string | undefined,
 	found: DiscoveredBpmnFile[],
+	budget: { candidates: number; truncated: boolean },
 ): Promise<void> {
-	if (depth > MAX_DEPTH) return;
+	if (depth > MAX_DEPTH || budget.truncated) return;
 	let entries: [string, vscode.FileType][];
 	try {
 		entries = await vscode.workspace.fs.readDirectory(dir);
@@ -78,11 +98,23 @@ async function walk(
 		if (name.startsWith('.')) continue;
 		const child = vscode.Uri.joinPath(dir, name);
 		if (type === vscode.FileType.Directory) {
-			await walk(child, depth + 1, [...relParts, name], module, found);
+			if (SKIP_DIRS.has(name)) continue;
+			await walk(child, depth + 1, [...relParts, name], module, found, budget);
 			continue;
 		}
-		if (type !== vscode.FileType.File || !hasBpmnLikeExtension(name)) continue;
+		if (type !== vscode.FileType.File || !name.toLowerCase().endsWith('.xml')) continue;
 
+		if (budget.candidates >= MAX_XML_CANDIDATES) {
+			budget.truncated = true;
+			return;
+		}
+		budget.candidates++;
+		try {
+			const { size } = await vscode.workspace.fs.stat(child);
+			if (size > MAX_BPMN_BYTES) continue;
+		} catch {
+			continue;
+		}
 		let text: string;
 		try {
 			text = new TextDecoder().decode(await vscode.workspace.fs.readFile(child));

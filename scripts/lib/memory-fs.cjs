@@ -46,7 +46,7 @@ function createMemoryFs() {
 		},
 		async stat(uri) {
 			const p = norm(uri);
-			if (files.has(p)) return { type: FileType.File };
+			if (files.has(p)) return { type: FileType.File, size: files.get(p).length };
 			if (dirs.has(p)) return { type: FileType.Directory };
 			const e = new Error(`ENOENT ${p}`);
 			e.code = 'FileNotFound';
