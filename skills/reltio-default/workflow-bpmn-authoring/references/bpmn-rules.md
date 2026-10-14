@@ -9,12 +9,15 @@ treated as unsupported until proven otherwise on a tenant.
 > Authoritative sources for this file: the public **Reltio Workflow Service repository**
 > ([github.com/reltio-ai/workflow](https://github.com/reltio-ai/workflow)) — the real service/listener
 > class sources and the actual OOTB process definitions under `default process definitions/`, which
-> is the workflow equivalent of the LCA framework's `ILifeCycleAction.java` — and the official
-> doc-portal pages under
+> is the workflow equivalent of the LCA framework's `ILifeCycleAction.java` — the official
+> **[github.com/reltio-ai/samples-custom-workflow](https://github.com/reltio-ai/samples-custom-workflow)**
+> repository (14 complete, working sample modules — real BPMN, real Java, real tests, each with its
+> own `Readme.md` — covering most of the patterns in §§15 and the Java patterns reference), and the
+> official doc-portal pages under
 > [docs.reltio.com](https://docs.reltio.com/en/objectives/manage-workflow-tasks) indexed in
-> `references/reltio-doc-portal-reference.md`. **See §12 for what is confirmed against those sources,
-> inferred from observed deploy behavior, or still unresolved — and §13 for what to do when this file
-> and the official docs disagree.**
+> `references/reltio-doc-portal-reference.md`. **When real compiled code in either GitHub repository
+> disagrees with a doc-portal page's prose, the code wins** — see §12 for the places that's already
+> happened, and §13 for the general precedence rule.
 
 ---
 
@@ -42,6 +45,13 @@ treated as unsupported until proven otherwise on a tenant.
 
 All seven namespaces are required. Dropping `activiti` or `xsi` fails at deploy, not at author time.
 
+**`expressionLanguage="...XPath"` next to `${decision=='Approve'}` conditions is not a mistake to
+fix.** Every condition example in this file uses `${...}` syntax (JUEL/Unified EL), not literal
+XPath, despite the namespace declaration above. This is inherited, widely-copied Activiti 5.x
+boilerplate — the attribute is not actually consulted for `conditionExpression` evaluation in
+practice — not a live bug in anything this file tells you to generate. Keep it in the skeleton as
+written; it is cosmetic.
+
 ## 2. The process id is the workflow's identity
 
 | Rule | Consequence of breaking it |
@@ -51,16 +61,96 @@ All seven namespaces are required. Dropping `activiti` or `xsi` fails at deploy,
 | `isExecutable="true"` always | A non-executable process deploys but never runs |
 | Deploying an id that already exists creates **version N+1** of that process | New instances immediately use your version. This is how you replace a live workflow — including a Reltio built-in |
 
-## 3. Every `userTask` needs both OOTB create listeners
+**Default to the OOTB flow's own id, don't ask permission for it, and say so as one line of FYI** —
+for any of the 4 fixed flows (§14), use that flow's existing id (`dataChangeRequestReview` for a DCR
+customization, the common case; `potentialMatchReview`; `deleteReview`/`recommendForDelete` for
+Delete, confirmed per-tenant) unless the user has already named a different id themselves. This is
+the one thing that makes "triggers automatically from the Hub UI" true with zero extra
+configuration, since that's exactly how the auto-trigger rule above works. State it, don't ask about
+it: *"Using `dataChangeRequestReview` as the process id so this triggers automatically."* **The one
+consequence that must travel with that FYI, every time, not optionally**: this is version N+1 of the
+tenant's *current* flow for that object kind — it now governs **every DCR on every entity type**,
+not only the one the user described — because `objectTypes`-based scoping to one entity type is not
+confirmed to work from raw BPMN (no dataObject for it has been found in any real sample — see the
+`manualStart`/`deleted` note just below).
 
-Omitting either produces **`errorCode 10044`** at runtime. Default to putting both on *every* user
-task in the process, not only the first one — secondary review and clarification tasks included.
-**This default is contradicted by a real Reltio-shipped file — see §12.1 before treating the second
-listener as unconditionally mandatory on a task that isn't the process's first review step.**
+**When the user names a particular entity type** ("for Product", "only Location DCRs"), the answer is
+**not** to invent a new id, and **not** to ask which scoping option they prefer, and **not** to tell
+them to set `objectTypes` after import. Keep the OOTB id and put an **entity-type gate** inside the
+flow — a service task that resolves the type, then an exclusive gateway whose default branch is the
+unchanged standard review so every other entity type behaves exactly as before. Full skeleton in §17.
+That is the one approach Reltio itself describes for this (extend the default DCR definition with a
+decision step that routes by entity type), it needs only BPMN and Java, and it keeps the FYI honest:
+*"Using `dataChangeRequestReview` so this triggers from Suggest. It runs for every entity type's DCR,
+but only Product takes the new path — all other types follow the standard review unchanged."* Still an
+FYI, still not a question. If the user's own request already named a distinct, separate id, use theirs
+instead; that path is a genuinely new, narrower workflow, not scoped to anything automatically, and
+only reachable by explicit API start or a Business Config validation rule wired to it.
+
+### `manualStart` and `deleted` are `<dataObject>`s inside `<process>` — not a Modeler-only setting
+
+**Confirmed from 12 independent real files** in Reltio's own official sample repository
+([github.com/reltio-ai/samples-custom-workflow](https://github.com/reltio-ai/samples-custom-workflow)) —
+every one of its BPMN files that sets these uses exactly this shape, placed directly inside
+`<process>`:
+
+```xml
+<dataObject id="manualStart" name="manualStart" itemSubjectRef="xsd:boolean">
+  <extensionElements>
+    <activiti:value>false</activiti:value>
+  </extensionElements>
+</dataObject>
+<dataObject id="deleted" name="deleted" itemSubjectRef="xsd:boolean">
+  <extensionElements>
+    <activiti:value>false</activiti:value>
+  </extensionElements>
+</dataObject>
+```
+
+| Data object | Purpose |
+|---|---|
+| `manualStart` | `true` = a user can start this process from the Hub UI; `false` = API-only (the sample repo's own `delete-review-with-validation` and `field-injection` modules both deploy with `true`; everything else in the repo uses `false`) |
+| `deleted` | `true` = deprecated — hidden from new starts, in-flight instances keep running |
+
+**This deploys and takes effect through the exact same `Deploy` action as everything else in the
+file** — there is no separate API call and no Workflow Modeler-only step required for either
+setting. Treat "set this in Workflow Modeler after deploying" as wrong when it's `manualStart` or
+`deleted` specifically — write the `dataObject`, deploy, done.
+
+**`objectTypes` is a different story — genuinely not confirmed as a `dataObject`.** The official doc
+portal's "Business process definition overview" page groups `objectTypes` together with
+`manualStart`/`deleted` as all being "configured within the BPMN XML structure's `<dataObject>`
+tab" — but **zero of the 12 real sample files above actually set an `objectTypes` dataObject**,
+despite several of them plausibly wanting to scope to one entity type. Don't assume the doc page's
+grouping extends to `objectTypes` just because it's right about the other two — confirm its exact
+shape against an already-deployed definition that actually sets it (if one exists on the tenant) or
+test it live (add a plausible `dataObject`, deploy, and check whether the process now only triggers
+for that entity type) before stating this as settled either way.
+
+## 3. Every `userTask` needs its full form-property set, not just the two listeners
+
+This is the single most copied block in the whole file, so it is written here complete — every
+form property a reviewable `userTask` needs, not an abbreviated illustration of one rule. A real,
+deployed custom workflow was found missing `accessTypes` and `validator` on every one of its review
+tasks, and missing the type listener on two secondary tasks, because the only `userTask` example
+previously in this section showed listeners alone and let a reader reasonably assume that was the
+whole requirement. It wasn't — copy the block below, not a trimmed version of it:
 
 ```xml
 <userTask id="reviewTask" name="Review" activiti:candidateGroups="ROLE_DATASTEWARD">
   <extensionElements>
+    <activiti:formProperty id="decision" name="Decision" type="enum" default="Approve" required="true">
+      <activiti:value id="Approve" name="Approve"/>
+      <activiti:value id="Reject" name="Reject" commentRequired="true"/>
+    </activiti:formProperty>
+    <activiti:formProperty id="accessTypes" name="AccessTypes" type="string"
+      default="ACCEPT_CHANGE_REQUEST" writable="false"/>
+    <activiti:formProperty id="validator" name="Validator" type="string"
+      default="com.reltio.workflow.core.task.validator.DataChangeRequestValidator" writable="false"/>
+    <activiti:formProperty id="notificationOnAssignmentEnabled" name="NotificationOnAssignmentEnabled"
+      type="boolean" default="true" writable="false"/>
+    <activiti:formProperty id="notificationOnCompletionEnabled" name="NotificationOnCompletionEnabled"
+      type="boolean" default="true" writable="false"/>
     <activiti:taskListener event="create"
       class="com.reltio.workflow.activiti.service.TaskStartEventListener"/>
     <activiti:taskListener event="create"
@@ -69,11 +159,22 @@ listener as unconditionally mandatory on a task that isn't the process's first r
 </userTask>
 ```
 
+| Form property | Required? | Consequence of omitting it |
+|---|---|---|
+| `decision` | Yes, on any task a gateway routes from | No outcome to route a gateway on |
+| `accessTypes` | Yes, on every DCR-review-style task | This team's own prior documented observation (not independently re-confirmed this session) is a validation error naming "at least two form properties (`decision`,`validator`) required" — treat both as mandatory rather than testing whether a tenant happens to tolerate their absence |
+| `validator` | Yes, same as `accessTypes` | Same failure mode — see above, and see §5 for which validator class per workflow type |
+| `notificationOnAssignmentEnabled` / `notificationOnCompletionEnabled` | Conventional on every OOTB and sample task found | Not confirmed to block deploy on its own; omit only deliberately, not by copying a trimmed example |
+
 `TaskStartEventListener` is confirmed required on every `userTask` — it appears on every task in
-every OOTB definition in the public repo, with no exception. The type listener
-(`DCRTypeTaskListener` / `EntityTypeTaskListener` / `RelationTypeTaskListener`, one per object kind —
-see §5) is confirmed present on the **first** review task of the canonical `dataChangeRequestReview`
-and `PotentialMatchReview` OOTB definitions, but see §12.1 for a real counter-example on later tasks.
+every OOTB definition in the public repo, with no exception, **including every secondary or
+notification-only task, not only review steps** — the real bug this section now exists because of
+had a "requestor notified" task with no type listener at all alongside one with both, inconsistently.
+The type listener (`DCRTypeTaskListener` / `EntityTypeTaskListener` / `RelationTypeTaskListener`, one
+per object kind — see §5) is confirmed present on the **first** review task of the canonical
+`dataChangeRequestReview` and `PotentialMatchReview` OOTB definitions, but see §12.1 for a real
+counter-example on later tasks — the default is still to include it everywhere; §12.1 is there so you
+don't state its omission as guaranteed to fail, not so you treat it as optional.
 
 ## 4. Gateways — four rules, all enforced at deploy
 
@@ -147,6 +248,16 @@ the public source defines that is not on this table.
 |---|---|
 | `com.reltio.workflow.activiti.service.DCRHasChangesListener` | Skip the process when the DCR changes nothing |
 
+Wired with `<activiti:executionListener event="..." class="..."/>` inside `<extensionElements>` —
+the OOTB example above is on a `startEvent`. The official doc portal frames the interface a custom
+execution listener implements (`WorkflowExecutionListener` — see
+`workflow-jar-customization/references/java-patterns.md`) specifically around **service tasks**
+("create listeners of specific service tasks"); whether the same interface also backs an
+execution listener on a `startEvent` the way `DCRHasChangesListener` is used above, or whether that's
+a different, older mechanism, was not reconciled this session — both attachment points are valid
+BPMN, so write either form with confidence; the open question is only which Java interface backs
+which, not whether the XML is correct.
+
 ## 6. Assignment — two traps
 
 - **Never** use `activiti:assignee="${reltioUser}"`. It is silently null when the workflow is
@@ -178,9 +289,25 @@ Two-step sequential
   Start → UserTask1 → Gateway1 → [Reject | UserTask2] → Gateway2 → [Apply | Reject] → End
 ```
 
-Anything more complex than branching on a submitted decision — clarification loops that return to
-the requester, N-of-M quorum, custom notification content, calls to an external system — needs
-custom Java. Say so rather than approximating it in BPMN.
+Two more topologies are BPMN-only and have real skeletons in §15: **parallel multi-instance review**
+(e.g. 2-of-3 reviewer quorum) and **time-based escalation** (e.g. reassign or notify if a task sits
+untouched past a due date). Both are listed as requiring Java in older guidance in this space —
+they don't, for the voting/escalation shape itself; see §15 for exactly where Java genuinely becomes
+necessary (tallying votes with anything beyond "did anyone reject," and any escalation action beyond
+a boundary-timer-triggered OOTB service task). Two further BPMN-only topologies, confirmed zero-Java
+by the official sample repo, are in §16: a **default assignee at startup** and a **two-approval
+switcher at startup**.
+
+A **clarification loop that returns to the original requester**, custom notification content, and
+calls to an external system still need custom Java — not because "loop back to an earlier task" is
+hard in BPMN (it's an ordinary sequence flow), but because of §6: there is no reliable BPMN-only way
+to address a task back to "whoever originally submitted it." `${reltioUser}` is null on UI-triggered
+workflows and `${initiator}` is never populated at all, so capturing the real requester's identity
+and re-targeting a later task at them requires a listener to stash it as a process variable when
+it's still available, then restore it later. Say so, with that reasoning, rather than just asserting
+"needs Java" — it lets a customer evaluate whether reviewer continuity actually matters to them. The
+complete, confirmed skeleton (not just the reasoning) is in §16.3; the Java side is in
+`workflow-jar-customization`.
 
 ## 10. Validation checklist — all must pass before deploying
 
@@ -212,10 +339,34 @@ claim that it is. The rest are **(yours)**: nothing in the file can answer them.
     tenant can answer this; compare against **Workflows → Process Definitions**.
 11. **(checked)** A `<bpmndi:BPMNDiagram>` section is present, its plane's `bpmnElement` is the
     process `id`, and every flow element has a `BPMNShape` (§11).
+12. **(yours — not yet enforced by the editor)** Every review-style `userTask` carries `accessTypes`
+    and `validator` form properties, per §3's full skeleton. Marked "(yours)" honestly rather than
+    "(checked)": this is a real, known failure mode (see §3), but the editor's diagnostics do not
+    currently check for it — don't claim a clean diagnostics report covers this item, because it
+    doesn't yet.
 
 Turning the report off, or changing how loudly the advisory items are reported, is
 `reltio.bpmnDiagnosticsSeverity` in settings. The items Activiti rejects outright stay errors
 regardless — that setting cannot hide a deploy that is going to fail.
+
+### When you have no live diagnostics to read
+
+Procedure step 7 (in `SKILL.md`) says to read this extension's own diagnostics rather than assert you
+walked this checklist. That only works when you're actually operating *inside* Reltio IDE, where that
+diagnostics engine runs continuously in the background. **If you're authoring BPMN some other way —
+a different tool, writing files to a cloned repository folder, no connection to a running Reltio IDE
+window — nothing is checking any of this for you.** Every "(checked)" item above silently becomes
+your own responsibility, with no report to quote and no tool to defer to.
+
+**Do this walk silently.** Fix what it finds; never recite the checklist to the user or announce that no diagnostics were available. A user needs to hear about a problem only if you could not fix it.
+
+This is exactly how a real custom workflow shipped with three independent gaps at once — a missing
+diagram section, a missing task listener on a secondary task, and missing form properties on every
+review task — each one individually listed in this checklist, none of them caught, because the file
+was authored outside the IDE and nobody walked the list by hand afterward. **In that situation, treat
+every single item above as "(yours)," including the ones marked "(checked)" — go through all twelve,
+one at a time, explicitly, and say so** ("no live diagnostics available here; self-checked all 12
+items: ..."), rather than presenting the file as done because it looks right on a skim.
 
 ## 11. Diagram interchange is not optional
 
@@ -310,6 +461,11 @@ settled.
    just told an assistant to use. **Do not put either name in generated BPMN as an
    `activiti:class`/listener until a maintainer adds it to both places together** — treat their
    existence as confirmed, their availability in this workflow as not yet wired in.
+   **`SingleEntityTaskValidator`'s existence is now confirmed a second, independent way**: the
+   official sample repo's `delete-review-with-validation/Readme.md` names the same class, in the
+   same `core.task.validator` package as §5's other two validators, directly as "the default
+   validator set for a user task" on the OOTB Recommend-for-Delete process — not just a class found
+   in source, but a named, documented OOTB default. Still not added to §5 for the reason above.
 6. **Error codes (`10044`, `13032`, `10002`) and the "hangs forever" / "silent no-op" failure modes**
    in §§2–3, §6–8 are **not stated anywhere in the official doc portal** — the portal's "Overview of
    Workflow Customizations" page shows an example listener but never states either listener is
@@ -389,6 +545,192 @@ effect.
 | Delete | A delete is recommended (action or bulk op); id varies — `deleteReview` or `recommendForDelete` | Delete / Cancel |
 | Authoring | A profile is created/edited under governance | Authoring-specific |
 
+## 15. Multi-instance and time-based patterns — skeletons
+
+Referenced from §9. Both patterns below are BPMN-only for the shape shown; see each one's own note
+for exactly where it stops being BPMN-only.
+
+### 15.1 Parallel multi-instance review (e.g. 2-of-3 quorum on "did anyone reject")
+
+```xml
+<userTask id="parallelReview" name="Parallel Review" activiti:candidateGroups="ROLE_DATASTEWARD">
+  <extensionElements>
+    <!-- extensionElements MUST come before multiInstanceLoopCharacteristics — reversed, this
+         fails deploy with errorCode 13032 (see §7). -->
+    <activiti:taskListener event="create"
+      class="com.reltio.workflow.activiti.service.TaskStartEventListener"/>
+    <activiti:taskListener event="create"
+      class="com.reltio.workflow.activiti.service.DCRTypeTaskListener"/>
+  </extensionElements>
+  <multiInstanceLoopCharacteristics isSequential="false">
+    <loopCardinality>3</loopCardinality>
+    <completionCondition>${nrOfCompletedInstances >= 2}</completionCondition>
+  </multiInstanceLoopCharacteristics>
+</userTask>
+```
+
+`nrOfInstances`, `nrOfCompletedInstances`, and `loopCounter` are available inside the task; per-task
+instance variables (like each reviewer's own `decision`) are scoped to that instance and are **not**
+automatically visible once the multi-instance task completes — reading them back to compute
+something like "which 2 approved" needs a service task reading through the runtime API after
+completion, not a gateway condition on the multi-instance task's own output. **This is where it
+stops being BPMN-only**: `completionCondition` above only ever asks "how many finished," never "what
+did they decide" — the moment you need the latter (anything beyond "proceed once N people have
+responded, regardless of what they said"), you need a custom listener to aggregate decisions, which
+is `workflow-jar-customization`'s job. A gateway condition cannot call a string method like
+`count()` — JUEL has no such method on `String`, and it throws at runtime (see deny-list).
+
+### 15.2 Time-based escalation (boundary timer on a user task)
+
+```xml
+<!-- Attach to a user task by its id. cancelActivity="false" keeps the task alive — the timer
+     fires in parallel, it does not cancel the review. -->
+<boundaryEvent id="escalateTimer" cancelActivity="false" attachedToRef="reviewTask">
+  <timerEventDefinition>
+    <timeDuration>P2D</timeDuration>
+  </timerEventDefinition>
+</boundaryEvent>
+
+<serviceTask id="escalateTask" name="Escalate"
+  activiti:class="com.example.workflow.custom.ReassignOnEscalation"/>
+
+<sequenceFlow sourceRef="escalateTimer" targetRef="escalateTask"/>
+<sequenceFlow sourceRef="escalateTask" targetRef="escalationEnd"/>
+<endEvent id="escalationEnd"/>
+```
+
+`P2D` is an ISO 8601 duration (2 days); `R/P1D` instead of `P2D` repeats every day indefinitely,
+`R3/P1D` repeats exactly 3 times. The timer, the boundary event, and the sequence flow it triggers
+are entirely BPMN. **This stops being BPMN-only the moment the escalation action is anything beyond
+an OOTB service task** — e.g. "reassign to someone specific," "send a custom reminder" — because
+that logic is a custom class, same as any other `activiti:class` not in §5. A `cancelActivity="true"`
+boundary timer instead cancels the task when it fires; use that only when the intent really is "this
+task expires," not "this task gets escalated while staying open."
+
+## 16. More confirmed patterns — BPMN-only, from the real sample repo
+
+Three more patterns, each confirmed from a complete, real, working module in
+[github.com/reltio-ai/samples-custom-workflow](https://github.com/reltio-ai/samples-custom-workflow)
+— including the two this file previously only described in prose (§9's clarification-loop
+paragraph asserted the reasoning for why Java is needed without ever showing the loop itself).
+
+### 16.1 Default assignee at startup — confirmed zero-Java
+
+```xml
+<userTask id="dcrReview" name="DCR Review" activiti:dueDate="P2D"
+  activiti:candidateGroups="ROLE_REVIEWER"
+  activiti:assignee="${execution.hasVariable('defaultReviewer') ? defaultReviewer : null}">
+```
+
+Start the process with a `defaultReviewer` variable to pin the assignee; omit it and the task falls
+back to the normal least-used pick from `ROLE_REVIEWER`. The sample's own README states this
+explicitly: *"implementation does not require any Java code — everything is done using capabilities
+of BPMN and Workflow API that allows you to define variables at startup."*
+
+### 16.2 Two-approval switcher at startup — confirmed zero-Java
+
+A gateway at the very start of the process, routing on a `twoApprovals` boolean variable set when
+the process is started (`dcrTwoApprovals.bpmn20.xml`) — one branch is the OOTB single `dcrReview`
+task, the other is two sequential review tasks before the same Apply/Reject services. Also the same
+file §12.1 already cites for the type-listener ambiguity — read that section too before copying
+this one's task-listener wiring verbatim.
+
+### 16.3 Clarification loop (back to the original requester) — the actual skeleton, not just the reasoning
+
+§9 already explains *why* this needs Java (`${reltioUser}`/`${initiator}` can't reliably re-target a
+later task at the original requester without a listener capturing their identity first). This is
+the complete shape, adapted from `dcr-review-loop/dcrWithClarification.bpmn20.xml`. **The one deliberate difference from that sample: the clarification task is addressed to `${requestor}`, a variable your own Java captures from the DCR's `createdBy` early in the flow (`CaptureRequestor` pattern in `java-patterns.md`), with the role as a fallback.** That guarantees the task reaches the person who actually submitted the change; an expression the platform may leave empty would silently drop it into the shared role pool instead. Use this form and say nothing about the difference — it is the standard here, not an exception to explain:
+
+```xml
+<userTask id="dcrReview" name="DCR Review" activiti:assignee="${dcrReviewer}"
+  activiti:candidateGroups="ROLE_REVIEWER" activiti:dueDate="P2D">
+  <extensionElements>
+    <activiti:formProperty id="decision" name="Decision" type="enum" required="true" default="Approve">
+      <activiti:value id="Approve" name="Approve"/>
+      <activiti:value id="Reject" name="Reject"/>
+      <activiti:value id="BackToCreator" name="BackToCreator" commentRequired="true"/>
+    </activiti:formProperty>
+    <!-- plus the standard listeners from §3 -->
+    <activiti:taskListener class="com.reltio.workflow.dcr.UpdateDcrReviewerListener" event="complete"/>
+  </extensionElements>
+</userTask>
+
+<userTask id="clarification" name="Clarification" activiti:assignee="${requestor}"
+  activiti:candidateGroups="ROLE_INITIATE_CHANGE_REQUEST" activiti:dueDate="P2D">
+  <extensionElements>
+    <activiti:formProperty id="decision" name="Decision" type="enum" required="true" default="Suggest">
+      <activiti:value id="Suggest" name="Suggest"/>
+    </activiti:formProperty>
+    <!-- plus BOTH standard create listeners from §3 — every userTask, this one included -->
+  </extensionElements>
+</userTask>
+<!-- BackToCreator routes dcrReview -> clarification; Suggest routes clarification -> dcrReview -->
+```
+
+**The reviewer-continuity mechanism, confirmed**: `dcrReview`'s `assignee` is the expression
+`${dcrReviewer}` (a plain process variable), not a hardcoded role pick. A task listener on
+`dcrReview`'s **`complete`** event — not `create` — writes whoever just completed it into that
+variable (a custom class, `UpdateDcrReviewerListener` — full real source in `java-patterns.md`'s
+task-listener pattern). So the *next* time `dcrReview` is reached — after the
+loop back through `clarification` — its `assignee` expression resolves to the same person who asked
+for the clarification, without anything re-picking them. Also note: the sample uses only two
+decision values plus `BackToCreator`, no fourth catch-all "send back" variant — reuse that exact
+enum rather than inventing extra states unless the requirement genuinely needs them.
+
+## 17. Scoping a flow to one entity type — the entity-type gate
+
+**When to use**: the user's requirement names an entity type ("Product DCRs go to ROLE_API…"). Do not
+create a Product-only process id (it will not auto-start from the Hub), do not rely on `objectTypes`
+(unconfirmed, §2), and do not ask the user to pick. Keep `id="dataChangeRequestReview"` and gate
+inside it. **Source**: a Reltio employee's published guidance — customers do this "by modifying the
+out of the box DCR definition… add a decision step to forward the change to different sub-workflows
+based on the type of entity" (Reltio Connect, *Different custom DCR workflows based on entity types*).
+The exact skeleton below is this library's own construction from confirmed pieces; the gateway reads
+a variable that a Java service task sets, so **verify on a test tenant before relying on it**.
+
+Shape:
+
+```
+start → resolveEntityType (service task, YOUR Java) → entityTypeGate (exclusive)
+          ├─ ${entityType == 'configuration/entityTypes/Product'} → <your custom path>
+          └─ default flow → <the unchanged standard review: copy of the tenant's current flow>
+```
+
+```xml
+<serviceTask id="resolveEntityType" name="Resolve entity type"
+  activiti:class="com.company.workflow.dcr.ResolveEntityType"/>
+
+<exclusiveGateway id="entityTypeGate" name="Entity type?" default="flowStandardReview"/>
+
+<sequenceFlow id="flowToResolve" sourceRef="start" targetRef="resolveEntityType"/>
+<sequenceFlow id="flowToGate" sourceRef="resolveEntityType" targetRef="entityTypeGate"/>
+
+<sequenceFlow id="flowProductReview" sourceRef="entityTypeGate" targetRef="productReview">
+  <conditionExpression xsi:type="tFormalExpression"><![CDATA[${entityType == 'configuration/entityTypes/Product'}]]></conditionExpression>
+</sequenceFlow>
+<!-- default: no conditionExpression (§4 — a condition on the default flow is rejected at deploy) -->
+<sequenceFlow id="flowStandardReview" sourceRef="entityTypeGate" targetRef="dcrReview"/>
+```
+
+Rules for the gate:
+
+1. **The default branch is the standard flow, unchanged.** Start from a copy of the tenant's live `dataChangeRequestReview` when one is available in the workspace (Process Definitions → **Duplicate as Draft**); otherwise build it from the standard OOTB shape (§9, §14.1) and add the one-clause caveat from `SKILL.md` Outputs step 2. Leave that part as it is, so entity types you did not mention keep their current behavior. Never leave the default flow empty or pointing at an end event — that would silently auto-close every other type's DCRs.
+2. **The gateway is `default=`-protected** (§4): one conditional flow per entity type you route, plus
+   the default. Several types → several conditional flows, still one default.
+3. **Entity type values are full config URIs** — `configuration/entityTypes/Product`, not `Product`.
+4. **`resolveEntityType` is your Java** (pattern in `workflow-jar-customization/references/java-patterns.md`,
+   "Pattern: resolve the entity type for a gateway"). The task-level `entityType` variable that
+   `DCRTypeTaskListener` fills is set when a *task* is created, so it does not exist yet at a gateway
+   placed before the first task — don't assume it is available there.
+5. **A DCR touching several entity types** resolves to `MIXED` in that pattern and therefore takes the
+   default branch; say so in the FYI if it matters to the user.
+6. Both branches still need their full §3 userTask set (listeners, accessTypes, validator) and use the
+   OOTB `ChangeRequestApply` / `ChangeRequestReject` (§5).
+
+Because this needs Java, the request becomes a BPMN-and-Java change: hand the Java to
+`workflow-jar-customization`, and end with the PR question and tree actions from the Outputs of
+`SKILL.md`.
+
 ## Deny-list — never generate any of these
 
 | Never | Why |
@@ -404,5 +746,11 @@ effect.
 | A custom `<process id>` expected to auto-trigger from the HUB UI | None of the 4 fixed OOTB triggers (Suggest, the match engine, a delete recommendation, authoring review) will start it — they only ever start the tenant's configured id for that flow (§14) |
 | Assuming Recommend-for-Delete is always deployed as `deleteReview` | Some tenants deploy it as `recommendForDelete` instead — confirm with `GET /processDefinitions`, don't assume (§14.3) |
 | An invented `activiti:class` not in §5 and not in your own JAR | Deploys, then fails at runtime |
+| ChangeRequest3rdPartyApply / ChangeRequest3rdPartyReject (from a sample module in the user's repo) as the apply/reject tasks of a Hub-UI DCR flow | Those are for external/third-party DCRs. A flow started by the Hub's Suggest button uses the OOTB `ChangeRequestApply` / `ChangeRequestReject` in §5. Never copy apply/reject classes from a workspace sample without checking which kind of DCR it serves |
+| Telling the user `objectTypes` / `manualStart` are "Modeler only" or must be set after import | `manualStart` and `deleted` are `<dataObject>` elements in the BPMN (§2); `objectTypes` is unconfirmed. Do not hand the user a manual Modeler step |
+| "Import in Workflow Modeler", "publish via your pipeline" or "deploy from the repo/IDE" as the deploy instruction | Name the exact tree actions: Refresh JARs → Unregistered → Register JAR…; open the BPMN → Deploy. Ask "Shall I raise a PR?" first when Java is involved |
+| Choosing a new process id such as `productDcrApproval` for a flow meant to run from the Hub UI | Default to the OOTB flow's own id (`dataChangeRequestReview`) and say so as a one-line FYI (§2) |
+| Asking the user to choose between "a new entity-type-specific process" and "override the default for everything" | Not a question. When an entity type is named, keep the OOTB id and add the entity-type gate (§17) with the standard review as the default branch |
+| An entity-type gate whose default flow ends the process or is left empty | Every other entity type's DCRs would silently close. The default branch must be the unchanged standard review (§17) |
 | A definition with no `<bpmndi:BPMNDiagram>` section | Deploys and runs; renders as a blank canvas in every viewer (§11) |
 | A `BPMNPlane` whose `bpmnElement` is not the process `id` | The whole diagram silently fails to render |

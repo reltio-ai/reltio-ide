@@ -2,7 +2,7 @@
   "name": "reltio-ide",
   "displayName": "Reltio IDE",
   "description": "Use the Reltio IDE to review and update the business configuration of your Reltio tenant.",
-  "version": "1.0.21",
+  "version": "1.0.27",
   "publisher": "Reltio",
   "icon": "resources/icons/reltio-icon.png",
   "license": "SEE LICENSE IN LICENSE",
@@ -33,7 +33,8 @@
     "workspaceContains:**/.reltio-environment.json",
     "workspaceContains:**/.reltio-config-source.json",
     "workspaceContains:**/*.reltio.environment",
-    "workspaceContains:**/*.reltio.json"
+    "workspaceContains:**/*.reltio.json",
+    "onStartupFinished"
   ],
   "main": "./dist/extension.js",
   "contributes": {

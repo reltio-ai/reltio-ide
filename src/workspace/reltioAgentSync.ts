@@ -63,6 +63,76 @@ async function copyDirectory(src: vscode.Uri, dest: vscode.Uri): Promise<void> {
 	}
 }
 
+/**
+ * Extension versions 1.0.24–1.0.26 wrote agent-instruction files outside `.reltio/`. Nothing is written
+ * outside `.reltio/reltio-agent/` any more — the entry point is the `workflow-assistant` core skill —
+ * so these markers exist only to find and remove what those versions left behind.
+ */
+const BLOCK_START_PREFIX = '<!-- reltio-ide:begin';
+const BLOCK_END = '<!-- reltio-ide:end -->';
+const LEGACY_INSTRUCTION_FILES = ['AGENTS.md', 'CLAUDE.md'] as const;
+
+/**
+ * Pure, exported for tests: removes the extension-managed block and leaves everything else untouched.
+ * Returns `undefined` when nothing but the block (and whitespace) was in the file, so the caller can delete it.
+ */
+export function stripManagedBlock(text: string): string | undefined {
+	const start = text.indexOf(BLOCK_START_PREFIX);
+	const end = text.indexOf(BLOCK_END);
+	if (start === -1 || end <= start) return text;
+	const rest = (text.slice(0, start) + text.slice(end + BLOCK_END.length)).replace(/\n{3,}/g, '\n\n');
+	return rest.trim() === '' ? undefined : `${rest.trim()}\n`;
+}
+
+async function readText(uri: vscode.Uri): Promise<string | undefined> {
+	try {
+		return Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
+	} catch {
+		return undefined;
+	}
+}
+
+/** Removes the managed block from workspace-root AGENTS.md / CLAUDE.md; deletes the file if the block was all it held. */
+async function removeLegacyInstructionBlocks(ws: vscode.WorkspaceFolder): Promise<void> {
+	for (const name of LEGACY_INSTRUCTION_FILES) {
+		const uri = vscode.Uri.joinPath(ws.uri, name);
+		const text = await readText(uri);
+		if (text === undefined || !text.includes(BLOCK_START_PREFIX)) continue;
+		const next = stripManagedBlock(text);
+		if (next === undefined) {
+			await vscode.workspace.fs.delete(uri);
+		} else if (next !== text) {
+			await vscode.workspace.fs.writeFile(uri, Buffer.from(next, 'utf8'));
+		}
+	}
+}
+
+/** Removes only what extension 1.0.24 wrote under `.cursor/` (all `reltio-` prefixed), then any dir left empty. */
+async function removeLegacyCursorPointers(ws: vscode.WorkspaceFolder): Promise<void> {
+	const cursor = vscode.Uri.joinPath(ws.uri, '.cursor');
+	await deleteIfExists(vscode.Uri.joinPath(cursor, 'rules', 'reltio-workflows.mdc'));
+	try {
+		const skills = vscode.Uri.joinPath(cursor, 'skills');
+		for (const [name, type] of await vscode.workspace.fs.readDirectory(skills)) {
+			if (type === vscode.FileType.Directory && name.startsWith('reltio-')) {
+				await deleteIfExists(vscode.Uri.joinPath(skills, name));
+			}
+		}
+	} catch {
+		/* no .cursor/skills */
+	}
+	for (const dir of [['rules'], ['skills'], []]) {
+		const uri = vscode.Uri.joinPath(cursor, ...dir);
+		try {
+			if ((await vscode.workspace.fs.readDirectory(uri)).length === 0) {
+				await vscode.workspace.fs.delete(uri);
+			}
+		} catch {
+			/* absent or not empty — leave it */
+		}
+	}
+}
+
 function versionsDiffer(bundled: string | undefined, stamped: string | undefined): boolean {
 	if (!bundled) return false;
 	return (stamped ?? '') !== bundled;
@@ -120,6 +190,12 @@ export async function syncReltioAgentAssets(
 			await deleteIfExists(destSkills);
 			await copyDirectory(skillsSrc, destSkills);
 			skillsSynced = true;
+		}
+
+		// Everything the agent needs lives under `.reltio/reltio-agent/`. Clear what 1.0.24–1.0.26 left outside it.
+		if (skillsSynced) {
+			await removeLegacyInstructionBlocks(ws).catch(() => undefined);
+			await removeLegacyCursorPointers(ws).catch(() => undefined);
 		}
 
 		if (needPacks && (await pathExists(packsSrc))) {

@@ -766,6 +766,19 @@ const {
 		);
 	}
 
+	// `workspaceContains:*` triggers depend on the host actually running its workspace-content
+	// scan and matching a real file on disk. A real test showed `.reltio/reltio-agent/` (the
+	// syncReltioAgentAssets target) never materializing in a workspace that genuinely had
+	// WorkflowAdapter.reltio.json and .reltio-environment.json present, in a non-VS-Code host —
+	// so activation cannot depend on `workspaceContains:*` alone. `onStartupFinished` must also
+	// be present: it fires unconditionally shortly after window start, independent of workspace
+	// content or which sub-folder was opened as the root.
+	assert.ok(
+		activation.includes('onStartupFinished'),
+		'onStartupFinished must be present so activation (and the agent-assets sync it gates) ' +
+		'does not depend solely on workspaceContains detection working in every extension host',
+	);
+
 	// ---------------------------------------------------------------- 9.8 grep invariant
 
 	// The whole point of centralizing paths is that no other module can drift. Only the layout

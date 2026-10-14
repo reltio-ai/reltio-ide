@@ -201,4 +201,98 @@ for (const folder of PLAYBOOKS) {
 	);
 }
 
+// ── 11. workflow-repo-contents-and-agent-access: paths, coverage, next steps ─
+{
+	// The tenant folder rename (git-ready-tenant-folder-structure) and the Drafts move
+	// (custom-workflow-repository) both invalidated paths written into these skills. An
+	// agent following a stale path writes a file where nothing will ever find it.
+	for (const folder of PLAYBOOKS) {
+		const rel = `skills/reltio-default/${folder}/SKILL.md`;
+		const text = read(rel);
+		for (const [stale, why] of [
+			['.reltio.environment', 'the retired environment-folder suffix'],
+			['.reltio.tenant', 'the retired tenant-folder suffix'],
+		]) {
+			assert.ok(
+				!text.includes(stale),
+				`${rel} states a path using ${why} — the folder names are bare now`,
+			);
+		}
+		assert.ok(
+			!/\/workflows\/<processId>/.test(text),
+			`${rel} points drafts at the lowercase workflows/ folder; they live in Workflows/BPMN/ now`,
+		);
+		// Stopping without naming the next action is the most common way these
+		// playbooks fail a user: the step succeeded and the turn just ended.
+		assert.ok(
+			/next step/i.test(text.split('## Outputs')[1] ?? ''),
+			`${rel} must state its next step in Outputs, including when that step is not an IDE action`,
+		);
+	}
+
+	// Part 3 shipped five commands and no skill mentioned any of them.
+	const contribution = read('skills/reltio-default/workflow-repo-contribution/SKILL.md');
+	for (const command of [
+		'reltio.connectWorkflowRepository',
+		'reltio.openWorkflowRepoFolder',
+		'reltio.refreshWorkflowRepoSync',
+	]) {
+		assert.ok(
+			contribution.includes(command),
+			`workflow-repo-contribution must name ${command}, or an agent has no way to know it exists`,
+		);
+	}
+	assert.ok(
+		/Java Classes/.test(contribution) && /Java Tests/.test(contribution),
+		'workflow-repo-contribution must describe where the Java sources appear in the tree',
+	);
+	assert.ok(
+		/review|registration/i.test(contribution.split('## When to use')[1].slice(0, 1200)),
+		'workflow-repo-contribution must say up front that the IDE does not bypass Reltio\u2019s review',
+	);
+
+	// Skill edits do not reach an existing workspace unless this string changes:
+	// reltioAgentSync.ts gates the sync on equality, not on file contents.
+	const assets = JSON.parse(read('resources/reltio-agent-assets.json'));
+	assert.strictEqual(
+		assets.skillsBundleVersion, '19',
+		'skillsBundleVersion must be bumped when skill content changes, or synced workspaces keep the old copy',
+	);
+}
+
+// ── 12. Discovery lives inside the core skills, never outside .reltio/ ────────
+// A real Cursor test synced .reltio/reltio-agent/ correctly and the agent still ignored every playbook.
+// Pointer files in AGENTS.md / CLAUDE.md / .cursor/ are not allowed in a customer workspace, so the entry
+// point is a core skill (`workflow-assistant`) the user invokes ("follow the Reltio workflow assistant").
+{
+	const sync = read('src/workspace/reltioAgentSync.ts');
+	assert.ok(!sync.includes('writeAgentInstructions') && !sync.includes('writeDiscoveryPointers'),
+		'sync must not write agent-instruction or pointer files outside .reltio/');
+	assert.ok(!/writeFile\([^)]*(AGENTS|CLAUDE)/.test(sync) && !/createDirectory\([^)]*'\.cursor'/.test(sync),
+		'sync must never create AGENTS.md, CLAUDE.md or anything under .cursor/');
+	assert.ok(sync.includes('removeLegacyInstructionBlocks') && sync.includes('removeLegacyCursorPointers'),
+		'sync must clean up what 1.0.24-1.0.26 wrote outside .reltio/');
+
+	// the entry-point core skill
+	const entry = read('skills/reltio-default/workflow-assistant/SKILL.md');
+	assert.ok(/^name: reltio-workflow-assistant$/m.test(entry), 'workflow-assistant must be named reltio-workflow-assistant');
+	for (const needle of ['Skills read:', 'workflow-bpmn-authoring', 'workflow-jar-customization',
+		'workflow-repo-contribution', 'Deploy to Tenant', 'Shall I raise a PR for this?']) {
+		assert.ok(entry.includes(needle), `workflow-assistant must carry: ${needle}`);
+	}
+	assert.ok(/next step/i.test(entry.split('## Outputs')[1] ?? ''), 'workflow-assistant Outputs must name the next step');
+
+	// behaviour of the pure cleanup, via the compiled output
+	const Module = require('module');
+	const origLoad = Module._load;
+	Module._load = function (req, ...rest) { return req === 'vscode' ? {} : origLoad.call(this, req, ...rest); };
+	const { stripManagedBlock } = require(path.join(repoRoot, 'dist/workspace/reltioAgentSync.js'));
+	Module._load = origLoad;
+	const block = '<!-- reltio-ide:begin — managed -->\nbody\n<!-- reltio-ide:end -->';
+	assert.strictEqual(stripManagedBlock(block + '\n'), undefined, 'a file holding only the block is deleted');
+	const mixed = stripManagedBlock('# Mine\n\nkeep me\n\n' + block + '\n');
+	assert.ok(mixed.includes('keep me') && !mixed.includes('reltio-ide'), 'user content survives, block is gone');
+	assert.strictEqual(stripManagedBlock('# Mine\n'), '# Mine\n', 'a file without the block is left alone');
+}
+
 console.log('test-workflow-skills-library: OK');
