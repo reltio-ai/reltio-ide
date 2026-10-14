@@ -524,7 +524,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		try {
 			report = await migrateWorkspace(workspaceRoot, em, context.workspaceState);
 		} catch (e) {
-			console.error('Reltio layout migration failed:', e);
+			console.error(`Reltio layout migration failed: ${e instanceof Error ? e.message : String(e)}`);
 			return;
 		}
 		if (

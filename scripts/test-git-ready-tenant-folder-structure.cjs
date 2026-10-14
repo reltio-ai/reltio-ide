@@ -22,6 +22,24 @@ const FileType = vscode.FileType;
 
 const { installMemoryFs } = require('./lib/memory-fs.cjs');
 
+/**
+ * Regression (Wiz SAST, PR #14): the branch name was compiled into a regular expression, so a valid
+ * git branch such as `feature/(x` threw and `a+b` matched `aab`. It is now compared as plain text.
+ */
+function testMissingBranchDetection() {
+	const { isMissingBranchFailure } = importDist('workspace/gitConfigSource');
+	const pathspec = b => `error: pathspec '${b}' did not match any file(s) known to git`;
+	for (const branch of ['dev', 'feature/(x', 'feature/(x)', 'a+b', 'release/1.0', 'feat/a{2}', 'Feature/Mixed']) {
+		assert.doesNotThrow(() => isMissingBranchFailure(pathspec(branch), branch), branch);
+		assert.strictEqual(isMissingBranchFailure(pathspec(branch), branch), true, `${branch} recognised as missing`);
+	}
+	assert.strictEqual(isMissingBranchFailure(pathspec('aab'), 'a+b'), false, 'a+b is not a pattern');
+	assert.strictEqual(isMissingBranchFailure(pathspec('releasex1.0'), 'release/1.0'), false);
+	assert.strictEqual(isMissingBranchFailure("warning: Could not find remote branch dev to clone.", 'dev'), true);
+	assert.strictEqual(isMissingBranchFailure('fatal: Authentication failed', 'dev'), false);
+}
+testMissingBranchDetection();
+
 const text = s => Buffer.from(s).toString('utf8');
 let pkgCache;
 const pkgJson = () => (pkgCache ??= JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')));

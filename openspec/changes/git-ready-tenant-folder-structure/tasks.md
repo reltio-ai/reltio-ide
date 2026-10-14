@@ -191,3 +191,8 @@ Nothing stored the branch, so supporting this was additive.
 - [x] 19.7 One git call per tenant per refresh answers both bound-ness and branch
 - [x] 19.8 Tests for the contextValue switch (including detached HEAD), the menu gating, and the command titles
 - [ ] 19.9 Update `ARCHITECTURE.md`, the spec and the release note
+
+## Bugfix Round (Wiz SAST, PR #14, 2026-10-14)
+
+- [x] B1 `isMissingBranchFailure` compiled the branch name into a regular expression. Git allows `(`, `+`, `.` and `{` in branch names, so `feature/(x` threw during Connect to Git and `a+b` matched `aab`. Now a plain-text comparison; exported and covered by `testMissingBranchDetection`, mutation-checked against the old code.
+- [x] B2 A failed layout migration logged the whole error object, stack included. Now logs the message only.
