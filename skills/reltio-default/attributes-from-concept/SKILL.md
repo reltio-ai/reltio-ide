@@ -5,8 +5,6 @@ description: Suggest attributes from a business concept and existing L3 + Veloci
 
 # Attributes from concept
 
-Normative product context: `openspec/changes/skills-and-enablement-packs-library/design.md` (D5) and capability **`guided-model-elements`**.
-
 ## When to use
 
 The user names a concept (e.g. “Policy holder”, “HCP”, “Product SKU”) and wants **simple**, **nested**, or **reference** attributes that fit the tenant.

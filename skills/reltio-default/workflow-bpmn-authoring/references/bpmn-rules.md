@@ -79,7 +79,7 @@ confirmed to work from raw BPMN (no dataObject for it has been found in any real
 them to set `objectTypes` after import. Keep the OOTB id and put an **entity-type gate** inside the
 flow — a service task that resolves the type, then an exclusive gateway whose default branch is the
 unchanged standard review so every other entity type behaves exactly as before. Full skeleton in §17.
-That is the one approach Reltio itself describes for this (extend the default DCR definition with a
+That is an approach Reltio staff have described for this (extend the default DCR definition with a
 decision step that routes by entity type), it needs only BPMN and Java, and it keeps the FYI honest:
 *"Using `dataChangeRequestReview` so this triggers from Suggest. It runs for every entity type's DCR,
 but only Product takes the new path — all other types follow the standard review unchanged."* Still an
@@ -165,6 +165,7 @@ whole requirement. It wasn't — copy the block below, not a trimmed version of 
 | `accessTypes` | Yes, on every DCR-review-style task | This team's own prior documented observation (not independently re-confirmed this session) is a validation error naming "at least two form properties (`decision`,`validator`) required" — treat both as mandatory rather than testing whether a tenant happens to tolerate their absence |
 | `validator` | Yes, same as `accessTypes` | Same failure mode — see above, and see §5 for which validator class per workflow type |
 | `notificationOnAssignmentEnabled` / `notificationOnCompletionEnabled` | Conventional on every OOTB and sample task found | Not confirmed to block deploy on its own; omit only deliberately, not by copying a trimmed example |
+| `TaskStartEventListener` plus the type listener for the process kind (`DCRTypeTaskListener` in `dataChangeRequestReview`, `EntityTypeTaskListener` in `potentialMatchReview`, one of the three type listeners in any other process) | Yes, on **every** `userTask` | `errorCode 10044` at runtime; the editor reports it as an error |
 
 `TaskStartEventListener` is confirmed required on every `userTask` — it appears on every task in
 every OOTB definition in the public repo, with no exception, **including every secondary or
@@ -174,18 +175,23 @@ The type listener (`DCRTypeTaskListener` / `EntityTypeTaskListener` / `RelationT
 per object kind — see §5) is confirmed present on the **first** review task of the canonical
 `dataChangeRequestReview` and `PotentialMatchReview` OOTB definitions, but see §12.1 for a real
 counter-example on later tasks — the default is still to include it everywhere; §12.1 is there so you
-don't state its omission as guaranteed to fail, not so you treat it as optional.
+don't state its omission as guaranteed to fail, not so you treat it as optional. Which one a task needs
+depends on the process: in `dataChangeRequestReview` it is `DCRTypeTaskListener`, in
+`potentialMatchReview` it is `EntityTypeTaskListener`, and in any other process one of the three. The
+editor checks exactly that, on every `userTask`.
 
 ## 4. Gateways — four rules, all enforced at deploy
 
-1. **Always set `default="<flowId>"`** on an exclusive gateway. Without it, a value matching no
-   condition leaves the instance stuck at the gateway. Conditions over a required two-value enum
+1. **Always set `default="<flowId>"`** on an exclusive gateway that chooses between outgoing flows. Without it, a value matching no
+   condition leaves the instance stuck at the gateway. (A join — several incoming flows, one outgoing — chooses nothing and needs none.) Conditions over a required two-value enum
    are exhaustive and cannot hit this, so the editor reports a missing default as a warning rather
    than an error — but set one anyway: the enum is in a form property that a later edit can widen.
 2. **The default flow must have no `<conditionExpression>`.** Activiti rejects the deploy with
    `activiti-exclusive-gateway-condition-on-seq-flow`.
-3. **A gateway with one outgoing flow must be deleted**, not kept. Activiti rejects it with
-   `activiti-exclusive-gateway-no-outgoing-seq-flow`. Connect the task straight to the next element.
+3. **A gateway nothing leaves, or one that only relays a single flow, must go.** Activiti rejects a gateway
+   with no outgoing flow (`activiti-exclusive-gateway-no-outgoing-seq-flow`), and a pass-through — one incoming
+   and one outgoing flow — decides nothing, so connect the task straight to the next element. A join
+   (several incoming flows, one outgoing) is valid and is how branches rejoin.
 4. **Condition values are case-sensitive** and must match the `activiti:value id` in the form
    property exactly — `'Approve'`, never `'approve'`.
 
@@ -222,9 +228,10 @@ different, much longer path (see the repo-contribution playbook).
 | `com.reltio.workflow.activiti.service.EntityTypeTaskListener` | `create` (potential match / entity tasks) |
 | `com.reltio.workflow.activiti.service.TaskAssignmentEventListener` | `assignment` |
 
-This extension's own editor diagnostics enforce `TaskStartEventListener` + `DCRTypeTaskListener` as
-the required pair on every `userTask`, regardless of object kind (see §10.5 / §12.1) — so this is the
-pair to plan for by default. See §12.5 for a class the public source repo defines for relation-type
+This extension's own editor diagnostics enforce `TaskStartEventListener` plus the type listener for the
+process kind on every `userTask` (see §10.5 / §12.1): `DCRTypeTaskListener` in `dataChangeRequestReview`,
+`EntityTypeTaskListener` in `potentialMatchReview`, and one of the three type listeners in any other
+process. For a DCR flow that is the pair to plan for by default. See §12.5 for a class the public source repo defines for relation-type
 tasks that is **not** part of that enforced pair and is not yet on this table.
 
 **Validators**
@@ -319,12 +326,12 @@ claim that it is. The rest are **(yours)**: nothing in the file can answer them.
 1. **(checked)** Every element `id` is unique within the process.
 2. **(checked)** Every `sequenceFlow` has a `sourceRef` and `targetRef` that resolve to elements in
    this file.
-3. **(checked)** Every exclusive gateway has a `default` — as a *warning*, because conditions over a
+3. **(checked)** Every exclusive gateway that chooses between several outgoing flows has a `default` — as a *warning*, because conditions over a
    required two-value enum are exhaustive and such a gateway cannot actually strand an instance;
    that the default is one of its own outgoing flows, and carries no condition, is checked as an
    error, since Activiti rejects the deploy.
-4. **(checked)** No gateway has fewer than two outgoing flows.
-5. **(checked)** Every `userTask` carries both `create` listeners from §3.
+4. **(checked)** No gateway has zero outgoing flows, and none is a pass-through (one incoming, one outgoing); a join of several incoming flows into one outgoing flow is valid and reports nothing.
+5. **(checked)** Every `userTask` carries the `create` listeners §3 requires for its process kind: `TaskStartEventListener` plus the type listener (`DCRTypeTaskListener` in `dataChangeRequestReview`, `EntityTypeTaskListener` in `potentialMatchReview`, one of the three in any other process).
 6. **(checked, as a warning)** Every `activiti:class` appears in the §5 tables, or is a class you are
    shipping in a JAR. It is a warning rather than an error precisely because the editor cannot see
    your JAR — if the class is in one you have deployed, the warning is expected.
@@ -365,8 +372,7 @@ diagram section, a missing task listener on a secondary task, and missing form p
 review task — each one individually listed in this checklist, none of them caught, because the file
 was authored outside the IDE and nobody walked the list by hand afterward. **In that situation, treat
 every single item above as "(yours)," including the ones marked "(checked)" — go through all twelve,
-one at a time, explicitly, and say so** ("no live diagnostics available here; self-checked all 12
-items: ..."), rather than presenting the file as done because it looks right on a skim.
+one at a time, explicitly, and silently** (see above: fix what you find, say nothing about the walk), rather than presenting the file as done because it looks right on a skim.
 
 ## 11. Diagram interchange is not optional
 
@@ -395,7 +401,7 @@ so a workflow shipped without DI is one nobody can review.
 | `BPMNPlane`'s `bpmnElement` is the process `id` | A plane pointing at a missing id renders nothing at all — this is what breaks a copied definition whose id was changed |
 | Every flow element has a `BPMNShape` with `Bounds` | Partial DI is worse than none: the shapes present look correct, so the missing ones read as elements that are not in the workflow |
 | Coordinates are plain numbers in the shapes' own space | There is no unit or transform to declare |
-| Default sizes: event `36x36`, gateway `50x50`, task `100x80` | Other sizes are legal and look wrong beside a hand-drawn diagram — these match this extension's own generator (`src/workflow/bpmnDiagram.ts`), not the OOTB files' own numbers (event `35x35`, gateway `40x40`, task `105x55`), which is fine: DI sizing has no deploy consequence either way |
+| Default sizes: event `36x36`, gateway `50x50`, task `100x80` | Other sizes are legal and look wrong beside a hand-drawn diagram — these match this extension's own diagram generator, not the OOTB files' own numbers (event `35x35`, gateway `40x40`, task `105x55`), which is fine: DI sizing has no deploy consequence either way |
 | Align vertical centres along a straight run | Connectors are then horizontal, which is what makes a generated diagram readable |
 
 **New Workflow…** and **Duplicate as Draft…** both emit this section for you, so a draft created
@@ -425,7 +431,9 @@ settled.
    including both listeners on every task** — the cost of an unnecessary listener is nothing, the
    cost of a missing one on a task that needed it is a runtime failure — but do not describe the
    second listener's omission as guaranteed to fail without testing it, and say so if a customer asks
-   why a Reltio-shipped file omits it. **Resolution:** deploy a two-task variant with the type
+   why a Reltio-shipped file omits it. **The editor takes the stricter side**: it reports a user task
+   without its process kind's type listener as an error (§10.5), so a copy of `dcrTwoApprovals` is flagged
+   until the type listener is added to each task — add it rather than explaining the finding away. **Resolution:** deploy a two-task variant with the type
    listener present on only the first task against a live tenant and observe whether the second task
    throws `errorCode 10044`, or ask a Reltio Workflow SME whether the type listener is only required
    once per process rather than once per task.
@@ -455,8 +463,7 @@ settled.
    defines a `RelationTypeTaskListener` (extends the same internal `TypeTaskListener` base as
    `DCRTypeTaskListener` and `EntityTypeTaskListener`, resolving a `relationType` variable instead)
    and a `SingleEntityTaskValidator` alongside the two validators §5 lists. Neither is in this
-   extension's editor-enforced allow-list (`RELTIO_OOTB_CLASSES` in `src/workflow/bpmnDiagnostics.ts`)
-   yet, and this file's own tables and that allow-list are kept in lockstep by a test — so adding
+   extension's editor-enforced allow-list yet, and this file's own tables and that allow-list are kept in lockstep by a test — so adding
    either one to §5 without a matching code change would make the editor warn on a class this file
    just told an assistant to use. **Do not put either name in generated BPMN as an
    `activiti:class`/listener until a maintainer adds it to both places together** — treat their
@@ -496,8 +503,8 @@ triggered by a literal button click; the other three are triggered by a system e
 action. This matters for the same reason the DCR row in §2 does: **none of these triggers let a
 user or the platform pick which process to run.** Each one is hardcoded to start whichever process
 id is currently configured for that flow on the tenant. Give any of them a different id and it
-still deploys — it simply never runs, because nothing left is wired to start it (§10's undeployed-
-customization failure mode, generalized to all four).
+still deploys — it simply never runs, because nothing left is wired to start it (the custom-id row of §2's
+deny-list entry, generalized to all four).
 
 ### 14.1 Data Change Request Review — `dataChangeRequestReview`
 
@@ -557,6 +564,18 @@ for exactly where it stops being BPMN-only.
   <extensionElements>
     <!-- extensionElements MUST come before multiInstanceLoopCharacteristics — reversed, this
          fails deploy with errorCode 13032 (see §7). -->
+    <activiti:formProperty id="decision" name="Decision" type="enum" default="Approve" required="true">
+      <activiti:value id="Approve" name="Approve"/>
+      <activiti:value id="Reject" name="Reject" commentRequired="true"/>
+    </activiti:formProperty>
+    <activiti:formProperty id="accessTypes" name="AccessTypes" type="string"
+      default="ACCEPT_CHANGE_REQUEST" writable="false"/>
+    <activiti:formProperty id="validator" name="Validator" type="string"
+      default="com.reltio.workflow.core.task.validator.DataChangeRequestValidator" writable="false"/>
+    <activiti:formProperty id="notificationOnAssignmentEnabled" name="NotificationOnAssignmentEnabled"
+      type="boolean" default="true" writable="false"/>
+    <activiti:formProperty id="notificationOnCompletionEnabled" name="NotificationOnCompletionEnabled"
+      type="boolean" default="true" writable="false"/>
     <activiti:taskListener event="create"
       class="com.reltio.workflow.activiti.service.TaskStartEventListener"/>
     <activiti:taskListener event="create"
@@ -592,10 +611,10 @@ is `workflow-jar-customization`'s job. A gateway condition cannot call a string 
 </boundaryEvent>
 
 <serviceTask id="escalateTask" name="Escalate"
-  activiti:class="com.example.workflow.custom.ReassignOnEscalation"/>
+  activiti:class="com.company.workflow.custom.ReassignOnEscalation"/>
 
-<sequenceFlow sourceRef="escalateTimer" targetRef="escalateTask"/>
-<sequenceFlow sourceRef="escalateTask" targetRef="escalationEnd"/>
+<sequenceFlow id="flowEscalate" sourceRef="escalateTimer" targetRef="escalateTask"/>
+<sequenceFlow id="flowEscalated" sourceRef="escalateTask" targetRef="escalationEnd"/>
 <endEvent id="escalationEnd"/>
 ```
 
@@ -639,10 +658,11 @@ this one's task-listener wiring verbatim.
 
 §9 already explains *why* this needs Java (`${reltioUser}`/`${initiator}` can't reliably re-target a
 later task at the original requester without a listener capturing their identity first). This is
-the complete shape, adapted from `dcr-review-loop/dcrWithClarification.bpmn20.xml`. **The one deliberate difference from that sample: the clarification task is addressed to `${requestor}`, a variable your own Java captures from the DCR's `createdBy` early in the flow (`CaptureRequestor` pattern in `java-patterns.md`), with the role as a fallback.** That guarantees the task reaches the person who actually submitted the change; an expression the platform may leave empty would silently drop it into the shared role pool instead. Use this form and say nothing about the difference — it is the standard here, not an exception to explain:
+the complete shape, adapted from `dcr-review-loop/dcrWithClarification.bpmn20.xml`. **The one deliberate difference from that sample: the clarification task is addressed to `${requestor}`, a variable your own Java captures from the DCR's `createdBy` early in the flow (the `CaptureRequestor` class, in full in `java-patterns.md`), with the role as a fallback.** That guarantees the task reaches the person who actually submitted the change; an expression the platform may leave empty would silently drop it into the shared role pool instead. Use this form and say nothing about the difference — it is the standard here, not an exception to explain:
 
 ```xml
-<userTask id="dcrReview" name="DCR Review" activiti:assignee="${dcrReviewer}"
+<userTask id="dcrReview" name="DCR Review"
+  activiti:assignee="${execution.hasVariable('dcrReviewer') ? dcrReviewer : null}"
   activiti:candidateGroups="ROLE_REVIEWER" activiti:dueDate="P2D">
   <extensionElements>
     <activiti:formProperty id="decision" name="Decision" type="enum" required="true" default="Approve">
@@ -650,18 +670,42 @@ the complete shape, adapted from `dcr-review-loop/dcrWithClarification.bpmn20.xm
       <activiti:value id="Reject" name="Reject"/>
       <activiti:value id="BackToCreator" name="BackToCreator" commentRequired="true"/>
     </activiti:formProperty>
-    <!-- plus the standard listeners from §3 -->
-    <activiti:taskListener class="com.reltio.workflow.dcr.UpdateDcrReviewerListener" event="complete"/>
+    <activiti:formProperty id="accessTypes" name="AccessTypes" type="string"
+      default="ACCEPT_CHANGE_REQUEST" writable="false"/>
+    <activiti:formProperty id="validator" name="Validator" type="string"
+      default="com.reltio.workflow.core.task.validator.DataChangeRequestValidator" writable="false"/>
+    <activiti:formProperty id="notificationOnAssignmentEnabled" name="NotificationOnAssignmentEnabled"
+      type="boolean" default="true" writable="false"/>
+    <activiti:formProperty id="notificationOnCompletionEnabled" name="NotificationOnCompletionEnabled"
+      type="boolean" default="true" writable="false"/>
+    <activiti:taskListener event="create"
+      class="com.reltio.workflow.activiti.service.TaskStartEventListener"/>
+    <activiti:taskListener event="create"
+      class="com.reltio.workflow.activiti.service.DCRTypeTaskListener"/>
+    <activiti:taskListener event="complete"
+      class="com.company.workflow.dcr.UpdateDcrReviewerListener"/>
   </extensionElements>
 </userTask>
 
-<userTask id="clarification" name="Clarification" activiti:assignee="${requestor}"
+<userTask id="clarification" name="Clarification"
+  activiti:assignee="${execution.hasVariable('requestor') ? requestor : null}"
   activiti:candidateGroups="ROLE_INITIATE_CHANGE_REQUEST" activiti:dueDate="P2D">
   <extensionElements>
     <activiti:formProperty id="decision" name="Decision" type="enum" required="true" default="Suggest">
       <activiti:value id="Suggest" name="Suggest"/>
     </activiti:formProperty>
-    <!-- plus BOTH standard create listeners from §3 — every userTask, this one included -->
+    <activiti:formProperty id="accessTypes" name="AccessTypes" type="string"
+      default="ACCEPT_CHANGE_REQUEST" writable="false"/>
+    <activiti:formProperty id="validator" name="Validator" type="string"
+      default="com.reltio.workflow.core.task.validator.DataChangeRequestValidator" writable="false"/>
+    <activiti:formProperty id="notificationOnAssignmentEnabled" name="NotificationOnAssignmentEnabled"
+      type="boolean" default="true" writable="false"/>
+    <activiti:formProperty id="notificationOnCompletionEnabled" name="NotificationOnCompletionEnabled"
+      type="boolean" default="true" writable="false"/>
+    <activiti:taskListener event="create"
+      class="com.reltio.workflow.activiti.service.TaskStartEventListener"/>
+    <activiti:taskListener event="create"
+      class="com.reltio.workflow.activiti.service.DCRTypeTaskListener"/>
   </extensionElements>
 </userTask>
 <!-- BackToCreator routes dcrReview -> clarification; Suggest routes clarification -> dcrReview -->
@@ -670,8 +714,8 @@ the complete shape, adapted from `dcr-review-loop/dcrWithClarification.bpmn20.xm
 **The reviewer-continuity mechanism, confirmed**: `dcrReview`'s `assignee` is the expression
 `${dcrReviewer}` (a plain process variable), not a hardcoded role pick. A task listener on
 `dcrReview`'s **`complete`** event — not `create` — writes whoever just completed it into that
-variable (a custom class, `UpdateDcrReviewerListener` — full real source in `java-patterns.md`'s
-task-listener pattern). So the *next* time `dcrReview` is reached — after the
+variable (a custom class, `UpdateDcrReviewerListener` — its full source is in `java-patterns.md`, under
+"Helper classes for the send-back loop"). So the *next* time `dcrReview` is reached — after the
 loop back through `clarification` — its `assignee` expression resolves to the same person who asked
 for the clarification, without anything re-picking them. Also note: the sample uses only two
 decision values plus `BackToCreator`, no fourth catch-all "send back" variant — reuse that exact
@@ -686,7 +730,7 @@ inside it. **Source**: a Reltio employee's published guidance — customers do t
 out of the box DCR definition… add a decision step to forward the change to different sub-workflows
 based on the type of entity" (Reltio Connect, *Different custom DCR workflows based on entity types*).
 The exact skeleton below is this library's own construction from confirmed pieces; the gateway reads
-a variable that a Java service task sets, so **verify on a test tenant before relying on it**.
+a variable that a Java service task sets (how that class was built is stated once, in `java-patterns.md`).
 
 Shape:
 
@@ -738,8 +782,8 @@ Because this needs Java, the request becomes a BPMN-and-Java change: hand the Ja
 | `activiti:assignee="${reltioUser}"` | Silently null on UI-triggered workflows |
 | `${initiator}` for the requester | Reltio never populates it |
 | A `conditionExpression` on a gateway's `default` flow | Deploy rejected |
-| An exclusive gateway with one outgoing flow | Deploy rejected |
-| A `userTask` without both `create` listeners | `errorCode 10044` |
+| A gateway with no outgoing flow, or a pass-through gateway (one incoming and one outgoing flow) | Deploy rejected |
+| A `userTask` without `TaskStartEventListener` and the type listener for its process kind (§3) | `errorCode 10044` |
 | `<multiInstanceLoopCharacteristics>` before `<extensionElements>` | `errorCode 13032` |
 | A string method such as `count()` inside a gateway condition | Does not exist in JUEL; throws at runtime |
 | A file name that is not exactly `*.bpmn20.xml` | `errorCode 10002` |

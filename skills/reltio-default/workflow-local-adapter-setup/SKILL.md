@@ -1,17 +1,15 @@
 ---
 name: reltio-workflow-local-adapter-setup
-description: Stand up a local Workflow Adapter and database so a custom workflow can be tested before it is submitted.
+description: Only when the user explicitly asks for a local adapter: stand up a local Workflow Adapter and database to run a custom workflow on their own machine.
 ---
 
 # Local Workflow Adapter setup
-
-Normative product context: `openspec/changes/workflow-skills-library/design.md` (D4) and capability **`workflow-authoring`**.
 
 ## When to use
 
 **Not part of the standard path.** Local adapter testing is not currently supported in this IDE's workflow. Use this playbook only when the user explicitly asks for it, and never propose it as a next step or as a "prove it first" stage.
 
-Custom Java has to be proven before it goes into a pull request. Reltio IDE does not run this for you — it is a separate service on the developer's own machine — so this playbook is the guided version of a setup that is otherwise figure-it-out-yourself.
+Local testing is optional and never a prerequisite for a pull request. Reltio IDE does not run a local adapter for you — it is a separate service on the developer's own machine — so when the user does ask for one, this playbook is the guided version of a setup that is otherwise figure-it-out-yourself.
 
 **Sample prompts**
 
@@ -47,4 +45,4 @@ moment one actually blocks you.
 - A local adapter that starts clean and has your JAR and BPMN loaded.
 - Evidence the workflow behaved correctly — the observed end state, not only a green process instance.
 - Anything that had to be worked around locally, flagged as local-only so it is not mistaken for tenant behaviour.
-- **The next step, named.** Once the behaviour is proven locally, that is the pull request (`workflow-repo-contribution`) for a Java change, or deploying the BPMN for a self-service one. If it is not proven, the next step is the specific failure observed — not another round of setup.
+- **The next step, named.** After the local run, the next step is the pull request (`workflow-repo-contribution`) for a Java change, or deploying the BPMN for a self-service one — the local run was never a prerequisite for either. If the run exposed a failure, the next step is that specific failure, not another round of setup.

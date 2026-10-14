@@ -7,9 +7,10 @@ echo.
 
 :: Replace <JDK_PATH> with your actual JDK 17 bin path, e.g.:
 ::   C:\Program Files\Eclipse Adoptium\jdk-17.x.x.x-hotspot\bin
-:: The adapter and the review gate both require JDK 17 specifically (confirmed from the real
-:: customer-repository provisioning template's pom.xml, which pins maven-compiler-plugin's
-:: <release> to 17) — point this at a JDK 17 install even if a newer JDK is also on this machine.
+:: The review gate's build targets JDK 17 (the customer-repository provisioning template's pom.xml
+:: pins maven-compiler-plugin's <release> to 17), so point this at a JDK 17 install even if a newer
+:: JDK is also on this machine; that way what you run here matches what the pipeline builds.
+:: Whether the adapter itself requires 17 has not been confirmed.
 
 "<JDK_PATH>\java" ^
   -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005 ^

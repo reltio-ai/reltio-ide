@@ -5,8 +5,6 @@ description: Single entry point for any Reltio Workflow request — create or ch
 
 # Workflow assistant
 
-Normative product context: `openspec/changes/workflow-skills-library/design.md` and capability **`workflow-authoring`**.
-
 ## When to use
 
 The user asks for anything about Reltio Workflow: a new approval flow, a change to a DCR / potential-match / delete review, extra reviewers, a send-back loop, an entity-type-specific flow, custom Java behind a step, registering a JAR, or getting the change merged and live. It is also the file to open when the user says "follow the Reltio workflow assistant".
@@ -31,8 +29,8 @@ The user asks for anything about Reltio Workflow: a new approval flow, a change 
 1. **Read** the playbooks above before your first reply and before any other tool call. Do not work from memory, generic Activiti knowledge, or sample workflows lying around the workspace; they have been wrong before.
 2. **Open** the first reply with exactly one line: `Skills read: <playbook names>` — names only, for example `workflow-bpmn-authoring, workflow-jar-customization`. If you have not read them, read them now.
 3. **Follow** each playbook's own Inputs, Procedure and Outputs, including the checks it describes and its rule on what is stated as an FYI instead of asked.
-4. **Speak** like a product, not a build log. Never mention playbooks, rules, section numbers or conflicts between instructions; never recite checks you ran or what tooling was missing; never suggest local testing as the user's next step. Say what was built, ask the one question the playbook allows, and name the exact next actions.
-5. **Stop** if the playbook files are missing: tell the user to run **Reltio: Resync agent assets** from the Command Palette, and do not improvise deploy or registration steps from memory.
+4. **Speak** like a product, not a build log. Never mention playbooks, rules, section numbers or conflicts between instructions; never recite checks you ran or what tooling was missing; never suggest local testing as the user's next step. Say what was built, ask the one question the playbook allows, and name the exact next actions. This file owns the reply: the checks, gates and validation walks in the other playbooks are for your own work, and a result reaches the user only when something failed and you could not fix it. This file owns the reply: the checks, gates and validation walks in the other playbooks are for your own work, and a result reaches the user only when something failed and you could not fix it.
+5. **Stop** if the playbook files are missing: tell the user to run **Reltio: Resync agent assets (skills & Velocity Packs)** from the Command Palette, and do not improvise deploy or registration steps from memory.
 
 ## Outputs
 

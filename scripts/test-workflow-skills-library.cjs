@@ -23,8 +23,14 @@
  */
 
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+
+// Pinned together: change the skills, bump skillsBundleVersion, update both values.
+const PINNED_SKILLS_BUNDLE_VERSION = '20';
+const PINNED_SKILLS_HASH = '8a27f6d1a5496a97eda42951cdb99bcdd9c5758fa9534c9608a8158e8c3cbdf1';
+
 
 const repoRoot = path.join(__dirname, '..');
 const read = p => fs.readFileSync(path.join(repoRoot, p), 'utf-8');
@@ -181,13 +187,42 @@ for (const folder of PLAYBOOKS) {
 		walk(dir);
 	}
 	assert.ok(files.length >= PLAYBOOKS.length, 'expected at least one file per playbook');
-	for (const file of files) {
+		for (const file of files) {
 		const lower = fs.readFileSync(file, 'utf-8').toLowerCase();
 		for (const [needle, why] of banned) {
 			assert.ok(
 				!lower.includes(needle.toLowerCase()),
 				`${path.relative(repoRoot, file)} leaks internal-only content (${why}): "${needle}"`,
 			);
+		}
+	}
+
+	// Paths that exist in this repository but not in a customer's workspace. A skill that cites
+	// `openspec/…`, `src/…` or `docs/…` sends the agent looking for files that were never shipped.
+	// Java's own `src/main/java` and `src/test/java` are the Maven layout the skills teach, not ours.
+	const allSkillFiles = [];
+	const walkAll = d => {
+		for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+			const full = path.join(d, e.name);
+			if (e.isDirectory()) walkAll(full);
+			else allSkillFiles.push(full);
+		}
+	};
+	walkAll(path.join(repoRoot, 'skills/reltio-default'));
+	assert.ok(allSkillFiles.length > PLAYBOOKS.length, 'expected the whole shipped skills tree');
+	for (const file of allSkillFiles) {
+		const rel = path.relative(repoRoot, file);
+		const text = fs.readFileSync(file, 'utf-8');
+		const internal = /(?<![\w./-])(openspec|docs|src)\//g;
+		for (const match of text.matchAll(internal)) {
+			const rest = text.slice(match.index, match.index + 20);
+			if (match[1] === 'src' && /^src\/(main|test)\/java\b/.test(rest)) continue;
+			assert.fail(`${rel} references a path that is not shipped: "${rest.split(/\s/)[0]}"`);
+		}
+		assert.ok(!/Normative product context/.test(text), `${rel} cites internal product context`);
+		if (file.endsWith('.md')) {
+			// A drive-letter path is one developer's machine; scripts (.bat) legitimately name install dirs.
+			assert.ok(!/(?<![A-Za-z])[A-Za-z]:[\\/]/.test(text), `${rel} contains an absolute drive path`);
 		}
 	}
 }
@@ -253,10 +288,31 @@ for (const folder of PLAYBOOKS) {
 
 	// Skill edits do not reach an existing workspace unless this string changes:
 	// reltioAgentSync.ts gates the sync on equality, not on file contents.
-	const assets = JSON.parse(read('resources/reltio-agent-assets.json'));
+		const assets = JSON.parse(read('resources/reltio-agent-assets.json'));
 	assert.strictEqual(
-		assets.skillsBundleVersion, '19',
-		'skillsBundleVersion must be bumped when skill content changes, or synced workspaces keep the old copy',
+		assets.skillsBundleVersion, PINNED_SKILLS_BUNDLE_VERSION,
+		'skillsBundleVersion changed: update PINNED_SKILLS_BUNDLE_VERSION and PINNED_SKILLS_HASH in this test together',
+	);
+
+	// The sync gate is a version string, never file contents, so an edited skill with an unchanged
+	// version reaches nobody. Hash the whole shipped tree (path + LF-normalised text, sorted) and fail
+	// when the content moved without the version.
+	const hash = crypto.createHash('sha256');
+	const hashDir = (dir, rel) => {
+		for (const e of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+			const full = path.join(dir, e.name);
+			const relPath = rel ? `${rel}/${e.name}` : e.name;
+			if (e.isDirectory()) hashDir(full, relPath);
+			else hash.update(relPath + '\0' + fs.readFileSync(full, 'utf-8').replace(/\r\n/g, '\n') + '\0');
+		}
+	};
+	hashDir(path.join(repoRoot, 'skills/reltio-default'), '');
+	const actualHash = hash.digest('hex');
+	assert.strictEqual(
+		actualHash, PINNED_SKILLS_HASH,
+		'The content of skills/reltio-default/** changed. Bump skillsBundleVersion in resources/reltio-agent-assets.json ' +
+		`(or workspaces keep the old copy), then update PINNED_SKILLS_BUNDLE_VERSION and PINNED_SKILLS_HASH here. ` +
+		`Current hash: ${actualHash}`,
 	);
 }
 
@@ -293,6 +349,55 @@ for (const folder of PLAYBOOKS) {
 	const mixed = stripManagedBlock('# Mine\n\nkeep me\n\n' + block + '\n');
 	assert.ok(mixed.includes('keep me') && !mixed.includes('reltio-ide'), 'user content survives, block is gone');
 	assert.strictEqual(stripManagedBlock('# Mine\n'), '# Mine\n', 'a file without the block is left alone');
+}
+
+// ── 13. Skills agree with the product and with each other ─────────────────────
+// Menu labels and command ids come from package.json; a skill that names a label the UI does not
+// show sends the user hunting. Promises of embedded source must resolve.
+{
+	const pkg = JSON.parse(read('package.json'));
+	const titles = pkg.contributes.commands.map(c => c.title);
+	const ids = new Set(pkg.contributes.commands.map(c => c.command));
+	const all = [];
+	const walk13 = d => {
+		for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+			const full = path.join(d, e.name);
+			if (e.isDirectory()) walk13(full);
+			else if (full.endsWith('.md')) all.push([path.relative(repoRoot, full), fs.readFileSync(full, 'utf-8')]);
+		}
+	};
+	walk13(path.join(repoRoot, 'skills/reltio-default'));
+
+	const cmdIds = new Set();
+	for (const [rel, text] of all) {
+		for (const m of text.matchAll(/reltio\.[A-Za-z]+/g)) {
+			if (/^reltio\.(com|json|workflow|bpmnDiagnosticsSeverity|addEntityType|addRelationType|insert[A-Za-z]+)$/.test(m[0])) continue;
+			cmdIds.add(m[0]);
+		}
+		assert.ok(!text.includes('Reveal in File Explorer'), `${rel} names a menu label that does not exist`);
+		assert.ok(!/verify on a test tenant/i.test(text), `${rel} tells the user to verify on a test tenant, but local testing is not part of the path`);
+	}
+	for (const id of cmdIds) assert.ok(ids.has(id), `a skill names command ${id}, which package.json does not contribute`);
+	for (const label of ['Open Repository Folder', 'Refresh JARs', 'Register JAR...', 'Deploy to Tenant', 'Show BPMN Diagram']) {
+		assert.ok(titles.some(t => t === label), `package.json has no command titled "${label}"`);
+	}
+	assert.ok(titles.some(t => t.startsWith('Reltio: Resync agent assets')), 'the resync command title the assistant names must exist');
+
+	// bpmn-rules points at java-patterns for two helper classes; they must actually be there.
+	const javaPatterns = read('skills/reltio-default/workflow-jar-customization/references/java-patterns.md');
+	for (const cls of ['UpdateDcrReviewerListener', 'CaptureRequestor']) {
+		assert.ok(new RegExp('public class ' + cls + ' implements').test(javaPatterns), `java-patterns.md must embed the full source of ${cls}`);
+	}
+
+	// One owner for the reply: no playbook tells the agent to recite checks to the user.
+	for (const folder of ['workflow-jar-customization', 'workflow-repo-contribution']) {
+		const t = read(`skills/reltio-default/${folder}/SKILL.md`);
+		assert.ok(!/item by item|each gate item evidenced|which gate items you can already show passing/.test(t),
+			`${folder} must not tell the agent to recite gate results`);
+		assert.ok(/only (when|if) (an item|something|a gate item)[^.]*fail/i.test(t), `${folder} must say gate results are reported only on failure`);
+	}
+	const rules = read('skills/reltio-default/workflow-bpmn-authoring/references/bpmn-rules.md');
+	assert.ok(!/say so\*\* \(/.test(rules) && !/self-checked all 12/.test(rules), 'the validation walk is silent everywhere');
 }
 
 console.log('test-workflow-skills-library: OK');

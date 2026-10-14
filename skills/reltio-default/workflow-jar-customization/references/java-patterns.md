@@ -9,6 +9,7 @@ gate requires; this file is what you actually write.
 - The four extension points
 - Pattern: extend an OOTB service task (preferred over implementing one from scratch)
 - Pattern: a fresh task listener (when there's no OOTB class to extend)
+- Helper classes for the send-back loop: `UpdateDcrReviewerListener` and `CaptureRequestor`, in full
 - Pattern: surfacing a mandatory rejection comment to whoever gets the next task
 - Pattern: a custom validator
 - Pattern: resolve the entity type for a gateway (the entity-type gate's service task)
@@ -34,7 +35,7 @@ stronger evidence than a documentation page's prose, whenever the two disagree.
 
 | You're writing | Interface | Confirmed by (real file in the sample repo) |
 |---|---|---|
-| The **service task's own logic** (`activiti:class` on a `<serviceTask>`) | `com.reltio.workflow.api.actions.WorkflowAction`, `void execute(Execution execution) throws Exception` | 5 independent examples: `aws-access/.../ApplyDCRAddFromS3.java`, `custom-notifications/.../OverdueNotification.java`, `update-task-timer/.../UpdateAssignee.java`, `workflow-external-dcr/.../RulesApply.java`, and this project's own `location-dcr-approval/.../CaptureRequestor.java` |
+| The **service task's own logic** (`activiti:class` on a `<serviceTask>`) | `com.reltio.workflow.api.actions.WorkflowAction`, `void execute(Execution execution) throws Exception` | 4 independent examples: `aws-access/.../ApplyDCRAddFromS3.java`, `custom-notifications/.../OverdueNotification.java`, `update-task-timer/.../UpdateAssignee.java`, `workflow-external-dcr/.../RulesApply.java` — and `CaptureRequestor`, a customer-style class written in the same shape, embedded in full below |
 | A listener on a **user task** (`create`/`assignment`/`complete`) | `com.reltio.workflow.api.listeners.WorkflowTaskListener`, `void notify(Task task)` | 6 independent examples, incl. `dcr-review-loop/.../UpdateDcrReviewerListener.java`, `parallel-approve/.../MultiTaskStartEventListener.java` and `MultiTaskCompleteListener.java`, `change-due-date/.../DueDateAdjustListener.java` |
 | A listener on a **service task / execution** (process-level, fires on start/end) | `com.reltio.workflow.api.listeners.WorkflowExecutionListener`, `void notify(Execution execution)` | `field-injection/.../StageInfoLogger.java` |
 | A **validator** gating task completion | `com.reltio.workflow.api.validators.TaskValidator`, `void doValidate(Task task) throws Exception`, throwing `com.reltio.workflow.api.validators.ValidationError` | `delete-review-with-validation/.../DeleteReviewValidator.java` and a second, independent copy in `due-date-validator/` — same interface and signature in both |
@@ -165,6 +166,245 @@ executionService.setVariable(execution.getId(), "requestor", createdBy.toString(
 
 ---
 
+## Helper classes for the send-back loop
+
+The clarification loop in `bpmn-rules.md` §16.3 needs two small classes. Both are written out in full
+here; copy them and change only the package.
+
+### `UpdateDcrReviewerListener` — remember who reviewed, so the loop returns to them
+
+**Confirmed, real code** — `dcr-review-loop/src/main/java/com/reltio/workflow/dcr/UpdateDcrReviewerListener.java`
+in the official sample repo, verbatim apart from the package (`com.company.workflow.dcr` here) and the
+javadoc. Wired on `dcrReview`'s `complete` event, it stores whoever just completed the task in the
+`dcrReviewer` process variable, so when the loop returns to `dcrReview` the task is assigned to that
+same person.
+
+```java
+package com.company.workflow.dcr;
+
+import com.reltio.workflow.api.WorkflowService;
+import com.reltio.workflow.api.listeners.WorkflowTaskListener;
+import com.reltio.workflow.api.tasks.Task;
+import com.reltio.workflow.api.tasks.TaskService;
+
+/**
+ * Runs when a review task completes and records the assignee as the dcrReview process variable,
+ * so a task that comes back after a send-back loop goes to the same reviewer.
+ */
+public class UpdateDcrReviewerListener implements WorkflowTaskListener {
+    private static final String DCR_REVIEWER_VARIABLE = "dcrReviewer";
+
+    @WorkflowService
+    TaskService taskService;
+
+    @Override
+    public void notify(Task task) {
+        taskService.setVariable(task.getId(), DCR_REVIEWER_VARIABLE, task.getAssignee());
+    }
+}
+```
+
+Its test, from the same sample:
+
+```java
+package com.company.workflow.dcr;
+
+import com.reltio.workflow.api.tasks.Task;
+import com.reltio.workflow.api.tasks.TaskService;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+class UpdateDcrReviewerListenerTest {
+
+    @Test
+    void shouldSetDcrReviewerVariableWithAssignee() {
+        TaskService taskService = Mockito.mock(TaskService.class);
+        Task task = Mockito.mock(Task.class);
+        UpdateDcrReviewerListener listener = new UpdateDcrReviewerListener();
+        listener.taskService = taskService;
+
+        when(task.getId()).thenReturn("test-task-id");
+        when(task.getAssignee()).thenReturn("test-assignee");
+
+        listener.notify(task);
+
+        verify(taskService).setVariable("test-task-id", "dcrReviewer", "test-assignee");
+    }
+}
+```
+
+### `CaptureRequestor` — remember who submitted the change, so the clarification task reaches them
+
+A customer-style `WorkflowAction` in the same shape as the sample's `WorkflowAction`s (it is the working
+class from a real customer repository, with the package and domain wording generalised). A service task
+placed right after the start event reads the change request's `createdBy` and stores it as the
+`requestor` process variable; the clarification task in `bpmn-rules.md` §16.3 assigns to
+`${requestor}` because `${reltioUser}` and `${initiator}` are empty on a UI-started workflow.
+
+```java
+package com.company.workflow.dcr;
+
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.reltio.workflow.api.Utility;
+import com.reltio.workflow.api.WorkflowService;
+import com.reltio.workflow.api.actions.Execution;
+import com.reltio.workflow.api.actions.ExecutionService;
+import com.reltio.workflow.api.actions.WorkflowAction;
+import com.reltio.workflow.api.rest.ReltioApi;
+import com.reltio.workflow.api.rest.ReltioException;
+
+/**
+ * Runs once, right after the process starts on a DCR.
+ *
+ * Reads the change request's {@code createdBy} value and stores it as the {@code requestor}
+ * process variable, so later steps can assign a follow-up task back to the person who originally
+ * submitted the change, however many approve/reject cycles the DCR goes through.
+ */
+public class CaptureRequestor implements WorkflowAction {
+
+    private static final Pattern CHANGE_REQUEST_URI_PATTERN =
+            Pattern.compile("^(changeRequests/[A-Za-z0-9]*).*");
+
+    static final String REQUESTOR_VARIABLE = "requestor";
+
+    @WorkflowService
+    ReltioApi reltioApi;
+
+    @WorkflowService
+    ExecutionService executionService;
+
+    @Override
+    public void execute(Execution execution) throws Exception {
+        String changeRequestUri = findChangeRequestUri(execution.getObjectUris());
+        if (changeRequestUri == null) {
+            throw new ReltioException("No change request found for objectUris = " + execution.getObjectUris());
+        }
+
+        String url = Utility.generateTenantUrl(execution.getEnvironmentUrl(), execution.getTenantId())
+                + "/" + changeRequestUri;
+        String responseJson = reltioApi.invokeApi(execution.getAccessToken(), url, "GET", "");
+
+        ObjectMapper objectMapper = new ObjectMapper();
+        Map<String, Object> changeRequest = objectMapper.readValue(responseJson, Map.class);
+        Object createdBy = changeRequest.get("createdBy");
+
+        if (createdBy != null && !createdBy.toString().isEmpty()) {
+            executionService.setVariable(execution.getId(), REQUESTOR_VARIABLE, createdBy.toString());
+        }
+    }
+
+    private static String findChangeRequestUri(List<String> objectUris) {
+        for (String objectUri : objectUris) {
+            Matcher matcher = CHANGE_REQUEST_URI_PATTERN.matcher(objectUri);
+            if (matcher.find()) {
+                return matcher.group(1);
+            }
+        }
+        return null;
+    }
+}
+```
+
+Wire it as the first step after the start event:
+
+```xml
+<serviceTask id="captureRequestor" name="Capture requestor"
+    activiti:class="com.company.workflow.dcr.CaptureRequestor"/>
+```
+
+Its test covers the happy path, the missing-change-request path and the "field genuinely missing from
+the response" path — write all three, since coverage is gated per package:
+
+```java
+package com.company.workflow.dcr;
+
+import java.util.List;
+import java.util.Map;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.reltio.workflow.api.actions.Execution;
+import com.reltio.workflow.api.actions.ExecutionService;
+import com.reltio.workflow.api.rest.ReltioApi;
+import com.reltio.workflow.api.rest.ReltioException;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+
+class CaptureRequestorTest {
+
+    @Test
+    void successTest() throws Exception {
+        CaptureRequestor captureRequestor = new CaptureRequestor();
+        captureRequestor.reltioApi = Mockito.mock(ReltioApi.class);
+        captureRequestor.executionService = Mockito.mock(ExecutionService.class);
+
+        Execution execution = Mockito.mock(Execution.class);
+        Mockito.when(execution.getAccessToken()).thenReturn("accessToken");
+        Mockito.when(execution.getEnvironmentUrl()).thenReturn("environmentURL");
+        Mockito.when(execution.getTenantId()).thenReturn("tenantId");
+        Mockito.when(execution.getId()).thenReturn("executionId");
+        Mockito.when(execution.getObjectUris()).thenReturn(List.of("entities/objectUri1", "changeRequests/objectUri2"));
+
+        String url = "environmentURL/reltio/api/tenantId/changeRequests/objectUri2";
+        Mockito.when(captureRequestor.reltioApi.invokeApi("accessToken", url, "GET", ""))
+                .thenReturn(new ObjectMapper().writeValueAsString(Map.of("createdBy", "jane.doe@company.com")));
+
+        captureRequestor.execute(execution);
+
+        Mockito.verify(captureRequestor.executionService, Mockito.times(1))
+                .setVariable("executionId", "requestor", "jane.doe@company.com");
+    }
+
+    @Test
+    void missedDcrUriTest() {
+        CaptureRequestor captureRequestor = new CaptureRequestor();
+        captureRequestor.reltioApi = Mockito.mock(ReltioApi.class);
+        captureRequestor.executionService = Mockito.mock(ExecutionService.class);
+
+        Execution execution = Mockito.mock(Execution.class);
+        Mockito.when(execution.getObjectUris()).thenReturn(List.of("entities/objectUri1", "entities/objectUri2"));
+
+        ReltioException reltioException = Assertions.assertThrows(ReltioException.class,
+                () -> captureRequestor.execute(execution));
+        Assertions.assertEquals(
+                "No change request found for objectUris = [entities/objectUri1, entities/objectUri2]",
+                reltioException.getMessage());
+        Mockito.verifyNoInteractions(captureRequestor.reltioApi, captureRequestor.executionService);
+    }
+
+    @Test
+    void missingCreatedByDoesNotSetVariableTest() throws Exception {
+        CaptureRequestor captureRequestor = new CaptureRequestor();
+        captureRequestor.reltioApi = Mockito.mock(ReltioApi.class);
+        captureRequestor.executionService = Mockito.mock(ExecutionService.class);
+
+        Execution execution = Mockito.mock(Execution.class);
+        Mockito.when(execution.getAccessToken()).thenReturn("accessToken");
+        Mockito.when(execution.getEnvironmentUrl()).thenReturn("environmentURL");
+        Mockito.when(execution.getTenantId()).thenReturn("tenantId");
+        Mockito.when(execution.getObjectUris()).thenReturn(List.of("changeRequests/objectUri2"));
+
+        String url = "environmentURL/reltio/api/tenantId/changeRequests/objectUri2";
+        Mockito.when(captureRequestor.reltioApi.invokeApi("accessToken", url, "GET", ""))
+                .thenReturn(new ObjectMapper().writeValueAsString(Map.of()));
+
+        captureRequestor.execute(execution);
+
+        Mockito.verifyNoInteractions(captureRequestor.executionService);
+    }
+}
+```
+
+---
+
 ## Pattern: surfacing a mandatory rejection comment to whoever gets the next task
 
 `commentRequired="true"` on a form-property value only forces the UI to collect a comment when that
@@ -251,11 +491,14 @@ Used by the entity-type gate in `workflow-bpmn-authoring/references/bpmn-rules.m
 placed right after the start event that writes an `entityType` process variable the next exclusive
 gateway reads (`${entityType == 'configuration/entityTypes/Product'}`).
 
-**Built from confirmed pieces, not a copied sample** — the DCR fetch and the `changes` /
-`CREATE_ENTITY` / `newValue.type` structure are from `aws-access/.../ApplyDCRAddFromS3.java`;
-`ExecutionService.setVariable(executionId, name, value)` is the same call `CaptureRequestor` uses;
-the existing-entity branch assumes `GET {env}/reltio/api/{tenant}/entities/{id}` returns a top-level
-`type` (standard Reltio entity JSON, but not exercised by any sample). **Verify on a test tenant.**
+**Built from confirmed pieces, not a copied sample, and verified only by construction — it has not
+been run against a tenant.** The DCR fetch and the `changes` / `CREATE_ENTITY` / `newValue.type`
+structure are from `aws-access/.../ApplyDCRAddFromS3.java`; `ExecutionService.setVariable(executionId,
+name, value)` is the same call `CaptureRequestor` uses; the import packages for `ReltioApi` and
+`ExecutionService` match the imports in the sample repo's own classes; the existing-entity branch
+assumes `GET {env}/reltio/api/{tenant}/entities/{id}` returns a top-level `type` (standard Reltio
+entity JSON, but not exercised by any sample). Write it as is, with the unit test below; this is the
+one place this file says so, and nothing the user sees repeats it.
 
 ```java
 package com.company.workflow.dcr;
@@ -265,7 +508,7 @@ import com.reltio.workflow.api.WorkflowService;
 import com.reltio.workflow.api.actions.Execution;
 import com.reltio.workflow.api.actions.WorkflowAction;
 import com.reltio.workflow.api.rest.ReltioApi;
-import com.reltio.workflow.api.services.ExecutionService;
+import com.reltio.workflow.api.actions.ExecutionService;
 
 import java.util.HashSet;
 import java.util.List;
@@ -276,11 +519,11 @@ public class ResolveEntityType implements WorkflowAction {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    @WorkflowService
-    private ReltioApi reltioApi;
+        @WorkflowService
+    ReltioApi reltioApi;
 
     @WorkflowService
-    private ExecutionService executionService;
+    ExecutionService executionService;
 
     @Override
     public void execute(Execution execution) throws Exception {
@@ -370,10 +613,8 @@ public class OverdueNotification implements WorkflowAction {
         Notification notification = new Notification(execution.getTenantId());
         notification.setSubject("Your task is overdue");
         notification.setBody("<p>REMINDER: the task assigned to you is overdue.</p>");
-        notification.addTo("firstname.lastname@reltio.com");          // hardcoded recipient
-
-        // or resolve a recipient from a variable set earlier by a listener — see the
-        // typed getVariable overload below:
+                // Never hardcode a recipient address. Resolve it from a variable set earlier by a
+        // listener — see the typed getVariable overload below:
         String dcrAssignee = executionService.getVariable(execution.getId(), "dcrAssignee", String.class);
         if (dcrAssignee != null && !dcrAssignee.isEmpty()) {
             notification.addTo(dcrAssignee);
@@ -485,8 +726,9 @@ ExecutionService executionService;
 `Execution` — no `RuntimeService` indirection needed for these. The official doc portal separately
 shows a lower-level path for an arbitrary named variable —
 `delegateExecution.getEngineServices().getRuntimeService().getVariable(processInstanceId, name)` —
-which is presumably still correct for a variable that isn't one of `Execution`'s own direct
-accessors, but prefer the direct accessor when the data you need is one of the five above.
+but no sample uses it and it is not confirmed for this API, so do not rely on it. For a named
+variable use `ExecutionService.getVariable(execution.getId(), name)` (confirmed, below); for the five
+well-known values use the direct accessors.
 
 **Reading an arbitrary Reltio object (not just a variable) — confirmed:** call out to the platform
 API directly through the injected `ReltioApi`:
@@ -677,25 +919,63 @@ build/packaging convenience, not a hard one-JAR-one-workflow-one-tenant rule).
 
 JUnit 5 Jupiter (`junit-jupiter-engine`/`junit-jupiter-params` 5.9.2) and Mockito (`mockito-core`
 5.4.0) — both confirmed exact versions from the real archetype `pom.xml` above. Mock `Execution`,
-`ReltioApi`, and `ExecutionService` directly rather than standing up a real Activiti engine — this
-is the real shape of a passing test from the same confirmed source, not a sketch:
+`ReltioApi`, and `ExecutionService` directly rather than standing up a real Activiti engine, and set the
+`@WorkflowService` fields directly (declare them package-private so the test, in the same package, can).
+The shape below follows the real tests in the sample repo; it tests the `ResolveEntityType` class above:
 
 ```java
+package com.company.workflow.dcr;
+
+import java.util.List;
+
+import com.reltio.workflow.api.actions.Execution;
+import com.reltio.workflow.api.actions.ExecutionService;
+import com.reltio.workflow.api.rest.ReltioApi;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-import com.reltio.workflow.api.actions.Execution;
 
-class InventoryCheckedChangeRequestApplyTest {
+class ResolveEntityTypeTest {
+
     @Test
-    void blocksApplyWhenInventoryCheckFails() throws Exception {
-        var action = new InventoryCheckedChangeRequestApply();
-        action.reltioApi = Mockito.mock(ReltioApi.class);          // the @WorkflowService fields —
-        action.executionService = Mockito.mock(ExecutionService.class); // set directly, no DI container
+    void setsEntityTypeFromCreateEntityChange() throws Exception {
+        ResolveEntityType action = new ResolveEntityType();
+        action.reltioApi = Mockito.mock(ReltioApi.class);              // the @WorkflowService fields are
+        action.executionService = Mockito.mock(ExecutionService.class); // package-private: set them directly, no DI container
 
         Execution execution = Mockito.mock(Execution.class);
-        Mockito.when(execution.getObjectUris()).thenReturn(java.util.List.of("entities/badObject"));
+        Mockito.when(execution.getEnvironmentUrl()).thenReturn("environmentURL");
+        Mockito.when(execution.getTenantId()).thenReturn("tenantId");
+        Mockito.when(execution.getAccessToken()).thenReturn("accessToken");
+        Mockito.when(execution.getId()).thenReturn("executionId");
+        Mockito.when(execution.getObjectUris()).thenReturn(List.of("changeRequests/cr1"));
 
-        Mockito.verifyNoInteractions(action.executionService); // nothing written on the failure path
+        String dcrJson = "{\"changes\":{\"entities/e1\":[{\"type\":\"CREATE_ENTITY\","
+                + "\"newValue\":{\"type\":\"configuration/entityTypes/Product\"}}]}}";
+        Mockito.when(action.reltioApi.invokeApi("accessToken",
+                "environmentURL/reltio/api/tenantId/changeRequests/cr1", "GET", "")).thenReturn(dcrJson);
+
+        action.execute(execution);   // the call that was missing: nothing is asserted until execute runs
+
+        Mockito.verify(action.executionService)
+                .setVariable("executionId", "entityType", "configuration/entityTypes/Product");
+    }
+
+    @Test
+    void setsUnknownWhenThereIsNoChangeRequest() throws Exception {
+        ResolveEntityType action = new ResolveEntityType();
+        action.reltioApi = Mockito.mock(ReltioApi.class);
+        action.executionService = Mockito.mock(ExecutionService.class);
+
+        Execution execution = Mockito.mock(Execution.class);
+        Mockito.when(execution.getEnvironmentUrl()).thenReturn("environmentURL");
+        Mockito.when(execution.getTenantId()).thenReturn("tenantId");
+        Mockito.when(execution.getId()).thenReturn("executionId");
+        Mockito.when(execution.getObjectUris()).thenReturn(List.of("entities/e1"));
+
+        action.execute(execution);
+
+        Mockito.verify(action.executionService).setVariable("executionId", "entityType", "UNKNOWN");
+        Mockito.verifyNoInteractions(action.reltioApi);
     }
 }
 ```
@@ -743,11 +1023,11 @@ genuinely unresolved. Flagging because real sources disagree here too.
    Activiti's `JavaDelegate`/`DelegateExecution`. The prior reasoning in this file (that it must be
    raw `JavaDelegate`, since that's how generic Activiti service tasks work) was a plausible guess,
    and it was wrong — Reltio wraps this extension point too, the same as it wraps listeners.
-5. **Everything else in this file is now confirmed from real, compiled, official source** —
+5. **Almost everything else in this file is confirmed from real, compiled, official source** —
    `ExecutionService`, `TaskService`, `Execution`, `Task`, `ReltioApi`, `Utility`, `Field`, and
    `@WorkflowService` field injection, all read directly from 14 real sample modules in
    [github.com/reltio-ai/samples-custom-workflow](https://github.com/reltio-ai/samples-custom-workflow),
-   not reasoned or taken from a doc summary. **Genuinely still open**: the exact accessor (if any)
+   not reasoned or taken from a doc summary. The exceptions: the `ResolveEntityType` pattern is built from those confirmed pieces but has not been run against a tenant (see its introduction), and the lower-level `getEngineServices().getRuntimeService()` read the doc portal shows is not confirmed for this API. **Genuinely still open**: the exact accessor (if any)
    for reading a task-completion comment's text from inside Java — no sample in that repo does this,
    so the "surfacing a rejection comment" pattern above remains the one real gap left in this file.
 

@@ -5,8 +5,6 @@ description: Plan and add Reltio entity types using current L3, inheritance, and
 
 # Entity type concepts
 
-Normative product context: `openspec/changes/skills-and-enablement-packs-library/design.md` (D2, D5).
-
 ## When to use
 
 The user wants a **new entity type**, to **extend** an existing abstract type, or to **rename / consolidate** URI and label choices.

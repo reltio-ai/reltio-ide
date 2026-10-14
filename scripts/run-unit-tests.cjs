@@ -44,6 +44,9 @@ const SCRIPTS = [
 	'test-workflow-inspector.cjs',
 	'test-workflow-repo-java-discovery.cjs',
 	'test-workflow-skills-library.cjs',
+	'test-workflow-skills-sync.cjs',
+	'test-workflow-input-trust.cjs',
+	'test-workflow-review-fixes.cjs',
 ];
 
 function main() {

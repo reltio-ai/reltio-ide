@@ -16,13 +16,13 @@ more found on the 2026-10-03 re-crawl.
 | Page | URL | Key content |
 |---|---|---|
 | Overview of Workflow Customizations (objectives path) | [link](https://docs.reltio.com/en/objectives/manage-workflow-tasks/workflow-management-at-a-glance/workflow-management-set-up/overview-of-workflow-customizations) | Listener/validator/service-task customization overview; one example `<userTask>` with a `create` listener |
-| Overview of Workflow Customizations (engage path) | [link](https://docs.reltio.com/en/engage/manage-data-workflows/overview-of-workflow-customizations) | **Fetched directly 2026-10-03 — this is where the real content lives.** Confirms `WorkflowTaskListener`/`WorkflowExecutionListener` as the two listener interfaces, a validator's `doValidate(TaskValidationInfo taskInfo): boolean throws InvalidTaskException` signature, `ROLE_WORKFLOW`/`ROLE_WORKFLOW_MANAGER`, JDK 17, and a stated 70% test-coverage minimum. Full extraction in `workflow-jar-customization/references/java-patterns.md`. **Not confirmed whether this and the row above are the same content reachable by two nav paths, or genuinely different revisions** — cite this one; it's the one actually fetched. |
+| Overview of Workflow Customizations (engage path) | [link](https://docs.reltio.com/en/engage/manage-data-workflows/overview-of-workflow-customizations) | **Fetched directly 2026-10-03 — this is where the real content lives.** Confirms `WorkflowTaskListener`/`WorkflowExecutionListener` as the two listener interfaces, `ROLE_WORKFLOW`/`ROLE_WORKFLOW_MANAGER`, JDK 17, and a stated 70% test-coverage minimum. It also shows a validator signature, `doValidate(TaskValidationInfo taskInfo): boolean throws InvalidTaskException`, which real compiled sample code contradicts — the working shape is `doValidate(Task task)`, `void`, throwing `ValidationError` (see `java-patterns.md`), so treat the page's signature as unreliable, not as confirmed. Full extraction in `workflow-jar-customization/references/java-patterns.md`. **Not confirmed whether this and the row above are the same content reachable by two nav paths, or genuinely different revisions** — cite this one; it's the one actually fetched. |
 | Workflow FAQ | [link](https://docs.reltio.com/en/engage/manage-data-workflows/overview-of-workflow-customizations/workflow-faq) | **Fetched directly 2026-10-03.** Confirms: Sonar + Snyk run automatically on every pull request (answers "what does the review pipeline actually check"); a JAR can be registered across multiple tenants and its classes used in multiple workflows (one JAR ≠ one tenant ≠ one workflow); multi-module Maven repos are an officially documented way to ship multiple custom workflows from one repository; version bumps are recommended to avoid silently overwriting a registered JAR. See `workflow-repo-contribution/SKILL.md`. |
 | Overview of Workflow Configuration | [link](https://docs.reltio.com/en/objectives/manage-workflow-tasks/workflow-management-at-a-glance/workflow-management-set-up/overview-of-workflow-customizations/overview-of-workflow-configuration) | Workflow config concepts |
 | Business process definition overview | [link](https://docs.reltio.com/en/objectives/manage-workflow-tasks/workflow-management-at-a-glance/workflow-management-reference/business-process-definition-overview) | Process `id`, `isExecutable`, `manualStart` data object; example uses `dataChangeRequestReviewComment` as its sample id (a variant, not evidence against `dataChangeRequestReview` as the DCR-review id — see `bpmn-rules.md` §2) |
 | Workflow Modeler at a glance | [link](https://docs.reltio.com/en/applications/console/configuration-applications/workflow-modeler-at-a-glance) | The Workflow Modeler UI: open/import a BPMN diagram, edit visually; requires `ROLE_WORKFLOW_MANAGER` — independently reconfirmed by the Java-customization page above, which also names it as the role required "to publish process definitions" |
 | Workflow Tasks | [link](https://docs.reltio.com/en/objectives/manage-workflow-tasks/workflow-management-at-a-glance/workflow-management-operation/workflow-tasks) | End-user task handling, not authoring |
-| Workflow API | [link](https://docs.reltio.com/en/developer-resources/workflow-apis/workflow-apis-at-a-glance/workflow-api) | Workflow Adapter REST API path prefix (`{workflow environment url}/workflow`); this crawl found no deploy-endpoint payload detail — the extension's own `src/api/workflowAdapterClient.ts` contract was verified directly against a live adapter instead (see `docs/06-WORKFLOW-ADAPTER-AUTODISCOVERY.md` in the project handoff package, not this KB) |
+| Workflow API | [link](https://docs.reltio.com/en/developer-resources/workflow-apis/workflow-apis-at-a-glance/workflow-api) | Workflow Adapter REST API path prefix (`{workflow environment url}/workflow`); this crawl found no deploy-endpoint payload detail — the extension's own adapter client contract was verified directly against a live adapter instead |
 | Setting Up the Reltio Workflow Adapter | [link](https://docs.reltio.com/workflow/setupwfadapter.html) | **Fetched directly 2026-10-03 — confirmed to be an index/table-of-contents page, not a content page.** It links to (but this crawl did not fetch, to avoid guessing at unconfirmed child URLs) sections titled "Setting up JAVA HOME variables," "Install MariaDB server," and "Debugging a custom JAR file" — these section titles are confirmed real; their content is not yet indexed here. `workflow-local-adapter-setup/SKILL.md` should defer to the real child pages for anything its own content doesn't already state, and flags where it's currently guessing in their absence. |
 
 ## Also provisioned directly to every customer (not a doc-portal page, but equally authoritative)
@@ -36,9 +36,7 @@ FAQ's stated 70%, in `java-patterns.md`'s Known Ambiguities), a per-customer S3 
 (`reltio.workflow-custom-jars/<customer>/`) and JAR-ready email notification list in
 `repository.properties`, and a Bitbucket Pipelines config importing shared `pr-checks`/`deploy`
 steps from a separate Reltio-owned pipeline repository. Its own `README.md` is the source for "add
-one sub-module per additional custom workflow" — see
-`docs/custom-workflow-repo-tree-design-explainer.md` in this repo for why that matters to the
-Custom Workflow Repository tree's design.
+one sub-module per additional custom workflow" — which is why the Custom Workflow Repository tree groups content by kind rather than by folder.
 
 ## Source repository — github.com/reltio-ai/samples-custom-workflow
 
@@ -75,15 +73,15 @@ framework's `ILifeCycleAction.java` — real, redistributable source, not a summ
 | `default process definitions/DataChangeRequestReview/dcrTwoApprovals.bpmn20.xml` | A Reltio-shipped two-approval variant — see `bpmn-rules.md` §12.1, the source of the type-listener ambiguity |
 | `default process definitions/PotentialMatchReview/PotentialMatchReview.bpmn20.xml` | Confirms `EntityTypeTaskListener` and the `Merge`/`NotAMatch` service tasks |
 | `default process definitions/DeleteReview/`, `Authoring/` | Further OOTB variants, not yet cross-checked against every rule in this file |
-| `src/workflow-custom/.../com/reltio/workflow/activiti/service/*.java` | Source for every service task and listener class in `bpmn-rules.md` §5 |
-| `src/workflow-custom/.../com/reltio/workflow/activiti/service/validators/*.java` | Validator class *names* — see `bpmn-rules.md` §12.4 for the package-name discrepancy against the deployed form-property value |
-| `src/workflow-api/` | The public `workflow-api`/`workflow-custom` Maven artifacts referenced in `workflow-jar-customization/SKILL.md` |
+| The `workflow-custom` module, package `com.reltio.workflow.activiti.service` | Source for every service task and listener class in `bpmn-rules.md` §5 |
+| The `workflow-custom` module, the `validators` sub-package of that package | Validator class *names* — see `bpmn-rules.md` §12.4 for the package-name discrepancy against the deployed form-property value |
+| The `workflow-api` module | The public `workflow-api`/`workflow-custom` Maven artifacts referenced in `workflow-jar-customization/SKILL.md` |
 
 ## Access notes
 
 - The doc portal pages crawled here are narrative/customization guides, not a request/response API
   reference — they do not state error codes, gateway-default enforcement, or the mandatory-listener
-  rule as a platform contract. `bpmn-rules.md` §12.5 is explicit about which rules that leaves as
+  rule as a platform contract. `bpmn-rules.md` §12.6 is explicit about which rules that leaves as
   this team's own inference rather than a documented one.
 - The GitHub repository is the stronger source for anything about real class names, real OOTB
   process definitions, or real deploy-time XML shape — prefer it over the doc portal's narrative

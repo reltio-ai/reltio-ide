@@ -5,8 +5,6 @@ description: Draft match group ideas aligned with entity semantics and tenant ma
 
 # Match groups from concept
 
-Normative product context: `openspec/changes/skills-and-enablement-packs-library/design.md` (D2, D5).
-
 ## When to use
 
 The user wants **match / survivorship** behavior for an entity type (new or evolving).
