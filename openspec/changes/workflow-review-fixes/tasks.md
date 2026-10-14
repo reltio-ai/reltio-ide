@@ -52,3 +52,11 @@ Tracking: RP-202975. Each task is test-first: write the failing behaviour test, 
 - [x] 6.3 `ARCHITECTURE.md`: trust boundary and sync notes.
 - [x] 6.4 Bump extension to `1.0.28`; do not package until requested.
 - [ ] 6.5 Manual QA on a real tenant: duplicate an older definition; edit a draft id to a built-in id and deploy; connect a repo on an unfetched tenant; reload the window; CRLF checkout shows `synced`; legacy cleanup on a workspace with customer-owned `.cursor/skills`.
+
+## 7. Live-testing follow-ups
+
+- [x] 7.1 Drafts folder renders above the Custom Workflow Repository row in both the "not fetched yet" and the fully-loaded branch (`multiTenantTreeProvider.ts`); `createDraft` writes into a connected repo's root instead of `Drafts/` once one exists (`extension.ts`).
+- [x] 7.2 Repository file rows no longer set `resourceUri`, so an open BPMN mid-edit does not read as a deploy blocker via VS Code's native Problems-count badge (`workflowNodes.ts`).
+- [x] 7.3 Maven-module tooltip text simplified; stopped citing `design.md D4` in user-facing UI (`workflowNodes.ts`).
+- [x] 7.4 Draft and repository rows show the BPMN's `<process name="…">` as the label when present, id as fallback — matching `ProcessDefinitionNode`'s existing rule — with the id still visible in `description`/tooltip for Deploy (`workflowNodes.ts`, `workflowDrafts.ts`, `workflowRepoDiscovery.ts`, `multiTenantTreeProvider.ts`, `extension.ts`).
+- [x] 7.5 Deploy's confirmation modal is scoped to agent-driven invocations (a `WorkflowCommandArgs` object naming a process id, with no Uri and no tree node to have clicked); a human's own tree-row click, editor title-bar click, or palette invocation deploys directly (`confirmedDeployPlan()` in `extension.ts`).

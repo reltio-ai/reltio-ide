@@ -16,6 +16,8 @@ The union is narrowed once, in `workflowCommandArgs()`, so no handler discrimina
 
 ## D2. Deploy confirms unconditionally
 
+> **Superseded by `workflow-review-fixes` D13.** Live use showed the "no different entry point" calibration in D1/D2 had a real cost for a human who had already clicked a tree row, the editor title bar, or the palette with the active editor as the implicit target — the confirmation is now scoped to the agent's own `WorkflowCommandArgs` path, which still shows it unconditionally. See `workflow-review-fixes/design.md` D13 for the current decision and its accepted residual risk.
+
 **Decision.** `confirmDeploy()` is a modal shown before every deploy, naming the process id and tenant and stating whether this creates a workflow or replaces a live one. It supersedes the built-in-collision-only warning.
 
 **Rationale.** Deploy is the only irreversible step in the flow, and it has a property that makes it unusually easy to under-estimate: Activiti versions by process id, so deploying an id that already exists silently becomes version N+1 of a *running* workflow, and new process instances pick it up immediately. There is no local undo.

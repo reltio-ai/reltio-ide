@@ -536,6 +536,26 @@ const {
 	);
 	assert.strictEqual(emN.locFromPath('/wsN/elsewhere/x.json'), undefined, 'paths outside a tenant resolve to undefined');
 
+	// Regression: on Windows, a file URI's `.path` carries a leading "/" before the drive
+	// letter (`/c:/ws/...`) that `.fsPath` never has (`c:\ws\...`). The reverse index used to be
+	// keyed by `.path` while every real caller looks up by `.fsPath`, so the two could never
+	// match on a real Windows workspace — `locFromPath()` silently returned "no tenant" for
+	// every file, which is what made Deploy on a Draft/repository BPMN fail with "not a BPMN
+	// inside a tenant folder" and the repository file watcher's rediscovery never fire. A
+	// POSIX-style root (`/wsN` above) cannot reproduce this: its `.path` and `.fsPath` already
+	// agree, so this needs a drive-letter root to actually exercise the mismatch.
+	const emW = new EnvironmentManager(U('C:\\ws'));
+	await emW.createEnvironment('win.reltio.com');
+	await emW.createTenant('win.reltio.com', 'TenantW');
+	assert.deepStrictEqual(
+		emW.locFromPath(`C:\\ws\\win\\TenantW\\${BUSINESS_CONFIG_FILE}`),
+		{ environmentName: 'win.reltio.com', tenantId: 'TenantW' },
+		'the reverse index must resolve a Windows-style fsPath, not just a POSIX one',
+	);
+	assert.strictEqual(
+		emW.locFromPath('C:\\ws\\elsewhere\\x.json'), undefined, 'still undefined for a real path outside any tenant',
+	);
+
 	// Legacy suffixed folders stay discoverable, so a workspace works before it is renamed.
 	mem = installMemoryFs();
 	await vscode.workspace.fs.writeFile(

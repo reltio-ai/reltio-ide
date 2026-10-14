@@ -27,6 +27,7 @@ const { compareBpmnContent } = importDist('workspace/workflowRepoSync');
 const { discoverBpmnFilesDetailed } = importDist('workspace/workflowRepoDiscovery');
 const { clearGeneratedReadmeBeforeClone, restoreGeneratedReadme } = importDist('workspace/workflowRepoConnect');
 const { EnvironmentManager } = importDist('workspace/environmentManager');
+const { draftFileName } = importDist('workspace/workflowDrafts');
 const { MultiTenantTreeProvider } = importDist('tree/multiTenantTreeProvider');
 const { TokenStore } = importDist('api/tokenStore');
 const {
@@ -36,6 +37,9 @@ const {
 	JarDeploymentsFolderNode,
 	ProcessDefinitionNode,
 	WorkflowRepoNode,
+	WorkflowDraftsFolderNode,
+	WorkflowRepoBpmnFileNode,
+	WorkflowDraftNode,
 } = importDist('tree/workflowNodes');
 
 const repoRoot = path.join(__dirname, '..');
@@ -276,6 +280,91 @@ const ADAPTER = 'https://tst-01-workflow.reltio.com';
 			provider.markProcessDefinitionsLoaded(ENV, TENANT, [def('p1')]);
 			provider.clearWorkflowCache(ENV, TENANT);
 			assert.strictEqual(provider.hasFetchedProcessDefinitions(ENV, TENANT), false);
+		}
+
+		// 6h. Drafts renders above the Custom Workflow Repository row, not below it — in
+		// both the "not fetched yet" branch and the normal, fully-loaded branch.
+		{
+			const mem = installMemoryFs();
+			const { mgr, provider } = makeProvider();
+			await mem.writeFile(mgr.getWorkflowRepoConfigUri(ENV, TENANT), enc(JSON.stringify({
+				version: 1, repoUrl: 'https://github.com/acme/wf', relativePath: 'Workflows/Custom Workflows',
+			})));
+			await mem.writeFile(
+				vscode.Uri.joinPath(mgr.getWorkflowDraftsDirectoryUri(ENV, TENANT), draftFileName('d1')),
+				enc(bpmn('d1')),
+			);
+
+			// Not fetched yet: only the (optional) Fetch row and the repository row are
+			// unconditional; Drafts must still come first among what *does* render.
+			const unfetched = new WorkflowsFolderNode(ENV, TENANT, undefined, true);
+			const unfetchedKids = await provider.getChildren(unfetched);
+			const unfetchedDraftsIdx = unfetchedKids.findIndex(k => k instanceof WorkflowDraftsFolderNode);
+			const unfetchedRepoIdx = unfetchedKids.findIndex(k => k instanceof WorkflowRepoNode);
+			assert.ok(unfetchedDraftsIdx >= 0 && unfetchedRepoIdx >= 0, 'both rows must render');
+			assert.ok(unfetchedDraftsIdx < unfetchedRepoIdx,
+				'Drafts must render above Custom Workflow Repository before Workflows has been fetched too');
+
+			// Fully loaded.
+			provider.markWorkflowsLoaded(ENV, TENANT, [def('p1')], []);
+			const loaded = new WorkflowsFolderNode(ENV, TENANT, ADAPTER);
+			const loadedKids = await provider.getChildren(loaded);
+			const loadedDraftsIdx = loadedKids.findIndex(k => k instanceof WorkflowDraftsFolderNode);
+			const loadedRepoIdx = loadedKids.findIndex(k => k instanceof WorkflowRepoNode);
+			assert.ok(loadedDraftsIdx >= 0 && loadedRepoIdx >= 0, 'both rows must render');
+			assert.ok(loadedDraftsIdx < loadedRepoIdx,
+				'Drafts must render above Custom Workflow Repository once Workflows has been fetched');
+		}
+
+		// 6i. a repository file row sets no `resourceUri` — that opts the row into VS Code's
+		// native Problems-count badge, which reads as a deploy blocker on a BPMN mid-edit
+		// and is not one (the "Deploy to tenant" icon already covers that).
+		{
+			const fileNode = new WorkflowRepoBpmnFileNode(
+				ENV, TENANT, vscode.Uri.file('/rfws/repo/p1.bpmn20.xml'), 'p1', undefined, undefined,
+			);
+			assert.strictEqual(fileNode.resourceUri, undefined,
+				'a repository BPMN row must not carry resourceUri, or VS Code renders a Problems badge next to it');
+			assert.ok(fileNode.iconPath, 'the icon must still be set explicitly without resourceUri to drive it');
+			assert.deepStrictEqual(fileNode.command.arguments, [fileNode.fileUri],
+				'Open BPMN must still work without resourceUri to fall back on');
+		}
+
+		// 6j. a Draft or Custom Workflow Repository row shows the process's <process name="…">
+		// when the BPMN has one, with the id as a fallback — matching `ProcessDefinitionNode`'s
+		// own label rule, so the same workflow does not read as "p1" on one row and
+		// "Location DCR Approval" on another depending only on which tree branch is showing it.
+		// The id must stay visible (in `description`/`tooltip`) because Deploy keys on it, not the name.
+		{
+			const named = new WorkflowRepoBpmnFileNode(
+				ENV, TENANT, vscode.Uri.file('/rfws/repo/p1.bpmn20.xml'), 'p1', 'Location DCR Approval', undefined,
+			);
+			assert.strictEqual(named.label, 'Location DCR Approval',
+				'a repository row must show the process name as its label when the BPMN has one');
+			assert.ok(String(named.description).includes('p1'),
+				'the id must still be visible once the label is showing the friendlier name');
+
+			const unnamed = new WorkflowRepoBpmnFileNode(
+				ENV, TENANT, vscode.Uri.file('/rfws/repo/p2.bpmn20.xml'), 'p2', undefined, undefined,
+			);
+			assert.strictEqual(unnamed.label, 'p2',
+				'a repository row with no process name must fall back to the id, not show "undefined"');
+
+			const namedDraft = new WorkflowDraftNode(ENV, TENANT, {
+				processId: 'd1', fileUri: vscode.Uri.file('/rfws/drafts/d1.bpmn20.xml'),
+				fileName: 'd1.bpmn20.xml', processName: 'Address Validation',
+			});
+			assert.strictEqual(namedDraft.label, 'Address Validation',
+				'a draft row must show the process name as its label when the BPMN has one');
+			assert.ok(String(namedDraft.description).includes('d1'),
+				'the id must still be visible once the draft label is showing the friendlier name');
+
+			const unnamedDraft = new WorkflowDraftNode(ENV, TENANT, {
+				processId: 'd2', fileUri: vscode.Uri.file('/rfws/drafts/d2.bpmn20.xml'),
+				fileName: 'd2.bpmn20.xml', processName: undefined,
+			});
+			assert.strictEqual(unnamedDraft.label, 'd2',
+				'a draft row with no process name must fall back to the id, not show "undefined"');
 		}
 	}
 

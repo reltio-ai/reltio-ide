@@ -80,6 +80,16 @@ export class EnvironmentManager {
 	 * Folder names no longer encode identity, so it cannot be parsed back out of a path.
 	 * Callers needing the reverse mapping (`getParent`, first-open tracking) are synchronous
 	 * and cannot read a marker on demand, so the scan records it here.
+	 *
+	 * Keyed on `.fsPath`, deliberately not `.path`: every caller of `locFromPath()` passes
+	 * `uri.fsPath` (a real filesystem path a draft/BPMN file watcher just read off disk), and
+	 * on Windows the two differ by more than casing — `.path` always carries a leading `/`
+	 * before the drive letter (`/c:/Users/...`) that `.fsPath` never has (`c:\Users\...`).
+	 * Indexing by `.path` while looking up by `.fsPath` meant `target.startsWith(`${dir}/`)`
+	 * could never match on Windows, so every lookup silently returned "not under any tenant" —
+	 * Deploy on a Draft/repo file failing with "no tenant to deploy it to", and the Custom
+	 * Workflow Repository watcher's rediscovery (`extension.ts`) silently never firing, were
+	 * both this same bug.
 	 */
 	private readonly tenantPathIndex = new Map<string, { environmentName: string; tenantId: string }>();
 
@@ -365,7 +375,7 @@ export class EnvironmentManager {
 
 			// Record before resolving paths: a legacy folder is not named after its id.
 			const tenantDir = vscode.Uri.joinPath(root, n);
-			this.tenantPathIndex.set(normalizePath(tenantDir.path), { environmentName: environment, tenantId });
+			this.tenantPathIndex.set(normalizePath(tenantDir.fsPath), { environmentName: environment, tenantId });
 			this.tenantLocations.set(tenantKey(environment, tenantId), tenantDir);
 
 			const l3 = this.getL3Uri(environment, tenantId);
@@ -413,7 +423,7 @@ export class EnvironmentManager {
 		// `.reltio-ide/` would be staged as tracked content.
 		await writeTenantIdentityMarker(uri, { kind: 'tenant', environmentName: environment, tenantId });
 		await ensureMarkerGitignored(uri);
-		this.tenantPathIndex.set(normalizePath(uri.path), { environmentName: environment, tenantId });
+		this.tenantPathIndex.set(normalizePath(uri.fsPath), { environmentName: environment, tenantId });
 		this.tenantLocations.set(tenantKey(environment, tenantId), uri);
 		return uri;
 	}
@@ -424,7 +434,7 @@ export class EnvironmentManager {
 		const uri = this.tenantUri(environment, tenantId);
 		await this.deleteRecursive(uri);
 		this.tenantLocations.delete(tenantKey(environment, tenantId));
-		this.tenantPathIndex.delete(normalizePath(uri.path));
+		this.tenantPathIndex.delete(normalizePath(uri.fsPath));
 	}
 
 	/**

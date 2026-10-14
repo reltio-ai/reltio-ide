@@ -559,9 +559,12 @@ export class WorkflowRepoModuleNode extends vscode.TreeItem {
 		this.contextValue = `reltio.workflows.customRepo.module.${kind}`;
 		this.iconPath = vscode.ThemeIcon.Folder;
 		this.id = `workflowRepoModule:${environmentName}/${tenantId}/${kind}/${moduleName ?? NO_MODULE_ID_SEGMENT}`;
+		// User-facing text, kept short: the "shared folder, not shared workflow" nuance in this
+		// class's own doc comment above is for engineers reading the code, not something to
+		// surface — and an internal design-doc citation has no business in a tooltip either.
 		this.tooltip = moduleName
-			? `${GROUP_LABELS[kind]} files that live under the "${moduleName}" Maven module directory — a shared folder, not a claim that they implement the same workflow (see design.md D4).`
-			: `${GROUP_LABELS[kind]} files with no enclosing Maven module found — no pom.xml between the file and the repository root.`;
+			? `Maven module: ${moduleName}`
+			: 'No enclosing Maven module (no pom.xml between the file and the repository root).';
 	}
 }
 
@@ -619,22 +622,38 @@ export class WorkflowRepoBpmnFileNode extends vscode.TreeItem {
 		readonly tenantId: string,
 		readonly fileUri: vscode.Uri,
 		readonly processId: string,
+		/** The BPMN's `<process name="...">`, or `undefined` to fall back to `processId` as the label — see `DiscoveredBpmnFile.processName`. */
+		readonly processName: string | undefined,
 		readonly syncState: RepoSyncState | undefined,
 	) {
-		super(processId, vscode.TreeItemCollapsibleState.None);
+		// Matches `ProcessDefinitionNode`'s own label rule (name when present, id otherwise), so
+		// the same workflow does not read as two different things depending on which row of the
+		// tree is showing it.
+		super(processName || processId, vscode.TreeItemCollapsibleState.None);
 		this.contextValue = 'reltio.workflows.customRepo.file';
-		this.resourceUri = fileUri;
+		// Deliberately no `resourceUri`: setting it opts this row into VS Code's native
+		// file-decoration badge, which renders the Problems count for `fileUri` next to
+		// the label — a BPMN mid-edit with unresolved diagnostics then shows a number
+		// that reads as a deploy blocker it is not (D4's diagnostics already surface the
+		// same information inline in the editor and via the gutter/Problems panel). The
+		// icon and the Open-BPMN command below are set explicitly, so neither depends on
+		// `resourceUri` being present.
 		this.iconPath = new vscode.ThemeIcon(
 			'file-code',
 			syncState === 'changed'
 				? new vscode.ThemeColor('gitDecoration.modifiedResourceForeground')
 				: undefined,
 		);
-		this.description =
+		const statusText =
 			syncState === 'changed' ? 'changed' : syncState === 'clean' ? 'synced' : 'not deployed';
+		// The id is what Deploy actually keys on and what the engine shows elsewhere, so once the
+		// label is showing the friendlier name instead, the id still needs to be visible without a
+		// hover — same reasoning as `ProcessDefinitionNode.description` below.
+		this.description = processName ? `${processId} • ${statusText}` : statusText;
 		this.tooltip = buildTooltip(
 			'Custom Workflow Repository file',
 			[
+				['Name', processName || processId],
 				['ID', processId],
 			],
 			syncState === 'changed'
@@ -691,16 +710,22 @@ export class WorkflowDraftNode extends vscode.TreeItem {
 		readonly tenantId: string,
 		readonly draft: WorkflowDraft,
 	) {
-		super(draft.processId, vscode.TreeItemCollapsibleState.None);
+		// Matches `ProcessDefinitionNode`'s own label rule (name when present, id otherwise), so
+		// the same workflow does not read as two different things depending on which row of the
+		// tree is showing it.
+		super(draft.processName || draft.processId, vscode.TreeItemCollapsibleState.None);
 		this.contextValue = 'reltio.workflows.draft';
 		this.iconPath = new vscode.ThemeIcon('file-code');
 		this.resourceUri = draft.fileUri;
-		this.description = 'not deployed';
+		// The id is what Deploy actually keys on, so once the label is showing the friendlier
+		// name instead, the id still needs to be visible without a hover.
+		this.description = draft.processName ? `${draft.processId} • not deployed` : 'not deployed';
 		this.tooltip = [
+			draft.processName ? `Name: ${draft.processName}` : undefined,
 			`ID: ${draft.processId}`,
 			`File: ${draft.fileName}`,
 			'Not yet deployed to this tenant.',
-		].join('\n');
+		].filter((line): line is string => line !== undefined).join('\n');
 		this.id = `workflowDraft:${environmentName}/${tenantId}/${draft.processId}`;
 		this.command = {
 			command: 'vscode.open',

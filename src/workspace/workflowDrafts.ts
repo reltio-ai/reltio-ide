@@ -70,6 +70,14 @@ export interface WorkflowDraft {
 	readonly fileUri: vscode.Uri;
 	readonly fileName: string;
 	readonly processId: string;
+	/**
+	 * The BPMN's `<process name="...">`, when the file has one and could be read. `undefined`
+	 * for "no name attribute" or "could not read the file right now" alike — both fall back to
+	 * `processId` in the tree, and a transient read failure here must not be fatal to listing
+	 * the draft at all, which is the one thing `processId` (filename-derived, D4-exempt for
+	 * Drafts — see this file's own doc comment) never needs the file's content to answer.
+	 */
+	readonly processName: string | undefined;
 }
 
 export interface DraftContext {
@@ -291,7 +299,15 @@ function retargetDiagramPlane(
 
 // ─── File system ─────────────────────────────────────────────────────────────
 
-/** Every draft in a tenant's `Workflows/BPMN/` folder, sorted by process id. */
+/**
+ * Every draft in a tenant's `Workflows/BPMN/` folder, sorted by process id.
+ *
+ * `processName` costs one extra read per draft, on top of the directory listing this function
+ * already does — acceptable because a tenant's draft count is small (these are hand-created,
+ * not provisioned) and because `processId` must stay filename-derived either way (D4 does not
+ * apply to Drafts; see this module's own doc comment), so a read that fails or returns no name
+ * degrades to `processId` rather than losing the draft from the list.
+ */
 export async function listWorkflowDrafts(draftsDir: vscode.Uri): Promise<WorkflowDraft[]> {
 	let entries: [string, vscode.FileType][];
 	try {
@@ -304,7 +320,15 @@ export async function listWorkflowDrafts(draftsDir: vscode.Uri): Promise<Workflo
 		if (fileType !== vscode.FileType.File) continue;
 		const processId = processIdFromDraftFileName(fileName);
 		if (!processId) continue;
-		out.push({ fileUri: vscode.Uri.joinPath(draftsDir, fileName), fileName, processId });
+		const fileUri = vscode.Uri.joinPath(draftsDir, fileName);
+		let processName: string | undefined;
+		try {
+			const text = new TextDecoder().decode(await vscode.workspace.fs.readFile(fileUri));
+			processName = extractProcessModel(text).processName;
+		} catch {
+			processName = undefined;
+		}
+		out.push({ fileUri, fileName, processId, processName });
 	}
 	out.sort((a, b) => a.processId.localeCompare(b.processId));
 	return out;

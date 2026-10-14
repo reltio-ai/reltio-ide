@@ -36,6 +36,8 @@ import {
 } from './workflowNodes';
 import { loadWorkflowAdapterUrl } from '../workspace/workflowAdapterConfig';
 import { bpmnFileName, listLocalBpmnFiles } from '../workspace/workflowBpmnFiles';
+import type { WorkflowDraft } from '../workspace/workflowDrafts';
+import { extractProcessModel } from '../workflow/bpmnModel';
 import type { RepoSyncState } from '../workspace/workflowRepoSync';
 import { inspectWorkflowRepoConfig, loadWorkflowRepoConfig } from '../workspace/workflowRepoConfig';
 import { reconcileWorkflowRepoGitignore } from '../workspace/workflowRepoGitignore';
@@ -973,13 +975,20 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 	 */
 	private async localBpmnStateFor(environmentName: string, tenantId: string) {
 		if (!this.environmentManager) {
-			return { drafts: [] as { processId: string; fileUri: vscode.Uri; fileName: string }[], changed: new Set<string>(), downloaded: new Set<string>() };
+			return { drafts: [] as WorkflowDraft[], changed: new Set<string>(), downloaded: new Set<string>() };
 		}
 		const dir = this.environmentManager.getWorkflowDraftsDirectoryUri(environmentName, tenantId);
 		const files = await listLocalBpmnFiles(dir);
 		const drafts = files
 			.filter(f => f.baselineText === undefined)
-			.map(f => ({ processId: f.processId, fileUri: f.fileUri, fileName: bpmnFileName(f.processId) }));
+			// `localText` is already in hand from `listLocalBpmnFiles()`'s own read, so the name
+			// comes free — no second file read the way `listWorkflowDrafts()` needs one.
+			.map(f => ({
+				processId: f.processId,
+				fileUri: f.fileUri,
+				fileName: bpmnFileName(f.processId),
+				processName: extractProcessModel(f.localText).processName,
+			}));
 		const changed = new Set(files.filter(f => f.hasLocalChanges).map(f => f.processId));
 		const downloaded = new Set(files.filter(f => f.baselineText !== undefined).map(f => f.processId));
 		return { drafts, changed, downloaded };
@@ -1285,6 +1294,14 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 				const children: MultiTenantTreeElement[] = element.savedAdapterUrl !== undefined
 					? [new WorkflowFetchActionNode(element.environmentName, element.tenantId)]
 					: [];
+				// Drafts before the repository row (see the full-children branch below for why),
+				// and — like there — shown only when at least one exists.
+				const drafts = await this.workflowDraftsFor(element.environmentName, element.tenantId);
+				if (drafts.length > 0) {
+					children.push(
+						new WorkflowDraftsFolderNode(element.environmentName, element.tenantId, drafts),
+					);
+				}
 				children.push(repoRow);
 				return children;
 			}
@@ -1312,14 +1329,19 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			if ((cached.definitions === undefined || cached.jars === undefined) && element.savedAdapterUrl !== undefined) {
 				children.push(new WorkflowFetchActionNode(element.environmentName, element.tenantId));
 			}
-			children.push(repoRow);
-			// Drafts appear only when at least one exists — same rule as History.
+			// Drafts before the repository row: a Draft is a BPMN the user is still
+			// shaping before it has anywhere permanent to live, so it reads as a smaller,
+			// more provisional thing than a connected repository tracking real commits —
+			// putting it last, below a whole repository, had it reading as the more
+			// significant of the two. Appears only when at least one exists — same rule
+			// as History.
 			const drafts = await this.workflowDraftsFor(element.environmentName, element.tenantId);
 			if (drafts.length > 0) {
 				children.push(
 					new WorkflowDraftsFolderNode(element.environmentName, element.tenantId, drafts),
 				);
 			}
+			children.push(repoRow);
 			return children;
 		}
 		if (element instanceof WorkflowDraftsFolderNode) {
@@ -1358,6 +1380,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 						tenantId,
 						f.fileUri,
 						f.processId,
+						f.processName,
 						this.getCachedRepoSyncState(environmentName, tenantId, f.processId),
 					),
 				);
@@ -1387,6 +1410,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 						tenantId,
 						f.fileUri,
 						f.processId,
+						f.processName,
 						this.getCachedRepoSyncState(environmentName, tenantId, f.processId),
 					),
 				);

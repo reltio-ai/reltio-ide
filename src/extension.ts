@@ -3688,13 +3688,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		return trimmed;
 	}
 
-	/** Write a draft, open it, and reveal it in the tree. */
+	/**
+	 * Write a new BPMN, open it, and reveal it in the tree.
+	 *
+	 * Routes to the connected Custom Workflow Repository instead of Drafts when the
+	 * tenant has one. Drafts exist for tenants with nowhere else to put a BPMN being
+	 * shaped — once a repository is connected, that *is* the somewhere else, and a
+	 * self-service file an agent or the user creates belongs with the rest of what the
+	 * repository already tracks, not in a side folder they would otherwise have to move
+	 * it out of by hand. Both `reltio.newWorkflowDraft` and `reltio.duplicateWorkflowDraft`
+	 * share this through a single call site, so neither can drift from the other.
+	 */
 	async function createDraft(
 		environmentName: string,
 		tenantId: string,
 		processId: string,
 		xml: string,
 	): Promise<void> {
+		const repoConfig = await loadWorkflowRepoConfig(
+			environmentManager!.getWorkflowRepoConfigUri(environmentName, tenantId),
+		);
+		if (repoConfig) {
+			await createInConnectedRepo(environmentName, tenantId, processId, xml);
+			return;
+		}
 		const fileUri = await writeWorkflowDraft(
 			environmentManager!.getWorkflowDraftsDirectoryUri(environmentName, tenantId),
 			draftFileName(processId),
@@ -3715,6 +3732,60 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			}
 		} catch {
 			// Reveal is a convenience; the draft is written and open either way.
+		}
+	}
+
+	/**
+	 * `createDraft()`'s repository-connected path. Written at the repository root rather
+	 * than inside any particular Maven module: D6 already discovers BPMN by content at
+	 * any depth, including entirely outside every module, so there is no "correct" module
+	 * to guess, and placing it at the root keeps a brand-new file visible without the
+	 * module/package structure the Java side cares about but a lone BPMN does not.
+	 *
+	 * Refuses rather than overwrites when the process id already belongs to a file the
+	 * repository tracks — two files both claiming the same `<process id>` is a collision
+	 * `promptForProcessId()`'s own checks (Drafts, deployed) cannot see, since neither
+	 * walks the repository.
+	 */
+	async function createInConnectedRepo(
+		environmentName: string,
+		tenantId: string,
+		processId: string,
+		xml: string,
+	): Promise<void> {
+		const repoDir = environmentManager!.getWorkflowRepoDirectoryUri(environmentName, tenantId);
+		const { files: discovered } = await discoverBpmnFilesDetailed(repoDir);
+		const existing = discovered.find(f => f.processId === processId);
+		if (existing) {
+			void vscode.window.showErrorMessage(
+				`"${processId}" already exists in the connected repository at "${vscode.workspace.asRelativePath(existing.fileUri)}". Open that file instead of creating a new one.`,
+			);
+			return;
+		}
+		// The check above is content-based (D6: identity is the XML's id, not the filename), so it
+		// cannot see a file that already sits at this exact path but carries a different id — or
+		// none at all, e.g. something left over, hand-renamed, or not valid BPMN. Writing here is
+		// a plain filesystem write with no merge, so that file would otherwise be silently replaced.
+		const targetUri = vscode.Uri.joinPath(repoDir, bpmnFileName(processId));
+		if ((await readTextFile(targetUri)) !== undefined) {
+			void vscode.window.showErrorMessage(
+				`A file already exists at "${vscode.workspace.asRelativePath(targetUri)}" in the connected repository. Rename or remove it before creating "${processId}" here.`,
+			);
+			return;
+		}
+		const fileUri = await writeBpmnFile(repoDir, bpmnFileName(processId), xml);
+		await refreshWorkflowRepoLocalState(environmentName, tenantId);
+		const doc = await vscode.workspace.openTextDocument(fileUri);
+		await vscode.window.showTextDocument(doc, { preview: false });
+		try {
+			await treeView.reveal(
+				new WorkflowRepoBpmnFileNode(
+					environmentName, tenantId, fileUri, processId, extractProcessModel(xml).processName, undefined,
+				),
+				{ select: true },
+			);
+		} catch {
+			// Reveal is a convenience; the file is written and open either way.
 		}
 	}
 
@@ -4182,14 +4253,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	}
 
 	/**
-	 * Decide what a deploy would do and get the user's confirmation, before anything leaves the machine.
+	 * Decide what a deploy would do, validate it, and — for an agent — get the user's
+	 * confirmation before anything leaves the machine.
 	 *
-	 * Modal and unconditional. Deploying writes to a live tenant, and the cases read very differently to
-	 * the person approving: a new id adds a workflow, an id that already exists deploys the *next
-	 * version* of a running one, and a Reltio built-in affects every entity type that uses it. The text
-	 * comes from `describeDeploy()` so every entry point says the same thing. There is no flag to skip
-	 * it — an agent that could suppress this would remove the only checkpoint between a chat message and
-	 * a change on a customer's tenant.
+	 * `requireConfirmation` is never a parameter an agent gets to set: the call sites in
+	 * `reltio.deployWorkflow` derive it structurally from *how* the command was invoked, not
+	 * from anything the caller asked for. A tree row, an editor title-bar button, or the
+	 * command palette with no args all mean a person just clicked something with their own
+	 * eyes on the row that said "deploy this" — that click is the confirmation, and a second
+	 * modal asking the same question a different way is friction, not safety. A
+	 * `WorkflowCommandArgs` object naming a tenant and a process id is different in kind: it is
+	 * how an agent reaches this command with no Uri and no tree selection to click, which means
+	 * no human had anything in front of them to click on in the first place — so that path
+	 * still shows the modal, unconditionally, with no way for anything upstream to suppress it.
+	 * That is what keeps this the one checkpoint between a chat message and a change on a
+	 * customer's live tenant, while a human's own, deliberate click stops asking it to confirm
+	 * itself.
+	 *
+	 * Validation (`plan.ok === false` — no process id, an invalid one, the tenant's deployed
+	 * list not loaded yet) always runs and always reports, regardless of `requireConfirmation`:
+	 * skipping the confirmation is about trusting a human's click, never about skipping the
+	 * check that the file is even deployable.
 	 *
 	 * The id used is the one inside the XML (see `workflowDeployPlan.ts`); the file's name is only a hint.
 	 * Distinct from the drift check inside `deployBpmnFile`, which asks whether the tenant moved since the
@@ -4200,6 +4284,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		tenantId: string,
 		fileProcessId: string,
 		fileUri: vscode.Uri,
+		requireConfirmation: boolean,
 	): Promise<Extract<DeployPlan, { ok: true }> | undefined> {
 		const doc = await vscode.workspace.openTextDocument(fileUri);
 		const deployed = await ensureDeployedDefinitions(environmentName, tenantId, { silent: false });
@@ -4209,6 +4294,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			void vscode.window.showErrorMessage(plan.message);
 			return undefined;
 		}
+		if (!requireConfirmation) return plan;
 		const confirmation = describeDeploy(plan, tenantId);
 		const choice = await vscode.window.showWarningMessage(
 			confirmation.message,
@@ -4468,8 +4554,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 						);
 						return;
 					}
+					// A `ProcessDefinitionNode` only ever comes from clicking its row in the tree —
+					// no agent path constructs one — so this is always a human's own click.
 					const planned = await confirmedDeployPlan(
-						arg.environmentName, arg.tenantId, arg.definition.type, fileUri,
+						arg.environmentName, arg.tenantId, arg.definition.type, fileUri, false,
 					);
 					if (!planned) return;
 					await deployBpmnFile(arg.environmentName, arg.tenantId, planned.processId, fileUri);
@@ -4524,8 +4612,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					return;
 				}
 
+				// `objectArgs?.processId` is only set on the agent path above — a tenant/process-id
+				// object with no Uri and no tree node to have clicked. Every other way into this
+				// branch (a Draft/Repo tree row, the editor title bar, the palette with no args
+				// falling back to the active editor) is a human who just clicked something.
 				const planned = await confirmedDeployPlan(
 					draftCtx.environmentName, draftCtx.tenantId, draftCtx.processId, fileUri,
+					Boolean(objectArgs?.processId),
 				);
 				if (!planned) return;
 

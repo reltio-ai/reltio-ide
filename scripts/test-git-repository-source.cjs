@@ -101,6 +101,25 @@ const { GitFolderNode, EnvironmentNode } = importDist('tree/multiTenantNodes');
 		assert.deepStrictEqual(ids, ['shared (DP/shared)', 'shared (MDM/shared)', 'unique']);
 		assert.strictEqual(new Set(ids).size, ids.length, 'tenantIds must be unique');
 
+		// Regression: APFS (macOS's default filesystem) is case-insensitive but
+		// case-preserving, same as NTFS — a workspace root and a file discovered beneath it
+		// can differ in case while being the same path on disk (e.g. opened via a symlink
+		// spelled differently from its target). Before this was fixed, only win32 compared
+		// case-insensitively; on darwin a case mismatch fell through to treating the whole
+		// absolute path as "relative", which then got fed into folder/environment naming.
+		const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+		try {
+			Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+			const differentCaseRoot = vscode.Uri.file('/Repo/My-Config-Repo');
+			const sameFileDifferentCase = vscode.Uri.file('/repo/my-config-repo/DP/dp_lif/BusinessConfig.json');
+			const onDarwin = deriveTenantNaming(differentCaseRoot, sameFileDifferentCase, [sameFileDifferentCase]);
+			assert.strictEqual(onDarwin.tenantId, 'dp_lif',
+				'a case-only mismatch between root and file must still resolve on darwin, like it already does on win32');
+			assert.deepStrictEqual(onDarwin.folders, ['DP']);
+		} finally {
+			if (platformDescriptor) Object.defineProperty(process, 'platform', platformDescriptor);
+		}
+
 		// The qualifier is identity only. The tree already nests the row under its folder rows,
 		// so echoing the path in the label just adds noise: `shared`, not `shared (DP/shared)`.
 		assert.deepStrictEqual(clashes.map(x => x.label), ['shared', 'shared', 'unique']);

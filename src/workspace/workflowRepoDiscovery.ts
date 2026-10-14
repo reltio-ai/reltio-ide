@@ -23,6 +23,14 @@ export interface DiscoveredBpmnFile {
 	readonly fileUri: vscode.Uri;
 	readonly processId: string;
 	/**
+	 * The BPMN's `<process name="...">`, when it has one — read off the same parse that
+	 * established `processId`, so capturing it costs nothing extra. `undefined`, never `''`,
+	 * for "no name attribute": the tree falls back to `processId` either way, and keeping the
+	 * distinction out of this type would make an author who deliberately wrote `name=""` look
+	 * identical to one who wrote nothing.
+	 */
+	readonly processName: string | undefined;
+	/**
 	 * Owning Maven module: the nearest ancestor directory holding a `pom.xml`, via the
 	 * same walk `workflowRepoJavaDiscovery.ts` uses (`nearestModuleFor()`). `undefined`
 	 * means no such ancestor exists within the repository root — expected and common,
@@ -121,8 +129,10 @@ async function walk(
 		} catch {
 			continue;
 		}
-		const processId = extractProcessModel(text).processId;
-		if (processId) found.push({ fileUri: child, processId, moduleName: module });
+		const model = extractProcessModel(text);
+		if (model.processId) {
+			found.push({ fileUri: child, processId: model.processId, processName: model.processName, moduleName: module });
+		}
 	}
 }
 

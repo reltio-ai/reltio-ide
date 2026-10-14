@@ -52,6 +52,14 @@ Cleanup removes `.cursor/rules/reltio-workflows.mdc` and `.cursor/skills/reltio-
 
 The test hashes `skills/reltio-default/**` and fails when the hash changes while `skillsBundleVersion` does not.
 
+### D13 — Deploy's confirmation is scoped to the agent path, superseding D1/D2 of `workflow-agent-command-arguments`
+
+**This supersedes a settled decision.** `workflow-agent-command-arguments/design.md` D1 states "the deploy confirmation cannot be bypassed by calling a different entry point, because there is no different entry point," and D2 calls it "the only unconditional prompt added." Live use showed that calibration had a real cost: a user clicking a tree row, the editor title bar, or the palette with nothing selected now gets asked to confirm a click they already made with their own eyes on a row that said "Deploy." `confirmedDeployPlan()` takes a `requireConfirmation` flag so that click can skip the modal.
+
+The flag is derived structurally in `reltio.deployWorkflow`, not passed in by any caller: a `ProcessDefinitionNode`/`WorkflowDraftNode`/`WorkflowRepoBpmnFileNode` instance, a `vscode.Uri` (what the editor title bar actually passes), or no argument at all (palette, falls back to the active editor) all resolve to `false`. A `WorkflowCommandArgs` object naming a tenant and a process id — the one shape `vscode.commands.executeCommand` cannot produce from a human click, and the shape every shipped skill is written to pass (see `workflow-bpmn-authoring/SKILL.md` step 6) — resolves to `true` and still shows the modal unconditionally, with nothing able to suppress it. Validation (`plan.ok === false`) is unaffected either way.
+
+**Known residual risk, accepted for now.** The signal is argument shape, not provable origin: anything able to call `vscode.commands.executeCommand('reltio.deployWorkflow', uri)` or with no arguments — not only a human — gets the same bypass as a real click, because VS Code's command dispatch carries no notion of "a human did this." Today's only agent-facing entry point is the documented `{ environmentName, tenantId, processId }` convention, so this is low-risk in practice. If the agent surface ever grows a generic command-execution tool, this should be revisited — tightening to `instanceof ProcessDefinitionNode | WorkflowDraftNode | WorkflowRepoBpmnFileNode` only (dropping the `vscode.Uri`/no-argument cases back to requiring confirmation) would close the gap at the cost of the editor-title-bar and bare-palette invocations no longer skipping the modal.
+
 ## Risks / Trade-offs
 
 - Rejecting credentialed URLs breaks anyone who pasted a PAT-in-URL; the message explains the supported alternatives.
