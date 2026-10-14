@@ -54,6 +54,13 @@ export class ReltioApiError extends Error {
 	constructor(
 		message: string,
 		readonly statusCode: number,
+		/**
+		 * The `Retry-After` header's value in seconds, when the response carried one and it parsed
+		 * as a plain integer — `undefined` otherwise (no header, a non-429, or the less common
+		 * HTTP-date form, which no caller of this error currently needs to handle). Lets a 429
+		 * handler suggest an actual wait instead of inventing one.
+		 */
+		readonly retryAfterSeconds?: number,
 	) {
 		super(message);
 		this.name = 'ReltioApiError';

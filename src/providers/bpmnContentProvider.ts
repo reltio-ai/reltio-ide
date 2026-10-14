@@ -20,6 +20,13 @@ import * as vscode from 'vscode';
 
 export const BPMN_SCHEME = 'reltio-workflow-bpmn';
 
+/**
+ * Upper bound on `cache`'s size. More than anyone would reasonably have open across tenants in
+ * one session — this is a backstop against an unbounded `Map` growing for the lifetime of the
+ * window, not a limit a real session is expected to brush up against.
+ */
+const MAX_CACHE_ENTRIES = 50;
+
 export class BpmnContentProvider implements vscode.TextDocumentContentProvider {
 	/** Cached XML strings keyed by the URI's string form. */
 	private readonly cache = new Map<string, string>();
@@ -38,6 +45,15 @@ export class BpmnContentProvider implements vscode.TextDocumentContentProvider {
 			path: `/${encodeURIComponent(tenantId)}/${encodeURIComponent(processType)}`,
 		});
 		this.cache.set(uri.toString(), xml);
+		// Insertion-order eviction, not a full LRU: `store()` is always called immediately before
+		// `vscode.workspace.openTextDocument(uri)` reads it back, so the entry that matters is
+		// always the one just inserted — a `Map` already iterates oldest-first, so the entry to
+		// drop is just whatever `.keys().next()` returns.
+		while (this.cache.size > MAX_CACHE_ENTRIES) {
+			const oldestKey = this.cache.keys().next().value;
+			if (oldestKey === undefined) break;
+			this.cache.delete(oldestKey);
+		}
 		return uri;
 	}
 

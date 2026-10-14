@@ -20,6 +20,7 @@
  */
 import * as crypto from 'crypto';
 import { toHttpsBase, fetchWithTimeout, ReltioApiError, UntrustedHostError } from './reltioClient';
+import { isValidProcessId } from '../workspace/workflowBpmnFiles';
 
 const WORKFLOW_TIMEOUT_MS = 15_000;
 
@@ -190,6 +191,18 @@ function workflowHeaders(token: string, environmentUrl: string): Record<string, 
 }
 
 /**
+ * Parse a `Retry-After` header's value as plain integer seconds — the common form a rate limiter
+ * sends. The less common HTTP-date form (`Retry-After: Wed, 21 Oct Z...`) is left unparsed rather
+ * than guessed at: nothing currently reads this besides a 429 message, and an absent value there
+ * just means a generic "wait a moment" instead of a specific one.
+ */
+function parseRetryAfterSeconds(header: string | null): number | undefined {
+	if (!header) return undefined;
+	const seconds = Number(header.trim());
+	return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined;
+}
+
+/**
  * Map a non-`ok` Adapter response onto `ReltioApiError`, reading the body
  * best-effort and truncating it to `MAX_ERROR_DETAIL_CHARS`.
  *
@@ -209,6 +222,7 @@ async function adapterHttpError(response: Response): Promise<ReltioApiError> {
 	return new ReltioApiError(
 		`Workflow Adapter returned ${response.status}${detail ? `: ${detail}` : ''}.`,
 		response.status,
+		parseRetryAfterSeconds(response.headers?.get('Retry-After') ?? null),
 	);
 }
 
@@ -232,13 +246,21 @@ function workflowBase(adapterBase: string, tenantId: string): string {
  * Type guard for one `processDefinitions` row. Only `type` is required: it is
  * the value that goes into the fetch-single URL and the tree node id, so a row
  * without it cannot be acted on. The rest are rendered with fallbacks.
+ *
+ * `type` must also satisfy `isValidProcessId` — not just non-empty. It reaches
+ * local filesystem paths unmodified (`bpmnFileName(processId)` via
+ * `environmentManager.getWorkflowBpmnUri`/`getWorkflowBpmnBaselineUri`), so an
+ * adapter response is exactly as untrusted an input to that path-building code
+ * as user keyboard input is, and must pass the same check. A row whose `type`
+ * fails this degrades to "dropped from the list" like any other malformed row,
+ * rather than reaching a file write.
  */
 function isProcessDefinition(v: unknown): v is ProcessDefinition {
 	return (
 		typeof v === 'object' &&
 		v !== null &&
 		typeof (v as Record<string, unknown>).type === 'string' &&
-		((v as Record<string, unknown>).type as string).length > 0
+		isValidProcessId((v as Record<string, unknown>).type as string)
 	);
 }
 
