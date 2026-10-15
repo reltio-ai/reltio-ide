@@ -572,7 +572,8 @@ export interface MatchGroup {
   label: string;
   scope?: MatchGroupScope;
   matchServiceClass?: string;
-  useOvOnly?: string;
+  /** Boolean preferred; existing configurations often carry the string form. */
+  useOvOnly?: boolean | string;
   scoreStandalone?: string | number;
   scoreIncremental?: string | number;
   matchMethod?: MatchMethod;

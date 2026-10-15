@@ -1,6 +1,9 @@
 import * as vscode from 'vscode';
 import { parseDocument, type ParsedDocument } from '../parser/configParser';
 import { EnvironmentManager, type TenantInfo } from '../workspace/environmentManager';
+import { getCurrentBranch } from '../workspace/tenantGitBinding';
+import { isGitRepo } from '../workspace/gitConfigSource';
+import { readTenantIdentityMarker } from '../workspace/gitSourceMarker';
 import { TokenStore, GIT_SOURCE_TOKEN } from '../api/tokenStore';
 import { countEntities } from '../api/reltioClient';
 import type { OAuthCredentialsStore } from '../api/oauthCredentialsStore';
@@ -35,8 +38,13 @@ export function historyExposedStorageKey(environmentName: string, tenantId: stri
 	return `reltio.history.exposed::${environmentName}::${tenantId}`;
 }
 
-export function tenantLocFromL3File(l3Uri: vscode.Uri): { environmentName: string; tenantId: string } | undefined {
-	return pathTenantLocFromL3Path(l3Uri.fsPath);
+export function tenantLocFromL3File(
+	l3Uri: vscode.Uri,
+	environmentManager?: EnvironmentManager | null,
+): { environmentName: string; tenantId: string } | undefined {
+	// Plain folder names carry no identity, so the scan-built index is the authority; legacy
+	// suffixed paths still parse, which keeps a pre-rename workspace working.
+	return environmentManager?.locFromPath(l3Uri.fsPath) ?? pathTenantLocFromL3Path(l3Uri.fsPath);
 }
 
 function escapeReltioFilterLiteral(value: string): string {
@@ -53,6 +61,21 @@ function typeFilterForUris(typeUris: string[]): string | undefined {
 export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTenantTreeElement> {
 	private readonly _onDidChangeTreeData = new vscode.EventEmitter<MultiTenantTreeElement | undefined | null>();
 	readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+	/**
+	 * Branch per `env/tenant`, resolved lazily and reused for the rest of a refresh cycle.
+	 *
+	 * Reading `HEAD` is a git shell-out, so doing it inside the row constructor would mean one
+	 * process per tenant per render. Cleared by `refresh()`, which is also what picks up a
+	 * checkout the user made from a terminal.
+	 */
+	private readonly branchCache = new Map<string, { bound: boolean; branch?: string }>();
+
+	/** Marker-sourced identity per `env/tenant`, cached for the same window as `branchCache`. */
+	private readonly identityCache = new Map<
+		string,
+		{ environmentName: string; tenantId: string } | undefined
+	>();
 
 	private envInfosStale = true;
 	private envInfos: Awaited<ReturnType<EnvironmentManager['scanEnvironments']>> = [];
@@ -125,6 +148,9 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 	/** Environment list or OAuth client credentials changed — rescan + eligibility. */
 	invalidate(): void {
 		this.envInfosStale = true;
+		// Drop cached branches so a checkout made outside the extension shows up.
+		this.branchCache.clear();
+		this.identityCache.clear();
 		void this.ensureBrowserLoginEligibilityFresh().then(() => {
 			this.scheduleTreeRefresh();
 		});
@@ -282,7 +308,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		}
 		const p = getConfigTreeItemParent(parsed.model, element);
 		if (p) return p;
-		const loc = tenantLocFromL3File(element.tenantL3Uri!);
+		const loc = tenantLocFromL3File(element.tenantL3Uri!, this.environmentManager);
 		if (!loc || element.jsonPath.length > 1) return undefined;
 		const ti = this.findTenantInfo(loc.environmentName, loc.tenantId);
 		return new TenantNode(
@@ -295,6 +321,58 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			false,
 			this.gitLabelFor(loc.environmentName, loc.tenantId),
 		);
+	}
+
+	/**
+	 * Environment and tenant as recorded in the tenant folder's gitignored marker.
+	 *
+	 * The marker is the authority once a tenant is bound to Git, because the repository root is
+	 * the tenant folder and the identity is no longer recoverable from anything Git tracks. Folder
+	 * names stay the fallback, so unbound tenants and pre-existing workspaces are unaffected.
+	 */
+	private async identityFor(
+		env: string,
+		tenantId: string,
+	): Promise<{ environmentName: string; tenantId: string } | undefined> {
+		if (!this.environmentManager) return undefined;
+		const key = `${env}/${tenantId}`;
+		if (this.identityCache.has(key)) return this.identityCache.get(key);
+		let identity: { environmentName: string; tenantId: string } | undefined;
+		try {
+			identity = await readTenantIdentityMarker(
+				this.environmentManager.getTenantRootUri(env, tenantId),
+			);
+		} catch {
+			identity = undefined;
+		}
+		this.identityCache.set(key, identity);
+		return identity;
+	}
+
+	/**
+	 * Current branch for a tenant folder, memoized until the next `invalidate()`.
+	 *
+	 * Returns undefined for an unbound tenant, a detached HEAD, or when git cannot be reached:
+	 * the row then simply shows no branch rather than an error.
+	 */
+	private async gitStateFor(
+		env: string,
+		tenantId: string,
+	): Promise<{ bound: boolean; branch?: string }> {
+		if (!this.environmentManager) return { bound: false };
+		const key = `${env}/${tenantId}`;
+		const cached = this.branchCache.get(key);
+		if (cached) return cached;
+		const root = this.environmentManager.getTenantRootUri(env, tenantId);
+		let state: { bound: boolean; branch?: string };
+		try {
+			const bound = await isGitRepo(root);
+			state = { bound, branch: bound ? await getCurrentBranch(root) : undefined };
+		} catch {
+			state = { bound: false };
+		}
+		this.branchCache.set(key, state);
+		return state;
 	}
 
 	private findTenantInfo(env: string, tid: string): TenantInfo | undefined {
@@ -338,8 +416,8 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			if (isGitSource) {
 				return this.gitChildren(element.environmentName, []);
 			}
-			return e.tenants.map(
-				t => new TenantNode(
+			return Promise.all(
+				e.tenants.map(async t => new TenantNode(
 					element.environmentName,
 					t.tenantId,
 					t.hasL3,
@@ -347,7 +425,10 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 					this.tokenStore.hasToken(element.environmentName),
 					this.uxState?.perTenant.get(`${element.environmentName}/${t.tenantId}`) ?? 'T_NO_L3',
 					isGitSource,
-				),
+					(await this.identityFor(element.environmentName, t.tenantId))?.tenantId,
+					(await this.gitStateFor(element.environmentName, t.tenantId)).branch,
+					(await this.gitStateFor(element.environmentName, t.tenantId)).bound,
+				)),
 			);
 		}
 		if (element instanceof GitFolderNode) {
@@ -448,7 +529,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			item.label = 'Browse Entities (0)';
 			return;
 		}
-		const loc = tenantLocFromL3File(item.tenantL3Uri);
+		const loc = tenantLocFromL3File(item.tenantL3Uri, this.environmentManager);
 		if (!loc) return;
 		const token = this.tokenStore.getToken(loc.environmentName);
 		if (!token) return;
