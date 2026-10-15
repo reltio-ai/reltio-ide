@@ -72,6 +72,21 @@ export class TenantNode extends vscode.TreeItem {
 		readonly autoExpand: boolean = false,
 		/** Git mode only: the plain leaf name, so a collision-qualified `tenantId` stays out of the label. */
 		readonly displayLabel?: string,
+		/**
+		 * Current git branch of this tenant's folder, when it is bound to a remote.
+		 *
+		 * Read from `HEAD` at refresh time rather than stored, so an external checkout is reflected.
+		 * Undefined for an unbound tenant or a detached HEAD; shown as nothing, never faked.
+		 */
+		readonly branch?: string,
+		/**
+		 * Whether this tenant folder is a Git repository.
+		 *
+		 * Distinct from `branch`, which is undefined on a detached HEAD even though the folder is
+		 * very much a repository. The context menu keys off this, so conflating the two would hide
+		 * Disconnect exactly when someone most needs it.
+		 */
+		readonly isGitBound: boolean = false,
 	) {
 		const label = displayLabel ?? tenantId;
 		super(
@@ -80,8 +95,14 @@ export class TenantNode extends vscode.TreeItem {
 				? (autoExpand ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed)
 				: vscode.TreeItemCollapsibleState.None,
 		);
-		this.contextValue = hasL3 ? 'reltio.tenant.l3' : 'reltio.tenant';
-		this.description = descriptionForTState(tState, isStaleLocal, isEnvironmentAuthorized);
+		// `.gitbound` drives which Git actions the context menu offers: Connect before binding,
+		// then New Branch and Disconnect afterwards.
+		this.contextValue =
+			(hasL3 ? 'reltio.tenant.l3' : 'reltio.tenant') + (isGitBound ? '.gitbound' : '');
+		const stateDescription = descriptionForTState(tState, isStaleLocal, isEnvironmentAuthorized);
+		this.description = branch
+			? [stateDescription, `⎇ ${branch}`].filter(Boolean).join('  ')
+			: stateDescription;
 		this.tooltip = tooltipForTState(tenantId, tState);
 		this.id = `tenant:${environmentName}/${tenantId}`;
 

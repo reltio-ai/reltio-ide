@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { BUSINESS_CONFIG_DIR, LEGACY_CONFIG_FILENAME } from '../workspace/tenantFolderStructure';
 
 export const TENANT_CONNECTION_MESSAGE = [
 	'The LCA request requires tenant configuration information.',
@@ -25,10 +26,10 @@ export interface TenantGateResult {
 
 const TENANT_DIR = /\.reltio\.tenant(?:\/|$)/;
 const ENV_DIR = /\.reltio\.environment(?:\/|$)/;
-const CLASSIC_L3_FILE = 'L3.reltio.json';
 const GIT_L3_FILE = 'BusinessConfig.json';
 const GIT_MARKER_FILE = '.reltio-config-source.json';
-const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'target', 'samples', 'velocity-packs']);
+const ENVIRONMENT_MARKER_FILE = '.reltio-environment.json';
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'target', 'samples', 'velocity-packs', '.reltio-ide']);
 
 function fileName(filePath: string): string {
 	const normalized = filePath.replace(/\\/g, '/');
@@ -42,13 +43,23 @@ function isPackOrSample(normalized: string): boolean {
 /** True when a path is a fetched tenant L3, not a sample, Velocity Pack, or lookalike filename. */
 export function isTenantL3Path(filePath: string): boolean {
 	const normalized = filePath.replace(/\\/g, '/');
-	if (fileName(normalized) !== CLASSIC_L3_FILE) {
+	if (fileName(normalized) !== LEGACY_CONFIG_FILENAME) {
 		return false;
 	}
 	if (isPackOrSample(normalized)) {
 		return false;
 	}
 	return TENANT_DIR.test(normalized);
+}
+
+/**
+ * Current tenant layout: `Business Config/BusinessConfig.json` inside a tenant folder.
+ * The tenant id is not in the path; it lives in the folder's identity marker.
+ */
+export function isComponentConfigPath(filePath: string): boolean {
+	const normalized = filePath.replace(/\\/g, '/');
+	if (isPackOrSample(normalized)) return false;
+	return normalized.endsWith(`/${BUSINESS_CONFIG_DIR}/${GIT_L3_FILE}`);
 }
 
 export function tenantIdFromL3Path(filePath: string): string | undefined {
@@ -71,6 +82,80 @@ interface GitMarkerSource {
 	l3RelativePath?: string;
 	environmentName?: string;
 	tenantId?: string;
+}
+
+interface TenantIdentityMarker {
+	kind?: string;
+	environmentName?: string;
+	tenantId?: string;
+}
+
+function readJson(filePath: string): unknown {
+	try {
+		return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+	} catch {
+		return undefined;
+	}
+}
+
+function isTenantIdentity(parsed: unknown): parsed is { kind: 'tenant'; environmentName: string; tenantId: string } {
+	const marker = parsed as TenantIdentityMarker | null;
+	return !!marker
+		&& marker.kind === 'tenant'
+		&& typeof marker.tenantId === 'string'
+		&& marker.tenantId.trim().length > 0
+		&& typeof marker.environmentName === 'string';
+}
+
+function environmentHostFromMarker(environmentDir: string): string | undefined {
+	const marker = readJson(path.join(environmentDir, ENVIRONMENT_MARKER_FILE)) as { kind?: string; host?: string } | undefined;
+	if (marker?.kind === 'environment' && typeof marker.host === 'string' && marker.host.trim()) {
+		return marker.host.trim();
+	}
+	return undefined;
+}
+
+/** Configuration file inside a tenant folder, preferring the component-tree path over the legacy name. */
+function configInTenantFolder(tenantRoot: string): string | undefined {
+	const current = path.join(tenantRoot, BUSINESS_CONFIG_DIR, GIT_L3_FILE);
+	if (fs.existsSync(current)) return current;
+	const legacy = path.join(tenantRoot, LEGACY_CONFIG_FILENAME);
+	if (fs.existsSync(legacy)) return legacy;
+	return undefined;
+}
+
+/**
+ * A natively connected tenant stores identity in `.reltio-config-source.json`
+ * (`kind: "tenant"`) and configuration at `Business Config/BusinessConfig.json`.
+ */
+export function locationFromTenantIdentity(markerFile: string): TenantL3Location | undefined {
+	const parsed = readJson(markerFile);
+	if (!isTenantIdentity(parsed)) return undefined;
+	const tenantRoot = path.dirname(markerFile);
+	const config = configInTenantFolder(tenantRoot);
+	if (!config || isPackOrSample(config.replace(/\\/g, '/'))) return undefined;
+	return {
+		tenantId: parsed.tenantId.trim(),
+		path: config,
+		environment: parsed.environmentName,
+	};
+}
+
+/** Resolve a component-tree config path through its tenant identity marker, or a leftover suffixed folder. */
+export function locationFromComponentConfig(configPath: string): TenantL3Location | undefined {
+	if (!isComponentConfigPath(configPath)) return undefined;
+	const tenantRoot = path.dirname(path.dirname(configPath));
+	const fromMarker = locationFromTenantIdentity(path.join(tenantRoot, GIT_MARKER_FILE));
+	if (fromMarker) return { ...fromMarker, path: configPath };
+	const folder = path.basename(tenantRoot);
+	if (!folder.endsWith('.reltio.tenant')) return undefined;
+	const tenantId = folder.slice(0, -'.reltio.tenant'.length);
+	if (!tenantId) return undefined;
+	return {
+		tenantId,
+		path: configPath,
+		environment: environmentFromL3Path(configPath) ?? environmentHostFromMarker(path.dirname(tenantRoot)),
+	};
 }
 
 /** L3 paths named by a git-source marker. Rejects paths that leave the marker directory. */
@@ -99,7 +184,7 @@ export function locationsFromGitMarker(markerFile: string): TenantL3Location[] {
 			continue;
 		}
 		const base = path.basename(resolved);
-		if (base !== GIT_L3_FILE && base !== CLASSIC_L3_FILE) {
+		if (base !== GIT_L3_FILE && base !== LEGACY_CONFIG_FILENAME) {
 			continue;
 		}
 		const normalized = resolved.replace(/\\/g, '/');
@@ -116,8 +201,10 @@ export function locationsFromGitMarker(markerFile: string): TenantL3Location[] {
 }
 
 /**
- * Classic `*.reltio.tenant/L3.reltio.json` files plus git-connected
- * `BusinessConfig.json` paths recorded in `.reltio-config-source.json`.
+ * Connected configuration in any layout the IDE writes:
+ * - `{environment}/{tenantId}/Business Config/BusinessConfig.json` with a tenant identity marker
+ * - legacy `*.reltio.tenant/L3.reltio.json`
+ * - a git-connected `BusinessConfig.json` or `L3.reltio.json` named by `.reltio-config-source.json`
  */
 export function discoverTenantL3(root: string): TenantL3Location[] {
 	const found: TenantL3Location[] = [];
@@ -150,6 +237,13 @@ export function discoverTenantL3(root: string): TenantL3Location[] {
 			if (!entry.isFile()) continue;
 			if (entry.name === GIT_MARKER_FILE) {
 				for (const loc of locationsFromGitMarker(full)) push(loc);
+				const identity = locationFromTenantIdentity(full);
+				if (identity) push(identity);
+				continue;
+			}
+			if (isComponentConfigPath(full)) {
+				const component = locationFromComponentConfig(full);
+				if (component) push(component);
 				continue;
 			}
 			if (!isTenantL3Path(full)) continue;
@@ -174,14 +268,18 @@ export function assessTenantConnection(input: {
 		tenants.push(loc);
 	};
 	for (const filePath of input.l3Paths ?? []) {
-		if (!isTenantL3Path(filePath)) continue;
-		const tenantId = tenantIdFromL3Path(filePath);
-		if (!tenantId) continue;
-		push({
-			tenantId,
-			path: filePath,
-			environment: environmentFromL3Path(filePath),
-		});
+		if (isTenantL3Path(filePath)) {
+			const tenantId = tenantIdFromL3Path(filePath);
+			if (!tenantId) continue;
+			push({
+				tenantId,
+				path: filePath,
+				environment: environmentFromL3Path(filePath),
+			});
+			continue;
+		}
+		const component = locationFromComponentConfig(filePath);
+		if (component) push(component);
 	}
 	for (const loc of input.locations ?? []) {
 		push(loc);

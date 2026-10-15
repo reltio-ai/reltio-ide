@@ -82,10 +82,14 @@ import {
 	listLocalHistorySnapshots,
 	writeHistorySnapshot,
 } from './workspace/configurationHistory';
-import { syncReltioAgentAssets } from './workspace/reltioAgentSync';
+import { createModeSyncTrigger, syncReltioAgentAssets, type ReltioAgentSyncReport } from './workspace/reltioAgentSync';
+import { AGENT_SKILLS_SETTING, OVERRIDES_SEGMENTS } from './workspace/agentSkillDiscovery';
+import { MATCH_VERIFICATION_SETTING, registerMatchVerificationBridge } from './workspace/matchVerification';
 import { registerReltioAutoSave } from './workspace/reltioAutoSave';
 import {
 	isGitRepo,
+	findEnclosingGitRepository,
+	getRemoteUrl,
 	isGitRepoWithRemote,
 	isFolderEmpty,
 	isPathContainedIn,
@@ -97,6 +101,27 @@ import {
 	writeMultiGitSourceMarker,
 	type MultiGitSourceMarker,
 } from './workspace/gitSourceMarker';
+import { isTenantConfigPath } from './workspace/tenantFolderStructure';
+import {
+	bindTenantToGit,
+	createAndPublishBranch,
+	disconnectFromGit,
+	getCurrentBranch,
+	hasUncommittedChanges,
+	listRemoteBranches,
+	switchToExistingBranch,
+} from './workspace/tenantGitBinding';
+import { ensureGitignoreEntries, ensureWorkspaceGitignored } from './workspace/gitSourceMarker';
+import {
+	hasMigrationBackup,
+	migrateWorkspace,
+	renderMigrationDetail,
+	undoMigration,
+	migrationFailureMessage,
+} from './workspace/layoutMigration';
+
+/** Remote shared by every tenant in a promotion flow; pre-fills the Connect to Git prompt. */
+const LAST_GIT_REMOTE_KEY = 'reltio.lastGitRemote';
 import {
 	discoverL3Files,
 	deriveTenantNamings,
@@ -312,6 +337,122 @@ function applyTrustedHostSuffixes(): void {
 	setTrustedHostSuffixes(suffixes);
 }
 
+const CREATE_BRANCH_ITEM = '$(add) Create a new branch…';
+
+/**
+ * Asks which branch this tenant should sit on.
+ *
+ * Existing remote branches are offered as a pick list, because a branch name is something the
+ * team already agreed on and recalling it exactly is needless friction. Creating a new one stays
+ * available as free text, since the first tenant in a promotion flow has nothing to pick from.
+ *
+ * A remote with no branches, or one that could not be listed, falls straight through to free text
+ * rather than showing an empty picker.
+ */
+async function pickBranch(
+	tenantId: string,
+	remoteBranches: string[],
+	listFailed: boolean,
+	currentBranch?: string,
+): Promise<string | undefined> {
+	const askFreeText = async (prompt: string): Promise<string | undefined> => {
+		const typed = await vscode.window.showInputBox({
+			title: 'Connect to Git',
+			prompt,
+			placeHolder: 'dev',
+			ignoreFocusOut: true,
+			validateInput: value => {
+				const name = value.trim();
+				if (!name) return 'Enter a branch name.';
+				// Cheap guard against the names git will reject outright.
+				if (/[~^:?*[\\\s]/.test(name) || name.startsWith('-') || name.endsWith('.lock')) {
+					return 'Not a valid Git branch name.';
+				}
+				return undefined;
+			},
+		});
+		return typed?.trim() || undefined;
+	};
+
+	if (listFailed) {
+		return askFreeText(`Branch for tenant "${tenantId}" (could not read the remote's branches)`);
+	}
+	if (remoteBranches.length === 0) {
+		return askFreeText(
+			currentBranch
+				? `New branch for tenant "${tenantId}" (no other branches on origin)`
+				: `Branch for tenant "${tenantId}" (the remote has no branches yet)`,
+		);
+	}
+
+	const picked = await vscode.window.showQuickPick(
+		[
+			...remoteBranches.map(name => ({ label: name, description: 'existing branch on origin' })),
+			{
+				label: CREATE_BRANCH_ITEM,
+				description: currentBranch
+					? `branch off "${currentBranch}", keeping your changes`
+					: 'type a new name',
+			},
+		],
+		{
+			title: currentBranch ? `Connect to a New Branch (on "${currentBranch}")` : 'Connect to Git',
+			placeHolder: `Branch for tenant "${tenantId}"`,
+			ignoreFocusOut: true,
+		},
+	);
+	if (!picked) return undefined;
+	if (picked.label !== CREATE_BRANCH_ITEM) return picked.label;
+	return askFreeText(`New branch for tenant "${tenantId}"`);
+}
+
+/** Explains the enclosing-repository problem and the two ways out of it. */
+function renderEnclosingRepositoryHelp(enclosing: vscode.Uri, workspaceRoot: vscode.Uri): string {
+	return [
+		'# Git repository above your tenant folders',
+		'',
+		`A repository exists at \`${enclosing.fsPath}\`.`,
+		`Your workspace is \`${workspaceRoot.fsPath}\`.`,
+		'',
+		'## Why this matters',
+		'',
+		'Reltio IDE makes each **tenant folder** its own repository. That is what keeps the',
+		'environment host and tenant ID out of every tracked path, so the same configuration',
+		'pushed for a Dev tenant and a Prod tenant lands at identical paths and the branches can',
+		'be diffed and merged.',
+		'',
+		'A repository rooted above the tenants breaks that in one of two ways:',
+		'',
+		'| Situation | What happens |',
+		'|---|---|',
+		'| Tenants not yet connected to Git | Everything is tracked by the outer repository, so paths become `dev/<tenantId>/Business Config/BusinessConfig.json`. Branches can no longer be compared. |',
+		'| A tenant is connected to Git | The outer repository stores the tenant as a *gitlink* (mode 160000): a commit pointer, not the files. Cloning the outer repository gives an empty tenant folder. |',
+		'',
+		'## Recommended',
+		'',
+		'Remove the outer repository and connect each tenant individually:',
+		'',
+		'```',
+		`rm -rf "${enclosing.fsPath}/.git"`,
+		'```',
+		'',
+		'Then run **Connect to Git** on each tenant row.',
+		'',
+		'## If you want to keep the outer repository',
+		'',
+		'Use **Ignore Tenant Folders** on the warning. That adds each environment folder to the',
+		'outer `.gitignore`, so it stops tracking tenant content while each tenant stays free to be',
+		'its own repository. Files it already tracks remain tracked until you untrack them:',
+		'',
+		'```',
+		'git rm -r --cached <environment-folder>',
+		'```',
+		'',
+		'Extension-managed state (`.reltio/`, `.reltio-ide/`, `.reltio-ide-backup/` and the marker',
+		'files) is already excluded by the workspace-root `.gitignore` the extension maintains.',
+	].join('\n');
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
 	applyTrustedHostSuffixes();
 	context.subscriptions.push(
@@ -335,21 +476,150 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	let workspaceSource: WorkspaceSource = undefined;
 	let fetchConfigFromGitInFlight = false;
-	let agentAssetsSynced = false;
-	/** Deferred until a mode (tenant or git) is actually chosen — syncing eagerly would create `.reltio/`
-	 *  before the user decides, which made a freshly-opened folder look non-empty to `reltio.fetchConfigFromGit`. */
-	function ensureAgentAssetsSynced(): void {
-		if (agentAssetsSynced) return;
-		agentAssetsSynced = true;
-		void syncReltioAgentAssets(context).catch(err => {
-			console.error('Reltio agent asset sync failed:', err);
-		});
+	/** Syncs agent assets when a mode is chosen, and again after the mode is lost and regained. */
+	const syncOnModeChange = createModeSyncTrigger(() => void runAgentAssetSync(false));
+
+	/**
+	 * Syncs agent assets and tells the user when skills could not be installed.
+	 *
+	 * Agents only use a skill they can find, so a silent failure here means an agent improvising
+	 * Reltio configuration without one. Every problem is surfaced with a way to retry.
+	 */
+	async function runAgentAssetSync(force: boolean): Promise<ReltioAgentSyncReport | undefined> {
+		let report: ReltioAgentSyncReport;
+		try {
+			report = await syncReltioAgentAssets(context, { force });
+		} catch (e) {
+			void offerResync(`Reltio agent skills could not be installed: ${(e as Error).message}`);
+			return undefined;
+		}
+		const problems = [
+			...report.conflicts.map(p => `${p} already exists and is not managed by Reltio IDE, so it was left as is`),
+			...report.invalid,
+		];
+		if (problems.length > 0) {
+			void offerResync(`Some Reltio agent skills are unavailable to AI agents: ${problems.join('; ')}.`);
+		}
+		return report;
+	}
+
+	async function offerResync(message: string): Promise<void> {
+		const pick = await vscode.window.showWarningMessage(message, 'Resync Agent Assets');
+		if (pick) await vscode.commands.executeCommand('reltio.resyncAgentAssets');
 	}
 	function setWorkspaceSource(source: WorkspaceSource): void {
 		workspaceSource = source;
 		void publishWorkspaceSourceContext(workspaceSource);
-		if (source !== undefined) {
-			ensureAgentAssetsSynced();
+		syncOnModeChange(source);
+	}
+
+	/**
+	 * Moves any tenant still on the legacy flat layout onto the component tree.
+	 *
+	 * Automatic and unprompted by design, so a team never ends up running two layouts side by
+	 * side. The safety comes from the migration itself: a backup before the first move, a stamp
+	 * written only on full success, and a refusal on a dirty worktree.
+	 */
+	async function runLayoutMigration(em: EnvironmentManager, workspaceRoot: vscode.Uri): Promise<void> {
+		let report;
+		try {
+			report = await migrateWorkspace(workspaceRoot, em, context.workspaceState);
+		} catch (e) {
+			// Shown, not logged: a failure here used to reach only the console, so the user never knew.
+			void vscode.window.showWarningMessage(migrationFailureMessage(e));
+			return;
+		}
+		if (
+			report.migrated.length === 0 &&
+			report.skipped.length === 0 &&
+			report.renamedFolders.length === 0 &&
+			report.prunedFolders.length === 0
+		) return;
+
+		treeProvider.refresh();
+		uxBus.fire();
+
+		const parts: string[] = [];
+		if (report.migrated.length > 0) {
+			parts.push(`${report.migrated.length} tenant(s) migrated to the Git-ready folder structure`);
+		}
+		if (report.renamedFolders.length > 0) {
+			parts.push(`${report.renamedFolders.length} folder(s) renamed`);
+		}
+		if (report.prunedFolders.length > 0) {
+			parts.push(`${report.prunedFolders.length} unused folder(s) removed`);
+		}
+		if (report.skipped.length > 0) {
+			parts.push(`${report.skipped.length} skipped`);
+		}
+		const choice = await vscode.window.showInformationMessage(parts.join(', ') + '.', 'Show details');
+		if (choice === 'Show details') {
+			const doc = await vscode.workspace.openTextDocument({
+				content: renderMigrationDetail(report),
+				language: 'plaintext',
+			});
+			await vscode.window.showTextDocument(doc, { preview: true });
+		}
+	}
+
+	const ENCLOSING_REPO_DISMISSED_KEY = 'reltio.enclosingRepoWarningDismissed';
+
+	/**
+	 * Warns when a Git repository sits at or above the workspace root.
+	 *
+	 * Each tenant folder is meant to be its own repository. One rooted higher up either pulls the
+	 * environment and tenant names back into every tracked path, which is precisely what this
+	 * layout exists to avoid, or swallows a bound tenant as a gitlink whose contents it does not
+	 * store. The extension cannot prevent `git init`, so it reports the situation and offers a fix.
+	 */
+	async function warnAboutEnclosingRepository(
+		em: EnvironmentManager,
+		workspaceRoot: vscode.Uri,
+	): Promise<void> {
+		if (context.workspaceState.get<boolean>(ENCLOSING_REPO_DISMISSED_KEY, false)) return;
+
+		const enclosing = await findEnclosingGitRepository(workspaceRoot);
+		if (!enclosing) return;
+
+		const where =
+			enclosing.fsPath === workspaceRoot.fsPath
+				? 'this workspace folder'
+				: `a parent folder (${enclosing.fsPath})`;
+		const choice = await vscode.window.showWarningMessage(
+			`A Git repository exists at ${where}. Reltio IDE expects each tenant folder to be its own repository, so tracked paths carry no environment or tenant name. A repository above them undoes that.`,
+			'Ignore Tenant Folders',
+			'Show Details',
+			'Don\'t Show Again',
+		);
+
+		if (choice === 'Don\'t Show Again') {
+			await context.workspaceState.update(ENCLOSING_REPO_DISMISSED_KEY, true);
+			return;
+		}
+		if (choice === 'Show Details') {
+			const doc = await vscode.workspace.openTextDocument({
+				content: renderEnclosingRepositoryHelp(enclosing, workspaceRoot),
+				language: 'markdown',
+			});
+			await vscode.window.showTextDocument(doc, { preview: true });
+			return;
+		}
+		if (choice === 'Ignore Tenant Folders') {
+			// Excludes the environment folders from the enclosing repository, so it stops tracking
+			// tenant content while each tenant folder stays free to be its own repository.
+			const envs = await em.scanEnvironments();
+			const entries = envs
+				.map(e => em.environmentFolderNameFor(e.name))
+				.filter((n): n is string => !!n)
+				.map(n => [`${n}/`, [n]] as const);
+			if (entries.length === 0) {
+				void vscode.window.showInformationMessage('No environment folders to ignore yet.');
+				return;
+			}
+			await ensureGitignoreEntries(enclosing, entries);
+			void vscode.window.showInformationMessage(
+				`Added ${entries.length} environment folder(s) to ${enclosing.fsPath}\\.gitignore. Already-tracked files stay tracked until you run: git rm -r --cached <folder>`,
+			);
 		}
 	}
 
@@ -357,6 +627,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		const realEnvs = await environmentManager.scanEnvironments();
 		if (realEnvs.length > 0) {
 			setWorkspaceSource('tenant');
+			// Off the activation critical path: the window stays responsive and the tree refreshes
+			// when this finishes. Only runs in tenant mode — a git-sourced workspace has no tenant
+			// folders of ours to migrate.
+			void runLayoutMigration(environmentManager, folder.uri).then(async () => {
+				if (!environmentManager || !folder) return;
+				// Safety net first: a repository rooted above the tenants must not sweep in synced
+				// agent assets, the migration backup or the environment marker.
+				await ensureWorkspaceGitignored(folder.uri).catch(() => undefined);
+				await warnAboutEnclosingRepository(environmentManager, folder.uri).catch(() => undefined);
+			});
 		} else if (await tryRestoreGitSource(environmentManager, tokenStore, folder.uri)) {
 			setWorkspaceSource('git');
 		} else {
@@ -369,7 +649,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	/** Normalize legacy relative paths (root or `.reltio/`) to logical l3FileUri keys. */
 	function logicalOpenedL3Key(pathOrKey: string): string {
-		const loc = pathTenantLocFromL3Path(pathOrKey);
+		// Folder names no longer encode identity, so prefer the manager's scan-built reverse index
+		// and fall back to parsing legacy suffixed paths.
+		const loc =
+			environmentManager?.locFromPath(pathOrKey) ?? pathTenantLocFromL3Path(pathOrKey);
 		return loc ? l3FileUri(loc.environmentName, loc.tenantId) : pathOrKey;
 	}
 
@@ -462,22 +745,69 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('reltio.resyncAgentAssets', async () => {
-			try {
-				await vscode.window.withProgress(
-					{
-						location: vscode.ProgressLocation.Notification,
-						title: 'Resyncing Reltio agent assets…',
-					},
-					() => syncReltioAgentAssets(context, { force: true }),
-				);
+			const report = await vscode.window.withProgress(
+				{
+					location: vscode.ProgressLocation.Notification,
+					title: 'Resyncing Reltio agent assets…',
+				},
+				() => runAgentAssetSync(true),
+			);
+			if (report && report.conflicts.length === 0 && report.invalid.length === 0) {
 				void vscode.window.showInformationMessage(
-					'Reltio agent skills, Velocity Packs, and LCA knowledge base were refreshed under .reltio/reltio-agent/ (workspace overrides were not changed).',
+					'Reltio agent skills, Velocity Packs, and LCA knowledge base were refreshed (workspace overrides were not changed).',
 				);
-			} catch (e) {
-				void vscode.window.showErrorMessage(`Resync failed: ${(e as Error).message}`);
+			}
+		}),
+		vscode.workspace.onDidChangeConfiguration(e => {
+			// Installs or removes the discoverable copies straight away, without waiting for a reload.
+			if (workspaceSource !== undefined && e.affectsConfiguration(`reltio.${AGENT_SKILLS_SETTING}`)) {
+				void runAgentAssetSync(false);
 			}
 		}),
 	);
+
+	if (folder) {
+		// A team override must reach agents when it is edited, not at the next window reload, or the
+		// discoverable copy would keep serving the default the team meant to replace.
+		const overrides = vscode.workspace.createFileSystemWatcher(
+			new vscode.RelativePattern(folder, `${OVERRIDES_SEGMENTS.join('/')}/**`),
+		);
+		let overrideTimer: ReturnType<typeof setTimeout> | undefined;
+		const resyncOverrides = (): void => {
+			if (workspaceSource === undefined) return;
+			if (overrideTimer) clearTimeout(overrideTimer);
+			overrideTimer = setTimeout(() => void runAgentAssetSync(false), 500);
+		};
+		context.subscriptions.push(
+			overrides,
+			overrides.onDidCreate(resyncOverrides),
+			overrides.onDidChange(resyncOverrides),
+			overrides.onDidDelete(resyncOverrides),
+			{ dispose: () => overrideTimer && clearTimeout(overrideTimer) },
+		);
+	}
+
+	if (folder && environmentManager) {
+		const verificationLog = vscode.window.createOutputChannel('Reltio Match Verification');
+		context.subscriptions.push(
+			verificationLog,
+			registerMatchVerificationBridge({
+				workspaceRoot: folder.uri,
+				isEnabled: () =>
+					vscode.workspace.getConfiguration('reltio').get<boolean>(MATCH_VERIFICATION_SETTING, true),
+				isRepositoryMode: () => workspaceSource === 'git',
+				resolveTenant: async configFile => {
+					// Rescan so a tenant connected since activation resolves. Identity comes from the
+					// markers, never from the request, so the token only reaches its own environment.
+					await environmentManager.scanEnvironments();
+					return environmentManager.locFromPath(configFile.path);
+				},
+				getToken: env => tokenStore.getToken(env),
+				tryRefresh,
+				log: line => verificationLog.appendLine(line),
+			}),
+		);
+	}
 
 	context.subscriptions.push(
 		vscode.languages.registerDocumentLinkProvider(RELTIO_SELECTOR, linkProvider),
@@ -1136,8 +1466,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	}
 
 	/**
-	 * True when local L3 has edits that were never published to the tenant, i.e. it no longer
-	 * matches `L3.remote-baseline.reltio.json` (the snapshot recorded at the last successful fetch).
+	 * True when the local configuration has edits that were never published to the tenant, i.e. it
+	 * no longer matches `.reltio-ide/BusinessConfig.baseline.json` (the snapshot recorded at the
+	 * last successful fetch).
 	 * A missing or unparsable baseline is treated as "unpublished changes" — we have no evidence
 	 * it's safe to discard the local file.
 	 */
@@ -1182,7 +1513,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 		const saved = await ensureL3DocumentSaved(l3Uri);
 		if (!saved) {
-			void vscode.window.showErrorMessage('Save L3.reltio.json before applying.');
+			void vscode.window.showErrorMessage('Save BusinessConfig.json before applying.');
 			return;
 		}
 
@@ -1591,6 +1922,237 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			} else if (fetchResult === 'error') {
 				void vscode.window.showWarningMessage(
 					`Tenant "${pick}" was added, but L3 could not be downloaded. Use Fetch Configuration to retry.`,
+				);
+			}
+		}),
+		vscode.commands.registerCommand('reltio.undoLayoutMigration', async () => {
+			const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
+			if (!environmentManager || !workspaceRoot) return;
+
+			if (!(await hasMigrationBackup(workspaceRoot))) {
+				void vscode.window.showInformationMessage(
+					'No layout migration backup found in this workspace. There is nothing to undo.',
+				);
+				return;
+			}
+
+			const pick = await vscode.window.showWarningMessage(
+				'Restore the legacy tenant folder layout from the migration backup? Files currently in the component tree will be replaced.',
+				{ modal: true },
+				'Restore',
+			);
+			if (pick !== 'Restore') return;
+
+			try {
+				const { restored } = await vscode.window.withProgress(
+					{ location: vscode.ProgressLocation.Notification, title: 'Restoring legacy layout…' },
+					() => undoMigration(workspaceRoot, environmentManager!, context.workspaceState),
+				);
+				treeProvider.refresh();
+				uxBus.fire();
+				void vscode.window.showInformationMessage(
+					restored.length > 0
+						? `Restored the legacy layout for: ${restored.join(', ')}.`
+						: 'No tenants were restored.',
+				);
+			} catch (e) {
+				void vscode.window.showErrorMessage(`Undo failed: ${(e as Error).message}`);
+			}
+		}),
+		vscode.commands.registerCommand('reltio.tenantNewBranch', async (node?: TenantNode) => {
+			if (!node || !environmentManager) return;
+			const tenantRoot = environmentManager.getTenantRootUri(node.environmentName, node.tenantId);
+
+			const remoteUrl = await getRemoteUrl(tenantRoot);
+			if (!remoteUrl) {
+				void vscode.window.showErrorMessage(
+					`Tenant "${node.tenantId}" has no "origin" remote configured.`,
+				);
+				return;
+			}
+
+			let remoteBranches: string[] = [];
+			let listFailed = false;
+			try {
+				remoteBranches = await vscode.window.withProgress(
+					{ location: vscode.ProgressLocation.Notification, title: 'Reading branches…' },
+					() => listRemoteBranches(tenantRoot, remoteUrl),
+				);
+			} catch {
+				listFailed = true;
+			}
+
+			const current = await getCurrentBranch(tenantRoot);
+			// The branch it is already on is not a useful thing to switch to.
+			const selectable = remoteBranches.filter(b => b !== current);
+			const branch = await pickBranch(node.tenantId, selectable, listFailed, current);
+			if (!branch) return;
+
+			const isExisting = remoteBranches.includes(branch);
+			try {
+				if (isExisting) {
+					await vscode.window.withProgress(
+						{ location: vscode.ProgressLocation.Notification, title: `Switching to ${branch}…` },
+						() => switchToExistingBranch(tenantRoot, branch),
+					);
+					treeProvider.refresh();
+					void vscode.window.showInformationMessage(
+						`Tenant "${node.tenantId}" is now on branch "${branch}". Its configuration reflects that branch; fetch again to pull the tenant's current state from Reltio.`,
+					);
+					return;
+				}
+
+				const result = await vscode.window.withProgress(
+					{ location: vscode.ProgressLocation.Notification, title: `Creating ${branch}…` },
+					() => createAndPublishBranch(tenantRoot, branch),
+				);
+				treeProvider.refresh();
+				if (result.published) {
+					void vscode.window.showInformationMessage(
+						`Created and published branch "${branch}" from "${current ?? 'the current commit'}". Your configuration is unchanged and comes with you.`,
+					);
+				} else {
+					void vscode.window.showWarningMessage(
+						`Branch "${branch}" was created locally but could not be published: ${result.reason}`,
+					);
+				}
+			} catch (e) {
+				void vscode.window.showErrorMessage((e as Error).message);
+			}
+		}),
+		vscode.commands.registerCommand('reltio.disconnectTenantFromGit', async (node?: TenantNode) => {
+			if (!node || !environmentManager) return;
+			const tenantRoot = environmentManager.getTenantRootUri(node.environmentName, node.tenantId);
+
+			const dirty = await hasUncommittedChanges(tenantRoot);
+			const warning = dirty
+				? `Disconnect tenant "${node.tenantId}" from Git? It has uncommitted changes. Your files stay exactly as they are, but the repository and its local history are removed and unpushed commits are lost.`
+				: `Disconnect tenant "${node.tenantId}" from Git? Your files stay exactly as they are; the repository and its local history are removed.`;
+			const pick = await vscode.window.showWarningMessage(warning, { modal: true }, 'Disconnect');
+			if (pick !== 'Disconnect') return;
+
+			try {
+				await disconnectFromGit(tenantRoot);
+				treeProvider.refresh();
+				void vscode.window.showInformationMessage(
+					`Tenant "${node.tenantId}" is no longer connected to Git. Its files are untouched.`,
+				);
+			} catch (e) {
+				void vscode.window.showErrorMessage(`Failed to disconnect: ${(e as Error).message}`);
+			}
+		}),
+		vscode.commands.registerCommand('reltio.connectTenantToGit', async (node?: TenantNode) => {
+			if (!node || !environmentManager) return;
+			const tenantRoot = environmentManager.getTenantRootUri(node.environmentName, node.tenantId);
+
+			if (await isGitRepo(tenantRoot)) {
+				void vscode.window.showInformationMessage(
+					`Tenant "${node.tenantId}" is already connected to Git.`,
+				);
+				return;
+			}
+
+			// Binding inside another repository produces a nested one: the outer repo then stores
+			// this tenant as a gitlink and cloning it yields an empty folder. Say so up front.
+			const enclosingRepo = await findEnclosingGitRepository(
+				vscode.Uri.joinPath(tenantRoot, '..'),
+			);
+			if (enclosingRepo) {
+				const proceed = await vscode.window.showWarningMessage(
+					`A Git repository already exists at ${enclosingRepo.fsPath}. Connecting this tenant creates a repository inside it, and the outer one will store the tenant as a pointer rather than its files.`,
+					{ modal: true },
+					'Connect Anyway',
+				);
+				if (proceed !== 'Connect Anyway') return;
+			}
+
+			// Every tenant in a promotion flow shares one remote, so remember it per workspace.
+			const lastRemote = context.workspaceState.get<string>(LAST_GIT_REMOTE_KEY, '');
+			const remoteUrl = await vscode.window.showInputBox({
+				title: 'Connect to Git',
+				prompt: 'Git remote URL holding this tenant\'s configuration',
+				placeHolder: 'https://github.com/org/reltio-config.git',
+				value: lastRemote,
+				ignoreFocusOut: true,
+			});
+			if (!remoteUrl?.trim()) return;
+
+			// Offer the remote's existing branches rather than making the user recall them. Listing
+			// needs no clone, so nothing is written to disk if they back out here.
+			let remoteBranches: string[] = [];
+			let listFailed = false;
+			try {
+				remoteBranches = await vscode.window.withProgress(
+					{ location: vscode.ProgressLocation.Notification, title: 'Reading branches…' },
+					() => listRemoteBranches(tenantRoot, remoteUrl.trim()),
+				);
+			} catch {
+				// Unreachable remote, or credentials the helper could not supply. Fall back to
+				// free text rather than blocking: the bind itself will report the real failure.
+				listFailed = true;
+			}
+
+			const branch = await pickBranch(node.tenantId, remoteBranches, listFailed);
+			if (!branch) return;
+
+			try {
+				const outcome = await vscode.window.withProgress(
+					{ location: vscode.ProgressLocation.Notification, title: 'Connecting tenant to Git…' },
+					() =>
+						bindTenantToGit({
+							tenantRoot,
+							remoteUrl: remoteUrl.trim(),
+							branch: branch.trim(),
+							environmentName: node.environmentName,
+							tenantId: node.tenantId,
+							confirmCreateBranch: async (b, url) =>
+								(await vscode.window.showWarningMessage(
+									`Branch "${b}" does not exist on ${url}. Create it from the default branch and push it?`,
+									{ modal: true },
+									'Create Branch',
+								)) === 'Create Branch',
+						}),
+				);
+
+				if (outcome.kind === 'declined') {
+					void vscode.window.showInformationMessage(
+						`Branch "${outcome.branch}" was not created. Tenant is not connected to Git.`,
+					);
+					return;
+				}
+
+				await context.workspaceState.update(LAST_GIT_REMOTE_KEY, remoteUrl.trim());
+				treeProvider.refresh();
+				uxBus.fire();
+
+				if (outcome.kind === 'branch-created-not-pushed') {
+					void vscode.window.showWarningMessage(
+						`Branch "${outcome.branch}" was created locally but could not be pushed: ${outcome.reason}`,
+					);
+				} else if (outcome.kind === 'initialized-empty-remote') {
+					// Not a failure: an unborn branch cannot be pushed, so the first commit is the
+					// user's to make. Phrase it as the next step rather than as something going wrong.
+					void vscode.window.showInformationMessage(
+						`Tenant "${node.tenantId}" is connected to Git on branch "${outcome.branch}". The remote is empty, so your configuration will be its first commit: commit and push from Source Control.`,
+					);
+				} else if (outcome.kind === 'branch-created') {
+					void vscode.window.showInformationMessage(
+						`Created and pushed branch "${outcome.branch}" for tenant "${node.tenantId}".`,
+					);
+				} else if (outcome.kind === 'adopted') {
+					// The config was already on disk, so it is now an uncommitted change against the
+					// branch. Say so, otherwise a full-looking diff in Source Control is a surprise.
+					void vscode.window.showInformationMessage(
+						`Tenant "${node.tenantId}" is connected to Git on branch "${outcome.branch}". Its existing configuration is staged as changes against that branch. Review and commit them in Source Control.`,
+					);
+				} else {
+					void vscode.window.showInformationMessage(
+						`Tenant "${node.tenantId}" is connected to Git on branch "${outcome.branch}".`,
+					);
+				}
+			} catch (e) {
+				void vscode.window.showErrorMessage(
+					`Failed to connect tenant to Git: ${(e as Error).message}`,
 				);
 			}
 		}),
@@ -2042,7 +2604,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	context.subscriptions.push(
 		vscode.workspace.onDidOpenTextDocument(async doc => {
-			if (!doc.uri.path.endsWith('/L3.reltio.json')) return;
+			if (!isTenantConfigPath(doc.uri.path)) return;
 			const key = logicalOpenedL3Key(doc.uri.fsPath);
 			if (openedL3Files.has(key)) return;
 			openedL3Files.add(key);

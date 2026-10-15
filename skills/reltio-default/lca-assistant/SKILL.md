@@ -48,12 +48,14 @@ Rules:
 
 ## Partner invoke (no `.cursor` stub in partner workspaces)
 
-After Reltio IDE activates (or **Resync agent assets**), assets live under the workspace:
+After Reltio IDE activates (or **Reltio: Resync agent assets (skills, Velocity Packs & LCA knowledge base)**), the skill is installed where agents find it:
 
-- Skill: `.reltio/reltio-agent/skills/default/lca-assistant/SKILL.md`
-- Knowledge base: `.reltio/reltio-agent/lca-knowledge-base/` (start at `manifest.json` or `00_INDEX_RAG_RETRIEVAL_MAP.md`)
+- `.claude/skills/reltio-lca-assistant/SKILL.md`
+- `.cursor/skills/reltio-lca-assistant/SKILL.md` in Cursor, or `.github/skills/reltio-lca-assistant/SKILL.md` in VS Code
 
-Ask Cursor to follow this playbook, or `@`-reference those paths. Optional team override: `skills/workspace/lca-assistant/SKILL.md`.
+The same playbook is also at `.reltio/reltio-agent/skills/default/lca-assistant/SKILL.md`. Knowledge base: `.reltio/reltio-agent/lca-knowledge-base/` (start at `manifest.json` or `00_INDEX_RAG_RETRIEVAL_MAP.md`).
+
+Optional team override: `skills/workspace/lca-assistant/SKILL.md`. A contributor checkout of this repository keeps a thin pointer under `.cursor/skills/`; that pointer is not what a partner workspace receives.
 
 **Sample prompts**
 
@@ -64,7 +66,13 @@ Ask Cursor to follow this playbook, or `@`-reference those paths. Optional team 
 
 ## Inputs
 
-1. **Connected tenant L3** — `L3.reltio.json` under a `*.reltio.tenant/` directory (read-only). Required for tenant-object queries. This is the L3 fetched by the Reltio IDE plugin (Add Tenant / Get Configuration), not a sample or Velocity Pack.
+1. **Connected tenant L3** (read-only). Required for tenant-object queries. This is the configuration fetched by the Reltio IDE plugin (Add Tenant / Get Configuration), not a sample or Velocity Pack.
+
+   | Workspace | File |
+   |---|---|
+   | Connected tenant | `<environment>/<tenantId>/Business Config/BusinessConfig.json` (tenant id is in `.reltio-config-source.json`, `kind: "tenant"`) |
+   | Tenant not yet migrated | `…/<tenantId>.reltio.tenant/L3.reltio.json` |
+   | Opened with Connect your Repository | The `BusinessConfig.json` or `L3.reltio.json` named by `.reltio-config-source.json` |
 2. Materialized KB: **`.reltio/reltio-agent/lca-knowledge-base/`** (routing via `manifest.json` / `00_INDEX…`).
 3. Optional: existing LCA Java/Maven project in the workspace.
 
@@ -72,8 +80,8 @@ Ask Cursor to follow this playbook, or `@`-reference those paths. Optional team 
 
 | Context | Behavior |
 |---------|----------|
-| Tenant L3 connected (`*.reltio.tenant/**/L3.reltio.json`) | **L3-first**: inventory types/attributes; resolve names against L3. If a named tenant/type/attribute is **not an exact match**, **stop this turn**: suggest close L3 names, wait for the user to **confirm the actual name**, then continue. Never silently use a similar type. Do not patch L3 until the cloud function deploy succeeds. |
-| Plugin not connected to any tenant (no `*.reltio.tenant/` or no fetched L3) **and** the query is about tenant objects | **Stop.** Ask the user to connect a tenant in the Reltio IDE plugin (see Tenant L3 gate). Do not invent type or attribute URIs. Do not substitute Velocity Packs or sample JSON for this tenant. |
+| Tenant L3 connected (`Business Config/BusinessConfig.json`, or legacy `*.reltio.tenant/**/L3.reltio.json`) | **L3-first**: inventory types/attributes; resolve names against L3. If a named tenant/type/attribute is **not an exact match**, **stop this turn**: suggest close L3 names, wait for the user to **confirm the actual name**, then continue. Never silently use a similar type. Do not patch L3 until the cloud function deploy succeeds. |
+| Plugin not connected to any tenant (no tenant folder and no fetched L3) **and** the query is about tenant objects | **Stop.** Ask the user to connect a tenant in the Reltio IDE plugin (see Tenant L3 gate). Do not invent type or attribute URIs. Do not substitute Velocity Packs or sample JSON for this tenant. |
 | Generic LCA knowledge only (hooks, architecture, LCA vs DVF, ops) | Answer from the KB. L3 is optional. |
 | Java/Maven only (project present, tenant L3 connected) | Ground in L3. Write Java only in the current working directory. A different folder is opt-in: confirm target folder before writing elsewhere. Do not patch L3 until the cloud function deploy succeeds. |
 
@@ -83,24 +91,24 @@ A query is **tenant-object related** when it names or depends on tenant metadata
 
 Before answering those queries:
 
-1. **Detect connection** — Search the workspace for `*.reltio.environment/` (including `.reltio/*.reltio.environment/`) and `*.reltio.tenant/`. Prefer `L3.reltio.json` inside a tenant folder. Also accept a git-connected tenant recorded in `.reltio-config-source.json` whose `l3RelativePath` is `BusinessConfig.json` or `L3.reltio.json`. Ignore `samples/`, Velocity Packs, and other non-tenant JSON as a substitute for a connected tenant.
+1. **Detect connection** — Search the workspace for a connected configuration. Current layout: `<environment>/<tenantId>/Business Config/BusinessConfig.json`, with the tenant id in that folder's `.reltio-config-source.json` (`kind: "tenant"`) and the environment host in `.reltio-environment.json`. Not yet migrated: `L3.reltio.json` inside `*.reltio.tenant/` (including `.reltio/*.reltio.environment/`). Git repository: a `BusinessConfig.json` or `L3.reltio.json` named by `.reltio-config-source.json` `l3RelativePath`. Ignore `samples/`, Velocity Packs, and other non-tenant JSON as a substitute for a connected tenant.
 2. **No environment / not signed in** — **Stop.** Ask the user to connect via **Reltio: Launch Setup Wizard** (`reltio.launchSetupWizard`) or **Sign in to Reltio** (`reltio.signInToFirstEnvironment`).
 3. **No tenant added** — **Stop.** Ask the user to **Add Tenant** (`reltio.addTenant`) in the Reltio explorer. Adding a tenant fetches L3 automatically.
-4. **Tenant present, L3 missing** — **Stop.** Ask the user to **Get Configuration** (`reltio.fetchL3`) on that tenant, then continue once `L3.reltio.json` exists.
-5. **Multiple tenants with L3** — Use the active/open `L3.reltio.json`. If none is open, ask which tenant to use before generating code.
+4. **Tenant present, L3 missing** — **Stop.** Ask the user to **Get Configuration** (`reltio.fetchL3`) on that tenant, then continue once `Business Config/BusinessConfig.json` (or legacy `L3.reltio.json`) exists.
+5. **Multiple tenants with L3** — Use the active/open configuration file. If none is open, ask which tenant to use before generating code.
 6. **Connected** — Proceed L3-first (read-only). Resolve every named tenant object against this L3 (see Resolve named L3 objects). Never invent L3 names.
 
 Do not continue a tenant-object answer with guessed URIs or pack excerpts as a substitute for connecting the plugin.
 
 ## Resolve named L3 objects
 
-After the tenant L3 gate succeeds, match names the user gave against the connected `L3.reltio.json` **before** proposing hooks or generating code.
+After the tenant L3 gate succeeds, match names the user gave against the connected configuration **before** proposing hooks or generating code.
 
 **Exact match only** (case-insensitive): `label` equals the user token, or the URI local name equals it (`configuration/entityTypes/HCP` matches `HCP`, not `HCPLocation`). Prefix, substring, or “sounds like” is **not** a match.
 
 | User named… | Look up in L3 | If missing, ambiguous, or not exact |
 |-------------|---------------|-------------------------------------|
-| Tenant id / environment | Folder `*.reltio.tenant/` (and the open L3) | Ask which tenant to use; list connected tenant ids. |
+| Tenant id / environment | Tenant identity marker (or legacy `*.reltio.tenant/` folder) and the open L3 | Ask which tenant to use; list connected tenant ids. |
 | Entity type (e.g. `HCP`, `HCO`) | `entityTypes[]` `uri` / `label` | **Hard stop.** Ask the user to confirm the actual name; list suggestions + available **uri + label**. |
 | Relation type (e.g. `HasAddress`, `HasAAddress`) | `relationTypes[]` `uri` / `label` | **Hard stop.** Same as entity type. |
 | Change-request / DCR type | `changeRequestTypes[]` (or equivalent) `uri` / `label` | **Hard stop.** Same as entity type. |

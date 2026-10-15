@@ -29,6 +29,9 @@
   },
   "activationEvents": [
     "onLanguage:json",
+    "workspaceContains:**/BusinessConfig.json",
+    "workspaceContains:**/.reltio-environment.json",
+    "workspaceContains:**/.reltio-config-source.json",
     "workspaceContains:**/*.reltio.environment",
     "workspaceContains:**/*.reltio.json"
   ],
@@ -195,6 +198,29 @@
         "command": "reltio.addTenant",
         "title": "Add Tenant",
         "icon": "$(add)"
+      },
+      {
+        "command": "reltio.connectTenantToGit",
+        "title": "Connect to Git",
+        "category": "Reltio",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "reltio.tenantNewBranch",
+        "title": "Connect to a New Branch",
+        "category": "Reltio",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "reltio.disconnectTenantFromGit",
+        "title": "Disconnect from Git",
+        "category": "Reltio",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "reltio.undoLayoutMigration",
+        "title": "Undo Layout Migration",
+        "category": "Reltio"
       },
       {
         "command": "reltio.removeTenant",
@@ -369,6 +395,16 @@
           ],
           "default": "default",
           "description": "UX mode. 'default' enables the redesigned setup experience (wizard, walkthrough, status bar, next-step hints). 'classic' restores the pre-redesign behavior."
+        },
+        "reltio.installAgentSkills": {
+          "type": "boolean",
+          "default": true,
+          "description": "Install the bundled Reltio skills where AI agents find them without an @-mention: '.claude/skills/reltio-*' (read by Claude Code, GitHub Copilot in VS Code and Cursor) and a second copy in this editor's own folder ('.cursor/skills' in Cursor, '.github/skills' in VS Code), plus short always-on instructions telling agents to report a missing skill instead of guessing. Only files the extension created are changed, and they are added to .gitignore. Turn off to remove them."
+        },
+        "reltio.enableMatchVerification": {
+          "type": "boolean",
+          "default": true,
+          "description": "Let AI agents test a candidate match rule against the connected tenant before inserting it. The extension answers requests written to '.reltio/reltio-agent/match-verification/request.json' using your signed-in session and the read-only _verifyMatches API, which never creates, merges or changes entities. When off, agents test rules without the tenant and label the results as not verified."
         },
         "reltio.defaultEnvironments": {
           "type": "array",
@@ -567,6 +603,21 @@
           "group": "3_tenant"
         },
         {
+          "command": "reltio.connectTenantToGit",
+          "when": "viewItem =~ /^reltio\\.tenant/ && !(viewItem =~ /gitbound/) && reltio.workspaceSource != 'git'",
+          "group": "3_tenant"
+        },
+        {
+          "command": "reltio.tenantNewBranch",
+          "when": "viewItem =~ /gitbound/ && reltio.workspaceSource != 'git'",
+          "group": "3_tenant"
+        },
+        {
+          "command": "reltio.disconnectTenantFromGit",
+          "when": "viewItem =~ /gitbound/ && reltio.workspaceSource != 'git'",
+          "group": "3_tenant"
+        },
+        {
           "command": "reltio.removeTenant",
           "when": "viewItem =~ /^reltio\\.tenant/ && reltio.workspaceSource != 'git'",
           "group": "9_delete"
@@ -746,6 +797,7 @@
     "@types/vscode": "^1.85.0",
     "@vscode/codicons": "^0.0.45",
     "@vscode/vsce": "^3.7.1",
+    "ajv": "^8.20.0",
     "esbuild": "^0.20.0",
     "typescript": "^5.3.0"
   }

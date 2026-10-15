@@ -12,7 +12,7 @@ export {
 	L3_CONFIRM_PROMPT,
 } from './present';
 export { selectCloud, cloudRegistration, connectivityRequired, CONNECTIVITY_DOCS, LOG_LOCATIONS } from './cloud';
-export { assessTenantConnection, discoverTenantL3, isTenantL3Path, locationsFromGitMarker, TENANT_CONNECTION_MESSAGE } from './tenantGate';
+export { assessTenantConnection, discoverTenantL3, isComponentConfigPath, isTenantL3Path, locationFromComponentConfig, locationFromTenantIdentity, locationsFromGitMarker, TENANT_CONNECTION_MESSAGE } from './tenantGate';
 export { resolveObjectType, resolveAttributes, listObjectTypes } from './l3Lookup';
 export { proposeLifecycleChange, applyLifecycleProposal } from './lifecycleConfig';
 export {

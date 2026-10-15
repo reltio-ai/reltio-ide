@@ -381,10 +381,17 @@ const { GitFolderNode, EnvironmentNode } = importDist('tree/multiTenantNodes');
 		assert.strictEqual(mgr.getL3Uri('ws', 'default').path, l3Uri.path);
 		assert.strictEqual(mgr.getLayoutUri('ws', 'default').path, '/ws/L3.reltio.layout.json');
 
-		// A non-matching environment/tenant pair falls through to the ordinary folder-convention path.
+		// A non-matching environment/tenant pair falls through to the ordinary folder-convention
+		// path. Folder names lost their `.reltio.environment` / `.reltio.tenant` suffixes in the
+		// openspec change git-ready-tenant-folder-structure: identity now lives in marker files,
+		// so the directories are the short environment label and the bare tenant id.
 		const fallback = mgr.getL3Uri('other-env', 'other-tenant');
-		assert.ok(fallback.path.includes('other-env.reltio.environment'));
-		assert.ok(fallback.path.includes('other-tenant.reltio.tenant'));
+		assert.ok(fallback.path.includes('/other-env/'), 'environment folder is the plain label');
+		assert.ok(fallback.path.includes('/other-tenant/'), 'tenant folder is the bare id');
+		assert.ok(
+			fallback.path.endsWith('/Business Config/BusinessConfig.json'),
+			'config resolves inside the component tree',
+		);
 
 		mgr.clearGitSource();
 		assert.deepStrictEqual(await mgr.scanEnvironments(), []);

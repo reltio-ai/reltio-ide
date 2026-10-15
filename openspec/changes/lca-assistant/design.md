@@ -6,9 +6,10 @@ Tracking: RP-191824. The extension does not host an LLM. Cursor Agent follows `s
 
 ### D2 — Tenant-object work uses the connected L3
 
-A connected L3 is either:
+A connected L3 is any of:
 
-- `L3.reltio.json` inside a `*.reltio.tenant/` directory, or
+- `Business Config/BusinessConfig.json` inside a tenant folder whose `.reltio-config-source.json` has `kind: "tenant"` (the current component tree; the tenant id is in that marker, not the folder name), or
+- `L3.reltio.json` inside a legacy `*.reltio.tenant/` directory, or
 - a git-connected `BusinessConfig.json` or `L3.reltio.json` named by `.reltio-config-source.json` in the working directory.
 
 The filename must be exact. `notL3.reltio.json` is not an L3. Sample JSON and Velocity Pack `BusinessConfig.json` files are not a connected tenant. Marker paths that leave the marker directory are ignored.
@@ -40,6 +41,7 @@ The LCA skill is materialized with the knowledge-base bundle (`lcaKnowledgeBaseB
 ### Automated
 
 - Git marker `BusinessConfig.json` is selected; a lookalike `notL3.reltio.json` is not.
+- A component-tree tenant (`Business Config/BusinessConfig.json` plus a `kind: "tenant"` marker) is selected. A Velocity Pack `BusinessConfig.json` is not.
 - Advice about `Individual` or `Course` is tenant-aware. "What does the beforeSave hook do?" is not.
 - "ok deploy to production instead" does not return `deploy`.
 - `attributesAdded` survives a context save and reload.

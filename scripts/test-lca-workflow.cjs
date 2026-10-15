@@ -12,6 +12,7 @@ const { getConfigRootChildren, getConfigNodeChildren } = importDist('tree/config
 const {
 	assessTenantConnection,
 	discoverTenantL3,
+	isComponentConfigPath,
 	isTenantL3Path,
 	TENANT_CONNECTION_MESSAGE,
 	classifyLcaIntent,
@@ -484,6 +485,32 @@ assert.strictEqual(path.resolve(discovered[0].path), path.resolve(gitL3));
 const gitGate = assessTenantConnection({ tenantAware: true, locations: discovered });
 assert.strictEqual(gitGate.connected, true);
 assert.strictEqual(gitGate.selected.tenantId, 'gitTenant');
+
+const treeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'lca-tree-'));
+const envDir = path.join(treeRoot, 'dev');
+const tenantDir = path.join(envDir, 'abc123');
+const componentL3 = path.join(tenantDir, 'Business Config', 'BusinessConfig.json');
+fs.mkdirSync(path.dirname(componentL3), { recursive: true });
+fs.writeFileSync(componentL3, '{}\n');
+fs.writeFileSync(path.join(envDir, '.reltio-environment.json'), JSON.stringify({ kind: 'environment', host: 'dev.reltio.com' }));
+fs.writeFileSync(path.join(tenantDir, '.reltio-config-source.json'), JSON.stringify({
+	kind: 'tenant',
+	environmentName: 'dev.reltio.com',
+	tenantId: 'abc123',
+}));
+const packNoise = path.join(treeRoot, 'resources', 'velocity-packs', 'life');
+fs.mkdirSync(packNoise, { recursive: true });
+fs.writeFileSync(path.join(packNoise, 'BusinessConfig.json'), '{}\n');
+const treeFound = discoverTenantL3(treeRoot);
+assert.strictEqual(treeFound.length, 1, 'component-tree tenant is the only connected config');
+assert.strictEqual(treeFound[0].tenantId, 'abc123');
+assert.strictEqual(treeFound[0].environment, 'dev.reltio.com');
+assert.strictEqual(path.resolve(treeFound[0].path), path.resolve(componentL3));
+const treeGate = assessTenantConnection({ tenantAware: true, locations: treeFound });
+assert.strictEqual(treeGate.connected, true);
+assert.strictEqual(treeGate.selected.tenantId, 'abc123');
+assert.strictEqual(isComponentConfigPath(componentL3), true);
+assert.strictEqual(isTenantL3Path(componentL3), false);
 
 const pkg = require('../package.json');
 const itemMenus = pkg.contributes.menus['view/item/context'];

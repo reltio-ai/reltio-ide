@@ -38,17 +38,35 @@ function walkFiles(dir: string, depth: number, visit: (file: string) => void): v
 	}
 }
 
-/** Tenant physical configuration JSON, preferring a file inside `*.reltio.tenant`. */
+/** Prefer a physical config that sits inside a connected tenant folder. */
+function tenantLocalScore(file: string): number {
+	const normalized = file.replace(/\\/g, '/');
+	if (normalized.includes('.reltio.tenant/')) return 0;
+	let dir = path.dirname(file);
+	for (let depth = 0; depth < 6; depth++) {
+		const marker = path.join(dir, '.reltio-config-source.json');
+		if (fs.existsSync(marker)) {
+			try {
+				const parsed = JSON.parse(fs.readFileSync(marker, 'utf8')) as { kind?: string; tenantId?: string };
+				if (parsed?.kind === 'tenant' && typeof parsed.tenantId === 'string' && parsed.tenantId.trim()) return 0;
+			} catch {
+				// A marker that is not JSON is not a tenant folder.
+			}
+		}
+		const parent = path.dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+	}
+	return 1;
+}
+
+/** Tenant physical configuration JSON, preferring a file inside the connected tenant folder. */
 export function discoverPhysicalConfig(root: string): string | undefined {
 	const found: string[] = [];
 	walkFiles(root, 8, file => {
 		if (PHYSICAL_NAMES.has(path.basename(file).toLowerCase())) found.push(file);
 	});
-	found.sort((a, b) => {
-		const aTenant = a.includes('.reltio.tenant') ? 0 : 1;
-		const bTenant = b.includes('.reltio.tenant') ? 0 : 1;
-		return aTenant - bTenant || a.length - b.length;
-	});
+	found.sort((a, b) => tenantLocalScore(a) - tenantLocalScore(b) || a.length - b.length);
 	return found[0];
 }
 

@@ -26,12 +26,12 @@ This is a **single-module** project — not a multi-module monorepo. All source 
 | Git-sourced environment | An alternative to a live-tenant environment: a single environment node (named after the repository folder) holding one tenant per `BusinessConfig.json` discovered in a cloned or already-present git repository. The rows beneath it mirror the repository's directory layout (`repo / DP / dp_lif`) via inert `GitFolderNode` rows; a config's `tenantId` is its own folder name, qualified with the folder path only when two would otherwise collide. Wired in via `EnvironmentManager.setGitSources(...)`. Reuses the tenant-mode tree/navigation/ontology pipeline unchanged. See the **`git-repository-source`** OpenSpec change and its `design-amendment-multi-tenant.md`. |
 | Workspace source | The `reltio.workspaceSource` context key (`'tenant' \| 'git' \| undefined`), independent of `reltio.uxState`, recording whether the workspace is connected to a live tenant or a git repository. Drives welcome-view button visibility and hides tenant-connectivity menu items in git mode. A workspace is one or the other, never both. |
 | Environment | A Reltio host (e.g. `361.reltio.com`) represented as a `{host}.reltio.environment/` directory under `.reltio/` (preferred) or, for legacy workspaces, at the workspace root. Validated with `GET /reltio/status` before creation. |
-| Tenant | A tenant ID under an environment, stored as `{tenantId}.reltio.tenant/` with optional `L3.reltio.json` (fetched L3 configuration) and optional `history/` (local configuration history snapshots). |
+| Tenant | A tenant ID under an environment, stored as `{tenantId}/` (the bare id; identity is in the folder's marker, not its name). The folder carries the **component tree** and is itself the **git repository root** when bound to a remote, so nothing git tracks contains the environment host or tenant ID. Holds `Business Config/BusinessConfig.json` (fetched L3 configuration) and `.reltio-ide/` (gitignored IDE state: drift baseline, ontology layout, history snapshots). |
 | Token Store | In-memory map of environment name → Bearer token (and optional aliases). Never persisted; cleared on restart. For browser-OAuth environments it additionally holds the refresh token and access-token expiry alongside the in-memory access token. |
 | Session Store | Thin wrapper over `vscode.SecretStorage` (OS keychain) that persists OAuth **refresh tokens** per environment so sessions survive a window reload. Access tokens are never written to disk. |
 | OAuth credentials store | Per-environment OAuth **client ID**, **client secret**, and **SSO routing tenant ID** in `SecretStorage` (set via **Configure OAuth Client…**). The client pair can be shared across environments when only one pair is stored; the SSO routing tenant ID is always per-environment. Required for browser login and token refresh; never bundled in the extension. |
-| L3 configuration | Tenant metadata returned by `GET /reltio/api/{tenantId}/configuration`, saved locally as `L3.reltio.json`. |
-| Configuration history (local) | Paginated revisions from `GET …/configuration/_history`, written as one JSON file per revision under `{tenant}/history/` (see **Configuration history** below). |
+| L3 configuration | Tenant metadata returned by `GET /reltio/api/{tenantId}/configuration`, saved locally as `Business Config/BusinessConfig.json` (was `Business Config/BusinessConfig.json` before the `git-ready-tenant-folder-structure` change). |
+| Configuration history (local) | Paginated revisions from `GET …/configuration/_history`, written as one JSON file per revision under `{tenant}/.reltio-ide/history/` (see **Configuration history** below). |
 | UX state | A pure-function projection (`deriveUxState`) of the workspace's environments + tokens + OAuth credentials + opened-L3 files into a global state (`G_EMPTY` / `G_NEEDS_AUTH` / `G_NEEDS_TENANT` / `G_NEEDS_L3` / `G_READY`), per-environment state, and per-tenant state. Published as the `reltio.uxState` context key. Every "what's next" surface (walkthrough, viewsWelcome, tree descriptions, inline icons, status bar) reads from this single source. |
 | Setup Wizard | Multi-step `QuickPick` chain (`src/ux/setupWizard.ts`) that takes a user from "no environment" to "L3 open in the editor" in one continuous flow. Reachable from the welcome view, the tree view title bar, the status bar, the Walkthrough, and the Command Palette. The existing single-input **Add Environment** command remains for now and will be retired in a later change. |
 
@@ -104,11 +104,11 @@ graph TD
 | `src/model/` | Pure TypeScript interfaces mirroring the Reltio XSD/JSON schema — no runtime logic |
 | `src/parser/` | Parses `*.reltio.json` text into a typed `ReltioBusinessModel` and a `jsonc-parser` AST; provides path-based navigation and safe structural edit helpers |
 | `src/tree/` | `MultiTenantTreeProvider` (environments → tenants → History folder + L3 config sub-tree), `configSubtree` (shared section/entity/relation tree building, read-only `lifecycleActions` leaf), `treeNodes`, `multiTenantNodes` |
-| `src/lca/` | LCA agent gates: working-directory + tenant context, L3 lookup, hook validation, Java package names, workflow confirmations, `lifecycleActions` diffs |
-| `src/api/` | Stateless Reltio REST helpers (`reltioClient`; `listTenants` reads `GET /reltio/enhancedTenants?showAll=true` and reduces each `TenantRecord` to its `tenantId`; the only call that omits the `xxx-client` header; `toHttpsBase()` is the single choke point every call passes through — it force-upgrades an explicit `http://` to `https://` and rejects any host outside the `reltio.trustedHostSuffixes` allowlist (default `reltio.com`) before a bearer token is attached, throwing `UntrustedHostError`), in-memory `TokenStore` (access token + optional refresh-token/expiry for OAuth sessions), `SessionStore` (refresh-token persistence via `vscode.SecretStorage`), `OAuthCredentialsStore` (per-environment client ID/secret in `SecretStorage`), **`oauthLogin`** (Authorization Code flow: local callback server on `http://localhost:8081`, browser-based `auth.reltio.com/oauth/sso`, code→token exchange, refresh-token rotation), and `formatJson` (pretty-print fetched L3 via `JSON.parse` / `JSON.stringify` — fast; preserves key / array order from the parsed document) |
+| `src/lca/` | LCA agent gates: working-directory + tenant context, L3 lookup, hook validation, Java package names, workflow confirmations, `lifecycleActions` diffs. Finds the connected configuration in the component tree (`Business Config/BusinessConfig.json`), a legacy `*.reltio.tenant/L3.reltio.json`, or a git marker |
+| `src/api/` | Stateless Reltio REST helpers (`reltioClient`; `listTenants` reads `GET /reltio/enhancedTenants?showAll=true` and reduces each `TenantRecord` to its `tenantId`; the only call that omits the `xxx-client` header; `toHttpsBase()` is the single choke point every call passes through — it force-upgrades an explicit `http://` to `https://` and rejects any host outside the `reltio.trustedHostSuffixes` allowlist (default `reltio.com`) before a bearer token is attached, throwing `UntrustedHostError`), in-memory `TokenStore` (access token + optional refresh-token/expiry for OAuth sessions), `SessionStore` (refresh-token persistence via `vscode.SecretStorage`), `OAuthCredentialsStore` (per-environment client ID/secret in `SecretStorage`), **`oauthLogin`** (Authorization Code flow: local callback server on `http://localhost:8081`, browser-based `auth.reltio.com/oauth/sso`, code→token exchange, refresh-token rotation), `verifyMatches` (read-only `POST /reltio/api/{tenant}/entities/_verifyMatches` with candidate match groups; `ReltioApiError` carries the response body), and `formatJson` (pretty-print fetched L3 via `JSON.parse` / `JSON.stringify` — fast; preserves key / array order from the parsed document) |
 | `src/ux/` | UX state derivation (`uxState.ts`), status bar item (`statusBar.ts`), Setup Wizard (`setupWizard.ts`), recents persistence (`recents.ts`), quick-switch command (`quickSwitch.ts`). The "what's next" guidance layer. |
 | `src/util/` | Small shared helpers (e.g. **`jsonDeepEqual`** for JSON-parse result comparison) |
-| `src/workspace/` | `EnvironmentManager` — creates under `.reltio/*.reltio.environment` (scans that home plus legacy workspace-root dirs), manages `*.reltio.tenant` and `L3.reltio.json` via `vscode.workspace.fs`; `configurationHistory.ts` — snapshot file naming, read/write/clear under `history/`; **`reltioAgentSync.ts`** — materialize bundled skills, Velocity Packs, and LCA knowledge base under `.reltio/reltio-agent/` (see D3b / `lca-assistant`); **`reltioAutoSave.ts`** — save dirty `*.reltio.json` on editor switch (and optionally on window blur) so disk matches agents and parse/index passes; **`gitConfigSource.ts`** — system-`git` shell-out helpers (detect existing repo/remote, clone, empty-folder check, path containment with a Windows case-insensitive drive fix) via `child_process.execFile`; **`l3Discovery.ts`** — depth-10 search for `BusinessConfig.json` (case-insensitive) plus conflict-aware environment/tenant naming; **`gitSourceMarker.ts`** — persists discovered L3 locations in `.reltio-config-source.json` (multi-source format, backward compatible, auto-gitignored along with `.reltio/`) |
+| `src/workspace/` | `EnvironmentManager` — creates `*.reltio.environment` at the **workspace root** (still scans legacy `.reltio/` dirs and never relocates one), manages tenant folders and resolves every tenant-local path through **`tenantFolderStructure.ts`** via `vscode.workspace.fs`; **`tenantFolderStructure.ts`** — the component-tree definition, docs-URL map, `materializeTenantTree`, and the only place legacy path literals are named; **`tenantGitBinding.ts`** — clone a chosen branch into a tenant folder, create an absent branch from the remote default, read `HEAD`, dirty-worktree check; **`layoutMigration.ts`** — detect/plan/back up/migrate/undo the legacy flat layout; `configurationHistory.ts` — snapshot file naming, read/write/clear under `history/`; **`reltioAgentSync.ts`** — materialize bundled skills, Velocity Packs, and the LCA knowledge base under `.reltio/reltio-agent/` (see D3b / `lca-assistant`), then run agent discovery and return a report of anything it could not install; **`agentSkillDiscovery.ts`** — install each bundled skill at `.claude/skills/<name>/` and the three missing-skill guides, tracking ownership in `.sync-state.json` (see *Agent skills in the user workspace*); **`matchVerification.ts`** — file bridge that answers an agent's `match-verification/request.json` by calling `_verifyMatches` with the user's session (see *Match verification bridge*); **`reltioAutoSave.ts`** — save dirty `*.reltio.json` on editor switch (and optionally on window blur) so disk matches agents and parse/index passes; **`gitConfigSource.ts`** — system-`git` shell-out helpers (detect existing repo/remote, clone, empty-folder check, path containment with a Windows case-insensitive drive fix) via `child_process.execFile`; **`l3Discovery.ts`** — depth-10 search for `BusinessConfig.json` (case-insensitive) plus conflict-aware environment/tenant naming; **`gitSourceMarker.ts`** — persists discovered L3 locations and tenant identity in `.reltio-config-source.json` (multi-source format, backward compatible, auto-gitignored along with `.reltio/`) |
 | `src/navigation/` | Language feature providers: `UriIndex` (central URI → AST mapping), Go-to-Definition, Find References, Document Links, Diagnostics for unresolved URIs, **`uriCompletionProvider`** (Ctrl+Space URI + same-property value hints), **`uriPropertyScopes`** / **`samePropertyValues`** |
 | `src/commands/` | `editCommands` (insert/delete/rename via `WorkspaceEdit`), `elementSkeletons` (default-name builders), `revealInsertion` (select inserted JSON), `revealCommand` |
 | `src/ontology/` | Ontology preview: transforms model to graph, runs ELK layout, manages the webview panel lifecycle, persists layout positions. Also holds `inspectorHtml.ts` (pure, escaped HTML builders for the inspector popup) and `webviewMessageSafety.ts` (`message`-origin check, prototype-safe dynamic-key map) — kept outside `src/webview/` so `tsc`/`importDist` can test them directly, but imported by both the host and the webview bundle |
@@ -128,7 +128,7 @@ On workspace load, **`syncReltioAgentAssets`** (see `src/workspace/reltioAgentSy
 
 - **Canonical skill:** `skills/reltio-default/lca-assistant/SKILL.md` — L3-first LCA advising, dual-workspace branching, opt-in Maven scaffold; uses the knowledge base with intent routing.
 - **Bundled KB:** `resources/lca-knowledge-base/` (provenance in `PROVENANCE.md`; LCA content sign-off on RP-191824 before partner VSIX cut).
-- **Partner invoke:** Partner workspaces usually lack `.cursor/skills` stubs from this repo. After sync, `@`-reference `.reltio/reltio-agent/skills/default/lca-assistant/SKILL.md` and `.reltio/reltio-agent/lca-knowledge-base/` (or ask the agent to follow the Reltio LCA assistant). Sample prompts live in the skill and `openspec/changes/lca-assistant/demo-script.md`.
+- **Partner invoke:** Sync installs the skill where agents find it (`reltio-lca-assistant` under `.claude/skills/` and the editor's own skills folder) and materializes the knowledge base at `.reltio/reltio-agent/lca-knowledge-base/`. The same playbook is also at `.reltio/reltio-agent/skills/default/lca-assistant/SKILL.md`. Sample prompts live in the skill and `openspec/changes/lca-assistant/demo-script.md`.
 - The extension **does not** host an LLM; Cursor Agent (or compatible agents) reads the skill + KB.
 
 ### Cursor Agent assets in the user workspace
@@ -137,15 +137,54 @@ Layout under the **workspace root** after sync:
 
 ```text
 .reltio/reltio-agent/                    # hidden (.reltio); extension-managed only
-├── .sync-state.json                     # skillsBundleVersion + velocityPacksBundleVersion + lcaKnowledgeBaseBundleVersion
+├── .sync-state.json                     # skillsBundleVersion + velocityPacksBundleVersion + lcaKnowledgeBaseBundleVersion + ownedAgentFiles
 ├── skills/default/                      # copies of skills/reltio-default — refreshed on skills bundle bump
 ├── velocity-packs/                      # mirror of packaged resources/velocity-packs — refreshed on pack bundle bump
-└── lca-knowledge-base/                  # mirror of resources/lca-knowledge-base — refreshed on LCA KB bundle bump
+├── lca-knowledge-base/                  # mirror of resources/lca-knowledge-base — refreshed on LCA KB bundle bump
+└── match-verification/                  # request.json (agent) / result.json (extension) — see Match verification bridge
+
+.claude/skills/reltio-<playbook>/        # discoverable skill copies, every editor (Claude Code reads only .claude/) — managed
+.claude/rules/reltio-skills.md           # missing-skill guide, Claude Code — managed
+.cursor/skills/reltio-<playbook>/        # second copy, Cursor only — managed
+.cursor/rules/reltio-skills.mdc          # missing-skill guide, Cursor only (alwaysApply) — managed
+.github/skills/reltio-<playbook>/        # second copy, VS Code only — managed
+.github/instructions/reltio-skills.instructions.md  # missing-skill guide, VS Code only (applyTo all files) — managed
 
 skills/workspace/                        # optional team overrides — never overwritten by extension sync
 ```
 
-Precedence: **`skills/workspace/`** overrides the same logical playbook under **`.reltio/reltio-agent/skills/default/`**. Thin Cursor stubs under **`.cursor/skills/reltio-*`** (contributor checkout) point at canonical `skills/reltio-default/` paths. Full diagram and rules: [`openspec/changes/skills-and-enablement-packs-library/design.md`](openspec/changes/skills-and-enablement-packs-library/design.md) (§D3b, **§D4b**); LCA: [`openspec/changes/lca-assistant/design.md`](openspec/changes/lca-assistant/design.md).
+Precedence: **`skills/workspace/`** overrides the same logical playbook under **`.reltio/reltio-agent/skills/default/`**, and the discoverable copy under `.claude/skills/` is built with that precedence already applied. The thin stubs under this repository's own **`.cursor/skills/reltio-*`** are for contributors and never ship. LCA: [`openspec/changes/lca-assistant/design.md`](openspec/changes/lca-assistant/design.md).
+
+### Agent skills in the user workspace
+
+OpenSpec: **`match-rule-generation-skill`** (D4–D6, D8). After the `.reltio/reltio-agent/` copy, `syncAgentSkills` installs each bundled skill at **`.claude/skills/<name>/`**, where `<name>` is its frontmatter `name`, plus a second copy in the running editor's own folder: `.cursor/skills/` in Cursor, `.github/skills/` in VS Code, none in other editors (`detectHost` reads `vscode.env.uriScheme` / `appName`; `HOST_LAYOUTS` maps editor to folders). Claude Code reads only `.claude/`, which Copilot and Cursor also read today; the editor's own copy keeps discovery working if an editor stops reading `.claude/`. Opening the workspace in another editor removes the previous editor's managed copies, and any folder that removal leaves empty (never one that still holds the user's files, such as `.github/workflows/`). Skills whose `name` (lowercase letters, digits, single hyphens, ≤ 64 characters) or `description` (≤ 1024 characters) agents would reject are not installed.
+
+A skill only loads when an agent judges it relevant, so it cannot report its own absence. Always-on **guides** do that, one for Claude Code plus one for the running editor: they list the installed skills and tell the agent to report a missing one, naming the resync command, instead of writing configuration from general knowledge. They are rewritten whenever their text differs.
+
+**Ownership.** Every written path is recorded in `ownedAgentFiles`. A desired path already occupied by something the extension did not create is a **conflict**: untouched and reported. Owned paths dropped from the bundle are deleted; `reltio.installAgentSkills: false` deletes exactly the owned set. Each owned path is appended to the workspace `.gitignore` individually — never `.claude/` or `.cursor/` as a whole. Each managed skill folder is **converged** on its resolved content every sync: only differing files are written and stray files removed, so an unchanged workspace is not rewritten and a hand-edited managed copy is put back.
+
+**Overrides.** `resolveSkills` applies the `skills/workspace/` precedence before installing. An override of a bundled playbook is laid over the default file by file (team files win; defaults it does not replace, such as `reference.md`, stay) and must keep the default's `name`. An override folder with no bundled counterpart is installed as a skill of its own. An override agents would reject is reported and **neither it nor the default is installed**, because serving the default would silently ignore the team. A watcher on `skills/workspace/**` re-runs the sync (500 ms debounce), so an edited override reaches agents without a reload.
+
+**Reporting.** `runAgentAssetSync` in `extension.ts` turns conflicts, rejected skills and sync exceptions into a warning with **Resync Agent Assets**, and re-runs the sync when `reltio.installAgentSkills` changes.
+
+### Match verification bridge
+
+OpenSpec: **`match-rule-generation-skill`** (D1–D3). Lets an agent test a candidate match rule against the tenant without holding the session. The agent writes `.reltio/reltio-agent/match-verification/request.json`:
+
+```json
+{ "requestId": "…", "configFile": "dev/T1/Business Config/BusinessConfig.json",
+  "matchGroups": [ … ], "pairs": [ { "label": "exact", "first": { … }, "second": { … } } ] }
+```
+
+`registerMatchVerificationBridge` watches that file (300 ms debounce, one retry on a partial write, requests handled one at a time) and writes `result.json` with the same `requestId`. **Identity is never taken from the request:** `configFile` is resolved inside the workspace, the extension rescans, and `EnvironmentManager.locFromPath` supplies environment and tenant, so the token can only reach its own environment. One `_verifyMatches` call per pair (≤ 10 pairs, ≤ 10 groups), stopping at the first failure; a 401 goes through `tryRefresh` and one retry.
+
+| `status` | Meaning | Reasons / kinds |
+|---|---|---|
+| `verified` | every pair ran; per pair an `outcome` and a verdict per candidate rule | outcomes `auto-merge`, `suspect`, `matched`, `no-shared-token`, `no-match` |
+| `not-verified` | live testing impossible; the agent may reason statically and must label it | `disabled`, `repository-mode`, `no-tenant`, `signed-out` |
+| `failed` | it ran and failed; the agent must not insert the rule | `invalid-request`, `api-error` (with `httpStatus`, `responseBody`), `untrusted-host`, `network` |
+
+`no-shared-token` means `matchedByDocuments` without `matched`: the rule logic holds but the records share no match token, so Reltio would never compare them. The "Reltio Match Verification" output channel logs each request and pair outcome, never the token. Full diagram and rules: [`openspec/changes/skills-and-enablement-packs-library/design.md`](openspec/changes/skills-and-enablement-packs-library/design.md) (§D3b, **§D4b**).
 
 ## Application Bootstrap
 
@@ -156,10 +195,10 @@ Precedence: **`skills/workspace/`** overrides the same logical playbook under **
 1. Instantiate `EnvironmentManager` (when a workspace folder exists), `TokenStore`, **`SessionStore`** (backed by `context.secrets` + `context.globalState`), `MultiTenantTreeProvider` (with `context.workspaceState` for history UI flags and compare-first URI), `UriIndex`, `ReltioDocumentLinkProvider`, `ReltioDefinitionProvider`, `ReltioReferenceProvider`, `DiagnosticsManager`, `OntologyPanelManager`
 2. Create `TreeView` for `reltioConfigTree` view container
 3. Register **`registerReltioAutoSave`** (`src/workspace/reltioAutoSave.ts`) — when enabled, saves dirty `*.reltio.json` on active-editor change and optionally when the window loses focus (`reltio.autoSaveOnEditorSwitch`, `reltio.autoSaveOnWindowBlur`)
-4. **Fire-and-forget** `syncReltioAgentAssets(context)` — materialize bundled skills + Velocity Packs + LCA knowledge base under `.reltio/reltio-agent/` per `resources/reltio-agent-assets.json` vs `.sync-state.json`
+4. **Fire-and-forget** `syncReltioAgentAssets(context)` (via `runAgentAssetSync`) — materialize bundled skills, Velocity Packs, and the LCA knowledge base under `.reltio/reltio-agent/` per `resources/reltio-agent-assets.json` vs `.sync-state.json`, then install the discoverable skill copies and guides; problems surface as a warning
 5. Register language providers (links, definition, references) scoped to `**/*.reltio.json`
 6. Register all commands (ontology, environment/tenant/L3 and configuration-history fetch, history compare, reveal, edit operations, **`reltio.resyncAgentAssets`**)
-7. Set up debounced document change listener (300ms) — on `*.reltio.json` change: invalidate multi-tenant tree when `L3.reltio.json` or files under `history/` change, rebuild URI index
+7. Set up debounced document change listener (300ms) — on `*.reltio.json` change: invalidate multi-tenant tree when `Business Config/BusinessConfig.json` or files under `history/` change, rebuild URI index
 8. Set up active editor change listener — rebuild URI index when a different `*.reltio.json` becomes active
 9. Initialize URI index from the current active editor if it matches `*.reltio.json`
 10. **Fire-and-forget** OAuth session restore — for each scanned environment, call `sessionStore.loadRefreshToken(env)`; if a refresh token and OAuth client credentials are present, call `refreshTokens()` silently and on success store the rotated session via `tokenStore.setSession()` (and persist the new refresh token); if credentials are missing, delete the stale refresh token; on refresh failure delete the stored refresh token so the user is prompted to log in on next API call
@@ -179,14 +218,14 @@ Precedence: **`skills/workspace/`** overrides the same logical playbook under **
 | Diagnostics | `DiagnosticsManager` | Squiggles on unresolved `configuration/...` references |
 | IntelliSense (URI values) | `ReltioUriCompletionProvider` | Suggests `configuration/...` definition URIs from **UriIndex** (scoped by property name via `uriPropertyScopes.ts`) plus **values already used for the same JSON property** elsewhere in the file; `"` and `/` triggers |
 
-**Manual QA (URI completion, release gate):** Open a tenant `L3.reltio.json`; trigger Ctrl+Space inside string values for (1) a **reference attribute** (`referencedEntityTypeURI`, `relationshipTypeURI`, `referencedAttributeURIs`), (2) a **relation endpoint** (`startObject` / `endObject`) if present, (3) a nested **`uri`** under an attribute or source; confirm schema-driven **property-name** completion still appears when editing keys; confirm suggestions prefer indexed URIs and same-property reuse over random tokens (`editor.wordBasedSuggestions` defaults off for `[reltio.json]`).
+**Manual QA (URI completion, release gate):** Open a tenant `Business Config/BusinessConfig.json`; trigger Ctrl+Space inside string values for (1) a **reference attribute** (`referencedEntityTypeURI`, `relationshipTypeURI`, `referencedAttributeURIs`), (2) a **relation endpoint** (`startObject` / `endObject`) if present, (3) a nested **`uri`** under an attribute or source; confirm schema-driven **property-name** completion still appears when editing keys; confirm suggestions prefer indexed URIs and same-property reuse over random tokens (`editor.wordBasedSuggestions` defaults off for `[reltio.json]`).
 
 **Commands** (registered in `package.json`):
 
 | Command | Trigger | Action |
 |---------|---------|--------|
 | `reltio.showOntologyPreview` | Editor title bar / context menu | Open ontology graph preview |
-| `reltio.revealInEditor` | Tree primary open / context menu | Open tenant `L3.reltio.json` if needed, navigate to JSON location |
+| `reltio.revealInEditor` | Tree primary open / context menu | Open tenant `Business Config/BusinessConfig.json` if needed, navigate to JSON location |
 | `reltio.showOntologyFromTree` | Configuration tree context menu | Open ontology preview for the tenant L3 document |
 | `reltio.revealInTreeView` | Ontology view context menu | Reveal entity in tree |
 | `reltio.addEntityType` | Tree / palette (`*.reltio.json`) | Insert **entity type skeleton** (`EntityType{n}`, `attributes: []`) — **no name wizard** |
@@ -206,23 +245,25 @@ Precedence: **`skills/workspace/`** overrides the same logical playbook under **
 | `reltio.loginWithBrowser` | Tree context (environment) | OAuth Authorization Code flow using stored client credentials. Before opening the browser, POSTs to `/oauth/ssoCheck` with the per-environment SSO routing tenant ID to confirm external IdP is configured; if the response is `native`, login is blocked with a guided error pointing at **Provide Token**. On `sso`, generates a fresh CSRF `state` (16 bytes hex), opens the browser to `/oauth/sso`, captures the callback on `http://localhost:8081` (HTML success page: Reltio logo inlined as a data URI, **Login Successful!**, no links — the server closes after its single response), verifies `state` matches, exchanges the code for tokens, and shows an in-editor success notification. Errors: `PORT_BUSY`, `TIMEOUT`, `EXCHANGE_FAILED`, `NO_IDP_CONFIGURED`, `STATE_MISMATCH`, `SSO_CHECK_FAILED`. |
 | `reltio.provideToken` / `reltio.useTokenFrom` | Tree context (environment) | Store or alias Bearer token in memory |
 | `reltio.applyDefaultEnvironments` | Command Palette | Scaffold `reltio.defaultEnvironments` (host/tenant folders) and load bearers from optional workspace-relative `tokenFile` paths into memory (same as Provide Token). Never reads inline secrets from settings. Optional Fetch L3 when `reltio.fetchL3AfterApplyDefaults` is true; never auto-PUT. |
-| `reltio.addTenant` | Tree context (authorized environment) | List tenants from API, create `*.reltio.tenant` directory |
+| `reltio.addTenant` | Tree context (authorized environment) | List tenants from API, create `*.reltio.tenant` directory and materialize the component tree |
+| `reltio.connectTenantToGit` (**Connect to Git**) | Tree context (tenant), hidden in git-source mode | Prompt for a remote (remembered per workspace), then pick a branch from the remote's existing branches (`git ls-remote --heads`, no clone needed) or create one as free text. Binds the tenant folder as the repository root: **clone** when the folder is empty, **adopt in place** when it already holds a configuration. A branch absent on the remote is offered for creation from the default branch (never `--orphan`, so promotion branches share history) with the inherited configuration dropped. Writes the identity marker and `.gitignore`. Warns modally when another repository encloses the tenant. |
+| `reltio.undoLayoutMigration` | Command Palette | Restore the legacy flat layout from `.reltio-ide-backup/` and clear the migration stamps |
 | `reltio.removeTenant` | Tree context (tenant with or without L3) | Delete tenant directory |
 | `reltio.copyTenantId` | Tree context (`reltio.tenant` / `reltio.tenant.l3`) | Copy tenant ID to the system clipboard |
-| `reltio.fetchL3` | Tree context (tenant with L3) | Download L3 JSON via API, write `L3.reltio.json` and remote baseline. If local L3 has diverged from `L3.remote-baseline.reltio.json` (unpublished local edits), warns before overwriting — **Review changes** / **Fetch anyway** / **Cancel**. **Review changes** opens a diff (remote vs local), then offers **Fetch and overwrite** (replace local with remote) / **Apply my changes instead** (`pushLocalToTenant` — PUT local to the tenant, no further prompts) / **Cancel** |
-| `reltio.applyL3Configuration` | Tree context (tenant with L3) | **PUT** local `L3.reltio.json` to tenant after GET-vs-baseline drift checks and confirmation/diff review (`putL3Configuration`); refreshes `L3.remote-baseline.reltio.json` from GET on success |
+| `reltio.fetchL3` | Tree context (tenant with L3) | Download L3 JSON via API, write `Business Config/BusinessConfig.json` and remote baseline. If local L3 has diverged from `.reltio-ide/BusinessConfig.baseline.json` (unpublished local edits), warns before overwriting — **Review changes** / **Fetch anyway** / **Cancel**. **Review changes** opens a diff (remote vs local), then offers **Fetch and overwrite** (replace local with remote) / **Apply my changes instead** (`pushLocalToTenant` — PUT local to the tenant, no further prompts) / **Cancel** |
+| `reltio.applyL3Configuration` | Tree context (tenant with L3) | **PUT** local `Business Config/BusinessConfig.json` to tenant after GET-vs-baseline drift checks and confirmation/diff review (`putL3Configuration`); refreshes `.reltio-ide/BusinessConfig.baseline.json` from GET on success |
 | `reltio.fetchConfigurationHistory` | Tree context (tenant with L3) | Clear `history/`, fetch first page (`max=10`), write snapshot files, expose History folder |
 | `reltio.fetchMoreConfigurationHistory` | Tree context (History folder) | Fetch next page (`offset` = snapshot file count) |
-| `reltio.historyCompareWithCurrent` | Tree context (any history snapshot) | `vscode.diff` snapshot vs tenant `L3.reltio.json` |
+| `reltio.historyCompareWithCurrent` | Tree context (any history snapshot) | `vscode.diff` snapshot vs tenant `Business Config/BusinessConfig.json` |
 | `reltio.historyCompareWithPrevious` | Tree context (`reltio.history.snapshot.hasOlder` only) | `vscode.diff` with **older** snapshot on the left and **selected** on the right; neighbor is the next-older file in `listLocalHistorySnapshots` order (newest first). Chronologically oldest snapshot uses `reltio.history.snapshot` so this menu entry is hidden; if there is no older neighbor on disk, an informational message is shown instead of opening a diff. |
 | `reltio.historySelectForCompare` / `reltio.historyCompareSelected` | Tree context (any history snapshot) | Store first URI in `workspaceState`, then open diff (same tenant only) |
 | `reltio.refreshEnvironment` | Tree context (environment) | Rescan workspace tree |
-| `reltio.resyncAgentAssets` | Command palette | Force re-copy of bundled skills + Velocity Packs + LCA knowledge base into `.reltio/reltio-agent/` |
+| `reltio.resyncAgentAssets` | Command palette | Force re-copy of bundled skills, Velocity Packs, and the LCA knowledge base into `.reltio/reltio-agent/`, and of the discoverable copies under `.claude/skills/` |
 | `reltio.launchSetupWizard` | Welcome view, view title bar, status bar, walkthrough, Command Palette | Multi-step QuickPick chain: host → sign-in method → auth sub-flow → first tenant → confirm. Persists results and opens L3 on finish. |
 | `reltio.openSetupGuide` | Welcome view, Command Palette | Opens the in-product Setup Guide webview (`resources/setupGuide.json`). Six steps: tenant connect → auth → pick tenant → model → apply, plus **Connect a Git repository instead**. Markdown twin: `docs/setup-guide-content.md`. The `reltio.gettingStarted` walkthrough mirrors those six steps (`featuredFor` includes `*.reltio.json`, `BusinessConfig.json`, `L3.json`). |
 | `reltio.signInEnvironment` | Inline tree icon on `E_NO_AUTH` env rows | Smart helper: QuickPick to choose browser-OAuth vs token, then runs the matching command. |
 | `reltio.signInToFirstEnvironment` | Walkthrough step 2, status bar (when `G_NEEDS_AUTH`) | Same as above but picks the first unauthed env automatically. |
-| `reltio.openL3` | Inline tree icon on tenants with L3, single-click on tenant row when `reltio.tenantSingleClickOpen` is true | Opens the tenant's `L3.reltio.json` in the editor. |
+| `reltio.openL3` | Inline tree icon on tenants with L3, single-click on tenant row when `reltio.tenantSingleClickOpen` is true | Opens the tenant's `Business Config/BusinessConfig.json` in the editor. |
 | `reltio.quickSwitchEnvironment` | Command Palette | QuickPick across configured envs; focuses the tree and opens L3 if exactly one tenant has it. |
 | `reltio.fetchConfigFromGit` | Welcome view ("Connect your Repository"), Command Palette | Detects an already-cloned repo (`.git` + remote) and skips to discovery, or prompts for a remote URL and clones it into the open (empty) folder via system `git`. Discovers `BusinessConfig.json` files (auto-select, quick-pick, or file-dialog fallback), calls `EnvironmentManager.setGitSources(...)`, registers a sentinel auth token, and flips `reltio.workspaceSource` to `'git'`. Guarded against concurrent invocation and against a workspace that already has a connected tenant. |
 | `reltio.removeGitSource` | Tree context (environment, git mode only) + view title | **"Remove Repository"** — deletes the workspace folder contents and clears all git sources, the sentinel token, and `reltio.workspaceSource`, returning to the welcome screen. State is cleared even if deletion partially fails. |
@@ -244,45 +285,148 @@ Create actions use the **context menu** only (`3_insert@*` groups — no `inline
 | `esbuild` | Dev dependency — bundles TypeScript into two runtime artifacts |
 | System `git` executable | Not an npm dependency — resolved at runtime from the `git.path` VS Code setting or `PATH` and shelled out to via `child_process.execFile` for the git-repository-source flow (detect/clone). Auth is delegated entirely to the system git installation and its credential helper; the extension has no OAuth code of its own for this. |
 
-**Network:** `reltioClient` calls Reltio HTTPS endpoints (`/reltio/status`, `/reltio/enhancedTenants?showAll=true`, `/reltio/api/{tenant}/configuration` **GET**/**PUT**, `/reltio/api/{tenant}/configuration/_history`) when the user validates an environment, lists tenants, fetches L3, **applies** local configuration to the tenant, or fetches configuration history. Every call resolves its base URL through `toHttpsBase()`, which rejects a host outside the `reltio.trustedHostSuffixes` allowlist (default `reltio.com`; `scope: application`, so only a User/Machine setting can extend it — never a workspace's own `.vscode/settings.json`) before attaching a bearer token — an environment folder named after an untrusted host (e.g. discovered from an untrusted workspace) cannot exfiltrate a token this way, and cannot extend its own trust boundary either. **`oauthLogin`** additionally calls `https://auth.reltio.com/oauth/sso` (browser redirect) and `https://auth.reltio.com/oauth/token` (code exchange + refresh-token rotation) using per-environment client credentials from `OAuthCredentialsStore`. Access tokens are never written to disk; refresh tokens and OAuth client secrets are stored in OS-keychain `SecretStorage` only. All other features operate on local workspace files.
+**Network:** `reltioClient` calls Reltio HTTPS endpoints (`/reltio/status`, `/reltio/enhancedTenants?showAll=true`, `/reltio/api/{tenant}/configuration` **GET**/**PUT**, `/reltio/api/{tenant}/configuration/_history`, `/reltio/api/{tenant}/entities/_verifyMatches` **POST**) when the user validates an environment, lists tenants, fetches L3, **applies** local configuration to the tenant, or fetches configuration history, and when an agent asks the match verification bridge to test a candidate rule (read-only; never creates, merges or changes entities). Every call resolves its base URL through `toHttpsBase()`, which rejects a host outside the `reltio.trustedHostSuffixes` allowlist (default `reltio.com`; `scope: application`, so only a User/Machine setting can extend it — never a workspace's own `.vscode/settings.json`) before attaching a bearer token — an environment folder named after an untrusted host (e.g. discovered from an untrusted workspace) cannot exfiltrate a token this way, and cannot extend its own trust boundary either. **`oauthLogin`** additionally calls `https://auth.reltio.com/oauth/sso` (browser redirect) and `https://auth.reltio.com/oauth/token` (code exchange + refresh-token rotation) using per-environment client credentials from `OAuthCredentialsStore`. Access tokens are never written to disk; refresh tokens and OAuth client secrets are stored in OS-keychain `SecretStorage` only. All other features operate on local workspace files.
 
 **Silent 401 refresh:** API calls that return 401 go through `tryRefresh(env)` in `extension.ts` — looks up the stored refresh token via `TokenStore.getRefreshToken`, loads OAuth client credentials from `OAuthCredentialsStore`, calls `refreshTokens()` from `oauthLogin.ts`, and on success rotates the session via `TokenStore.setSession` + `SessionStore.saveRefreshToken`. Concurrent 401s share a single in-flight refresh via `TokenStore.refreshInFlight` so only one network round-trip happens. If credentials are missing or refresh fails, the session and stored refresh token are cleared and the user sees "Session expired — log in again".
 
 **Browser OAuth setup:** See `docs/browser-oauth-login.md`.
 
-### Tenant folder files (`*.reltio.tenant/`)
+### Tenant folder files (`{tenantId}/`)
 
-- **`L3.reltio.json`** — active tenant metadata being edited.
-- **`L3.remote-baseline.reltio.json`** — copy of the remote configuration **as of the last successful Fetch Configuration**; used with **Apply Configuration to Tenant** to detect server-side drift before **PUT**. Written beside `L3.reltio.json` (not under `history/`, which can be cleared when fetching API history).
+The tenant folder is the **git repository root** once bound to a remote. Everything git tracks lives in the component tree; everything the IDE maintains for itself lives in the gitignored `.reltio-ide/`. That split is what lets two tenants clone one repository on different branches and diff cleanly.
 
-## Configuration history (`history/`)
+```text
+{tenantId}/                        <- git root (.git, .gitignore)
+├── .reltio-config-source.json     (gitignored) environment host + tenant id
+├── .reltio-ide/                   (gitignored) IDE working state
+│   ├── BusinessConfig.baseline.json
+│   ├── BusinessConfig.layout.json
+│   └── history/
+├── Business Config/
+│   └── BusinessConfig.json        <- tracked: the tenant metadata
+├── RDM/README.md
+└── Workflows/
+    ├── BPMN/README.md
+    └── Custom Workflows/README.md
+```
 
-- **Directory:** `{environment}.reltio.environment/{tenantId}.reltio.tenant/history/`
+- **`Business Config/BusinessConfig.json`** — active tenant metadata being edited. The only component the IDE currently fetches or applies.
+- **`.reltio-ide/BusinessConfig.baseline.json`** — copy of the remote configuration **as of the last successful Fetch Configuration**; used with **Apply Configuration to Tenant** to detect server-side drift before **PUT**. Kept out of the tracked tree so a drift baseline never shows up in a pull request.
+- **The other three component folders** (`RDM`, `Workflows/BPMN`, `Workflows/Custom Workflows`) are structural placeholders for components the IDE does not yet manage. Each carries a generated `README.md` naming the expected files and linking to `docs.reltio.com`, because git does not track empty directories. An existing `README.md` is never overwritten.
+- **Retired folders.** Earlier builds materialized fourteen more components (`Data Validation Functions`, `Metadata Permissions`, `User Management/*`, `Data Loader`, `Reltio Integration Hub`, `LifeCycle Actions`, `DTSS`, `Connectors`, `User Interface`, `Custom Code/*`, `Physical Configuration`). They are listed in **`RETIRED_COMPONENT_FOLDERS`** and removed during the activation migration, but only when a folder holds nothing except a README this extension generated, matched on content. One user file, or a README the user rewrote, keeps the folder.
+- The tree definition, the documentation URL map, and `materializeTenantTree` live in **`src/workspace/tenantFolderStructure.ts`**, which is the single place any of these paths are named.
+
+## Configuration history (`.reltio-ide/history/`)
+
+- **Directory:** `{environment}/{tenantId}/.reltio-ide/history/`
 - **Files:** `L3-<sanitizedUpdatedBy>---<timestamp>.reltio.json` — each file contains **only** the `configuration` object from the API row, pretty-printed with tabs (see `writeHistorySnapshot` in `src/workspace/configurationHistory.ts`).
 - **First fetch:** clears all files in `history/`, then requests `offset=0`, `max=10`, writes one file per row. **Fetch more:** does not clear; uses `offset` = number of valid snapshot files already on disk.
 - **Tree visibility:** History appears when there are snapshot files **or** when `workspaceState` contains `reltio.history.exposed::<environment>::<tenant>` (set after a successful first fetch so an empty API page still shows the folder). Snapshot nodes use `reltio.history.snapshot` for the chronologically oldest file on disk and `reltio.history.snapshot.hasOlder` when a strictly older snapshot exists in the same folder (drives **Compare with previous** in the context menu). Two-snapshot compare stores the first URI under `reltio.history.compareA.v1` until **Compare selected** runs.
 
 ### Manual verification (configuration history)
 
-Use a workspace with a tenant that has `L3.reltio.json` and a valid token: run **Fetch configuration history**, confirm `history/` files and tree nodes; reload the window and confirm History still lists disk snapshots; run **Fetch more** and confirm additional files; open a snapshot; **Compare with current**; **Compare with previous snapshot** on a non-oldest row (diff vs immediate older neighbor) and confirm the oldest row has no **Compare with previous** menu entry and shows the informational message if the command is run anyway; **Select for compare** then **Compare selected** on another snapshot of the same tenant; provoke **401** (bad token) and confirm the token is cleared and the user is prompted like other API flows.
+Use a workspace with a tenant that has `Business Config/BusinessConfig.json` and a valid token: run **Fetch configuration history**, confirm `history/` files and tree nodes; reload the window and confirm History still lists disk snapshots; run **Fetch more** and confirm additional files; open a snapshot; **Compare with current**; **Compare with previous snapshot** on a non-oldest row (diff vs immediate older neighbor) and confirm the oldest row has no **Compare with previous** menu entry and shows the informational message if the command is run anyway; **Select for compare** then **Compare selected** on another snapshot of the same tenant; provoke **401** (bad token) and confirm the token is cleared and the user is prompted like other API flows.
 
 ### Manual verification (fetch configuration overwrite guard)
 
-With a tenant that already has `L3.reltio.json` and a valid token: run **Fetch Configuration** once to establish a baseline, then edit `L3.reltio.json` locally (e.g. add an entity type) and run **Fetch Configuration** again — confirm a modal warning appears with **Review changes** / **Fetch anyway** / **Cancel**; **Cancel** must leave the local file untouched; **Fetch anyway** must overwrite immediately. **Review changes** must open a diff (remote vs local) and then show a second, non-modal prompt with **Fetch and overwrite** / **Apply my changes instead** / **Cancel**: **Cancel** (or dismissing it) must leave both the local file and the tenant untouched; **Fetch and overwrite** must replace the local file with the remote (left) version, same as **Fetch anyway**; **Apply my changes instead** must PUT the local file to the tenant with no further confirmation dialogs, refresh `L3.remote-baseline.reltio.json` on success, and leave the local file itself unchanged. Run **Fetch Configuration** again with no local edits since the last fetch and confirm it proceeds silently (no prompt). Delete `L3.remote-baseline.reltio.json` and run **Fetch Configuration** on a tenant with local edits — confirm the prompt still appears (missing baseline is treated as unverified, not safe).
+With a tenant that already has `Business Config/BusinessConfig.json` and a valid token: run **Fetch Configuration** once to establish a baseline, then edit `Business Config/BusinessConfig.json` locally (e.g. add an entity type) and run **Fetch Configuration** again — confirm a modal warning appears with **Review changes** / **Fetch anyway** / **Cancel**; **Cancel** must leave the local file untouched; **Fetch anyway** must overwrite immediately. **Review changes** must open a diff (remote vs local) and then show a second, non-modal prompt with **Fetch and overwrite** / **Apply my changes instead** / **Cancel**: **Cancel** (or dismissing it) must leave both the local file and the tenant untouched; **Fetch and overwrite** must replace the local file with the remote (left) version, same as **Fetch anyway**; **Apply my changes instead** must PUT the local file to the tenant with no further confirmation dialogs, refresh `.reltio-ide/BusinessConfig.baseline.json` on success, and leave the local file itself unchanged. Run **Fetch Configuration** again with no local edits since the last fetch and confirm it proceeds silently (no prompt). Delete `.reltio-ide/BusinessConfig.baseline.json` and run **Fetch Configuration** on a tenant with local edits — confirm the prompt still appears (missing baseline is treated as unverified, not safe).
 
 ### Manual verification (apply configuration)
 
-With a valid token: run **Fetch Configuration** and confirm `L3.remote-baseline.reltio.json` appears next to `L3.reltio.json`. Edit `L3.reltio.json` locally; run **Apply Configuration to Tenant** — when remote matches baseline, confirm **Yes** / **View changes** / **Cancel** and that **View changes** opens a diff (temp remote vs local). Optionally change the tenant on the server elsewhere, fetch in another session or skip fetch to simulate drift — **Apply** must require **Review changes** vs **Skip**. After a successful apply, confirm baseline refreshes (or run **Fetch Configuration** if the refresh warning appeared). Provoke **401** on apply and confirm token clearing matches other API flows. If **PUT** fails with **400**, confirm the error notification includes the API response body when present.
+With a valid token: run **Fetch Configuration** and confirm `.reltio-ide/BusinessConfig.baseline.json` appears next to `Business Config/BusinessConfig.json`. Edit `Business Config/BusinessConfig.json` locally; run **Apply Configuration to Tenant** — when remote matches baseline, confirm **Yes** / **View changes** / **Cancel** and that **View changes** opens a diff (temp remote vs local). Optionally change the tenant on the server elsewhere, fetch in another session or skip fetch to simulate drift — **Apply** must require **Review changes** vs **Skip**. After a successful apply, confirm baseline refreshes (or run **Fetch Configuration** if the refresh warning appeared). Provoke **401** on apply and confirm token clearing matches other API flows. If **PUT** fails with **400**, confirm the error notification includes the API response body when present.
+
+## Folder naming and identity
+
+Folder names carry no identity. `dev.reltio.com.reltio.environment/GrmSwAZFRAeVy1K.reltio.tenant/`
+is now `dev/GrmSwAZFRAeVy1K/`. What the extension needs lives in two gitignored markers:
+
+| Marker | Location | Holds |
+|---|---|---|
+| `.reltio-environment.json` | environment folder | the full host, e.g. `dev.reltio.com` |
+| `.reltio-config-source.json` | tenant folder | environment host + tenant id |
+
+**The host stays the environment's identity everywhere in code.** Only the directory name is
+shortened to the first DNS label, because every API call needs the host. Where two hosts want the
+same label (`dev.reltio.com` and `dev.uk.reltio.com`), the first keeps it and the second falls
+back to its full host. Tenant folders are the bare tenant id: unique and stable by definition, and
+unaffected by a tenant rename in Reltio.
+
+The environment marker sits *above* any tenant git root, so it is never committed. The tenant
+marker is inside the repository and therefore gitignored, and it is written at **tenant creation**
+rather than at git-bind time: with the suffixes gone it is the only thing identifying the folder.
+
+Two consequences for the code:
+
+- **Discovery is marker-based** (`collectEnvironmentDirs`, `scanTenants`), and still accepts
+  legacy `*.reltio.environment` / `*.reltio.tenant` folders so an un-renamed workspace works.
+- **Paths can no longer be parsed back into an identity.** `EnvironmentManager` keeps two maps
+  rebuilt on every scan: `tenantLocations` ((env, tenant) -> actual directory, because a legacy
+  folder is not named after its id) and `tenantPathIndex` (the reverse, so `getParent` and
+  first-open tracking stay synchronous). `locFromPath` is the public lookup.
+
+## A Git repository above the tenant folders
+
+Each tenant folder is meant to be its own repository. One rooted above them breaks the layout in
+one of two ways, both observed:
+
+| Situation | What happens |
+|---|---|
+| Tenants not bound | The outer repository tracks `{env}/{tenantId}/Business Config/BusinessConfig.json`, putting environment and tenant back into every path. Branches can no longer be compared, which is the whole point of the layout. |
+| A tenant bound | The outer repository stores the tenant as a **gitlink** (mode `160000`): a commit pointer whose files it does not hold. Cloning it yields an empty tenant folder. |
+
+The extension **cannot prevent this**. `git init` and Source Control's **Initialize Repository**
+belong to the built-in git extension, and an extension cannot intercept another extension's
+command. So the handling is to make it harmless and to report it:
+
+- **`ensureWorkspaceGitignored`** writes a workspace-root `.gitignore` covering `.reltio/`,
+  `.reltio-ide/`, `.reltio-ide-backup/` and both marker filenames. Without it an outer repository
+  commits the synced Velocity Packs (megabytes) and the environment marker, which sits above the
+  tenant and so escapes the tenant's own ignore file.
+- Environment folders are **deliberately not ignored**. One repository for the whole workspace is
+  a legitimate choice; it just should not happen by accident.
+- **`findEnclosingGitRepository`** (`gitConfigSource.ts`) walks up to the filesystem root and
+  reports the nearest repository, including one at the start directory itself.
+- Activation warns once per workspace (dismissal in `workspaceState`), offering **Ignore Tenant
+  Folders** (adds each environment folder to the outer `.gitignore`), **Show Details** (a
+  generated markdown explainer) and **Don't Show Again**.
+- **Connect to Git** warns modally before creating a repository inside another one.
+
+## Legacy layout migration
+
+Workspaces created before the `git-ready-tenant-folder-structure` change hold a flat tenant folder. On activation, in **tenant mode only** and off the critical path, `layoutMigration.ts` moves each such tenant onto the component tree without prompting, so a team never ends up running two layouts side by side.
+
+| From (tenant root) | To (tenant root) |
+|---|---|
+| `L3.reltio.json` | `Business Config/BusinessConfig.json` |
+| `{host}.reltio.environment/` | `{short label}/` (e.g. `dev.reltio.com` -> `dev`) |
+| `{tenantId}.reltio.tenant/` | `{tenantId}/` |
+| `L3.remote-baseline.reltio.json` | `.reltio-ide/BusinessConfig.baseline.json` |
+| `L3.reltio.layout.json` | `.reltio-ide/BusinessConfig.layout.json` |
+| `history/` | `.reltio-ide/history/` |
+
+Because it is unprompted, the safety is in the procedure:
+
+- **Backup first**, to `.reltio-ide-backup/{env}/{tenant}/` at the workspace root (outside the tenant folder so a later commit cannot capture it, inside the workspace so the user can find it). Added to the workspace-root `.gitignore` and retained after success.
+- **Stamp on full success only** (`reltio.layoutMigrated::{env}::{tenant}` in `workspaceState`), so an interrupted run is retried on the next activation rather than left half-done and marked complete.
+- **Refuses a dirty worktree.** Moving tracked files under uncommitted work would bury it in a large rename diff. The tenant is skipped, reported, and retried once the worktree is clean.
+- **Reports afterwards** with one non-blocking notification per workspace and a **Show details** action listing every move.
+- **`reltio.undoLayoutMigration`** restores from the backup and clears the stamps.
+
+Files are moved, not copied, so content is preserved byte-for-byte and no stale duplicate is left behind.
+
+### Manual verification (layout migration)
+
+Open a pre-upgrade workspace with two legacy tenants: confirm both migrate automatically, the summary notification appears, **Show details** lists each move, and the backup exists at `.reltio-ide-backup/`. Reload the window and confirm nothing re-migrates. Dirty the worktree of a legacy tenant that is a git repository, reload, and confirm it is skipped with a message and migrates on the next activation once clean. Run **Undo Layout Migration** and confirm the legacy layout is restored and the tenants are reconsidered on the next activation.
 
 ## Data Architecture
 
-Beyond the file system, the extension keeps **tokens only in memory** (`TokenStore`). It reads `*.reltio.json` files (including `L3.reltio.json` under tenant folders), maintains `UriIndex`, and writes layout sidecars (`*.reltio.layout.json`).
+Beyond the file system, the extension keeps **tokens only in memory** (`TokenStore`). It reads `*.reltio.json` files (including `Business Config/BusinessConfig.json` under tenant folders), maintains `UriIndex`, and writes the ontology layout sidecar to `.reltio-ide/BusinessConfig.layout.json` inside the tenant folder (a git-sourced repository that carries the component tree gets the same treatment; one with an arbitrary layout keeps its sidecar beside the config, as before).
 
 **In-memory / workspace data flow:**
 
 ```
-.reltio/{env}.reltio.environment/{tenant}.reltio.tenant/L3.reltio.json
-(or legacy {env}.reltio.environment/… at workspace root)
+{env}/{tenant}/Business Config/BusinessConfig.json
+(environment dirs live at the workspace root; legacy ones under .reltio/ are still scanned)
     ↓ parseDocument()
 ReltioBusinessModel + AST
     ↓                          ↓
@@ -308,6 +452,8 @@ buildGraphModel() … → Webview SVG (same as before)
 | `reltio.defaultEnvironments` | `array` of `{ host, tenantId, tokenFile? }` | `[]` | Seed environments/tenants from settings. `tokenFile` is a **workspace-relative path** to a local JSON file with `access_token` — never embed tokens or OAuth secrets in settings. Absolute/escaping paths and unsafe host/tenant path segments are rejected. Conflicting `tokenFile`s for the same host are rejected. Unique `tokenFile` paths are loaded once at activation (and on file change / 401), independent of apply-on-activate. |
 | `reltio.applyDefaultsOnActivate` | `boolean` | `false` | Scaffold folders (and optionally fetch L3) from `defaultEnvironments` once on activation when a folder is open and the workspace is trusted. Token load from `tokenFile` still happens at startup when settings list a path. |
 | `reltio.fetchL3AfterApplyDefaults` | `boolean` | `false` | After apply defaults, fetch L3 when a token is loaded. Does not PUT/apply config to the tenant. |
+| `reltio.installAgentSkills` | `boolean` | `true` | Install the bundled skills at `.claude/skills/reltio-*` plus the editor's own folder (`.cursor/skills` or `.github/skills`), with the matching missing-skill guides; `false` removes exactly the files the extension created. Applied on change. |
+| `reltio.enableMatchVerification` | `boolean` | `true` | Answer agents' match-verification requests through `_verifyMatches` with the signed-in session. `false` answers every request `not-verified` / `disabled` without calling the tenant. |
 
 **Build configuration:**
 
@@ -465,7 +611,7 @@ npm test    # compile + scripts/run-unit-tests.cjs (code-model first)
 
 - `scripts/run-unit-tests.cjs` — explicit registry; `test-code-model-and-schema.cjs` first, then alphabetical
 - `scripts/test-<openspec-change-slug>.cjs` — one per shippable OpenSpec change (umbrella `reltio-metadata-editor` uses child scripts)
-- `scripts/lib/` — shared helpers (`import-dist`, `load-canonical-fixture`, `walk-configuration-uris`, `assert-navigation`, `assert-tree-walk`, `assert-completion-scopes`, `vscode-stub`, `validate-velocity-packs`)
+- `scripts/lib/` — shared helpers (`import-dist`, `load-canonical-fixture`, `walk-configuration-uris`, `assert-navigation`, `assert-tree-walk`, `assert-completion-scopes`, `vscode-stub`, `memory-fs` (in-memory `workspace.fs` for folder, gitignore and sync code), `validate-velocity-packs`)
 - `samples/code-model-manifest.json` — sole committed expectations file for parse/structure counts
 
 **Rule for every new OpenSpec change** that adds or modifies runtime behavior:

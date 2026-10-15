@@ -1,0 +1,293 @@
+import * as vscode from 'vscode';
+
+/**
+ * The Git-ready component tree that every tenant folder carries.
+ *
+ * The tenant folder is the git repository root, so every path here is relative to it and
+ * contains no environment host or tenant ID. Two tenants cloned from one remote on different
+ * branches therefore produce byte-identical tracked paths and can be diffed and merged.
+ *
+ * Git does not track empty directories, so each unmanaged leaf gets a generated `README.md`.
+ */
+
+/** Folder holding the tenant metadata the IDE fetches and applies. */
+export const BUSINESS_CONFIG_DIR = 'Business Config';
+
+/** Tenant metadata being edited. Replaces the legacy `L3.reltio.json`. */
+export const BUSINESS_CONFIG_FILE = `${BUSINESS_CONFIG_DIR}/BusinessConfig.json`;
+
+/** Hidden, gitignored home for IDE working state. Never part of the tracked tree. */
+export const IDE_STATE_DIR = '.reltio-ide';
+
+/** Remote snapshot at the last successful fetch; drives drift detection before a PUT. */
+export const BASELINE_FILE = `${IDE_STATE_DIR}/BusinessConfig.baseline.json`;
+
+/** Ontology node positions. */
+export const LAYOUT_FILE = `${IDE_STATE_DIR}/BusinessConfig.layout.json`;
+
+/** Configuration history snapshots. */
+export const HISTORY_DIR = `${IDE_STATE_DIR}/history`;
+
+/** Workspace-root folder holding pre-migration backups. Gitignored at the workspace root. */
+export const MIGRATION_BACKUP_DIR = '.reltio-ide-backup';
+
+/**
+ * Flat-layout names from before the component tree.
+ *
+ * These are the only place these strings appear. Migration uses them to find what to move, and
+ * `isTenantConfigPath` uses them so a tenant that migration deliberately skipped (dirty worktree)
+ * still behaves correctly until it is migrated.
+ */
+export const LEGACY_CONFIG_FILENAME = 'L3.reltio.json';
+export const LEGACY_BASELINE_FILENAME = 'L3.remote-baseline.reltio.json';
+export const LEGACY_LAYOUT_FILENAME = 'L3.reltio.layout.json';
+export const LEGACY_HISTORY_DIRNAME = 'history';
+
+/**
+ * True when a path points at a tenant's configuration file, in either layout.
+ *
+ * Accepts the legacy name because a tenant skipped by migration keeps it until the next
+ * activation, and such a tenant must still be navigable and tracked as opened.
+ */
+export function isTenantConfigPath(fsPath: string): boolean {
+	const normalized = fsPath.replace(/\\/g, '/');
+	return (
+		normalized.endsWith(`/${BUSINESS_CONFIG_FILE}`) ||
+		normalized.endsWith(`/${LEGACY_CONFIG_FILENAME}`)
+	);
+}
+
+export interface ComponentFolder {
+	/** Path relative to the tenant folder root, `/`-separated. */
+	path: string;
+	/** Heading for the generated README. */
+	title: string;
+	/** One sentence on what the component is. */
+	description: string;
+	/** Files expected to live here, for the README. */
+	expectedFiles: string[];
+	/** Documentation page on docs.reltio.com. */
+	docsUrl: string;
+	/**
+	 * True when the IDE fetches or applies content here. Managed folders get no README,
+	 * because they hold a real file that keeps the directory alive in git.
+	 */
+	managed: boolean;
+}
+
+/**
+ * Leaf folders of the component tree, in the order they appear in the tenant folder.
+ *
+ * Parent folders (`Workflows`, `User Management`, `Custom Code`) are implied by these paths
+ * and created automatically; they hold no files of their own and get no README.
+ */
+export const COMPONENT_FOLDERS: readonly ComponentFolder[] = [
+	{
+		path: BUSINESS_CONFIG_DIR,
+		title: 'Business Config',
+		description: 'Tenant metadata (the L3 configuration): entity types, relation types, attributes, match rules and survivorship.',
+		expectedFiles: ['BusinessConfig.json'],
+		docsUrl: 'https://docs.reltio.com/en/reltio/what-reltio-does-at-a-glance/data-unification-and-mdm-at-a-glance/data-unification-and-mdm-in-detail/reltio-information-model/data-model/tenant-configuration-inheritance-across-layers/reltio-l3-layer----customer-tenant',
+		managed: true,
+	},
+	{
+		path: 'RDM',
+		title: 'RDM',
+		description: 'Reference Data Management: lookup types, lookup values, source systems and transcoding.',
+		expectedFiles: ['config.json', 'LookupMappings.json'],
+		docsUrl: 'https://docs.reltio.com/en/applications/rdm/rdm-at-a-glance',
+		managed: false,
+	},
+	{
+		path: 'Workflows/BPMN',
+		title: 'BPMN',
+		description: 'Business Process Modeling Notation process definitions used by the Workflow Modeler.',
+		expectedFiles: ['*.bpmn20.xml'],
+		docsUrl: 'https://docs.reltio.com/en/applications/console/configuration-applications/workflow-modeler-at-a-glance',
+		managed: false,
+	},
+	{
+		path: 'Workflows/Custom Workflows',
+		title: 'Custom Workflows',
+		description: 'Custom workflow definitions that extend the out-of-the-box processes such as Data Change Requests.',
+		expectedFiles: ['One folder or definition file per custom workflow'],
+		docsUrl: 'https://docs.reltio.com/en/objectives/manage-workflow-tasks/workflow-management-at-a-glance/workflow-management-set-up/overview-of-workflow-customizations/overview-of-workflow-configuration/configure-custom-workflows',
+		managed: false,
+	},
+] as const;
+
+/**
+ * Component folders this extension used to materialize and no longer does.
+ *
+ * The tree was cut back to the components teams actually version today. These paths are kept
+ * only so a tenant created by an earlier build can have the leftovers cleaned up, and only when
+ * they hold nothing but our own generated README.
+ */
+export const RETIRED_COMPONENT_FOLDERS: readonly string[] = [
+	'Data Validation Functions',
+	'Metadata Permissions',
+	'User Management/Users',
+	'User Management/Roles',
+	'User Management/Groups',
+	'Data Loader',
+	'Reltio Integration Hub',
+	'LifeCycle Actions',
+	'DTSS',
+	'Connectors',
+	'User Interface',
+	'Custom Code/Custom Cleansers',
+	'Custom Code/Utilities',
+	'Physical Configuration',
+];
+
+/** Leaf folders the IDE does not yet fetch or apply. These are the ones that get a README. */
+export function unmanagedFolders(): ComponentFolder[] {
+	return COMPONENT_FOLDERS.filter(f => !f.managed);
+}
+
+/**
+ * Every directory the tree implies, parents first, `/`-separated and relative to the tenant folder.
+ *
+ * This is a superset of `COMPONENT_FOLDERS`: the three container folders (`Workflows`,
+ * `User Management`, `Custom Code`) appear here but are not components in their own right.
+ */
+export function allTreeDirectories(): string[] {
+	const seen = new Set<string>();
+	const out: string[] = [];
+	for (const folder of COMPONENT_FOLDERS) {
+		const segments = folder.path.split('/');
+		for (let i = 1; i <= segments.length; i++) {
+			const prefix = segments.slice(0, i).join('/');
+			if (seen.has(prefix)) continue;
+			seen.add(prefix);
+			out.push(prefix);
+		}
+	}
+	return out;
+}
+
+function joinRelative(root: vscode.Uri, relativePath: string): vscode.Uri {
+	return vscode.Uri.joinPath(root, ...relativePath.split('/'));
+}
+
+/** Absolute URI of a path inside a tenant folder, e.g. `BUSINESS_CONFIG_FILE`. */
+export function tenantPath(tenantRoot: vscode.Uri, relativePath: string): vscode.Uri {
+	return joinRelative(tenantRoot, relativePath);
+}
+
+async function exists(uri: vscode.Uri): Promise<boolean> {
+	try {
+		await vscode.workspace.fs.stat(uri);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** The README written into an unmanaged component folder. */
+export function renderReadme(folder: ComponentFolder): string {
+	const files = folder.expectedFiles.map(f => `- \`${f}\``).join('\n');
+	return `# ${folder.title}
+
+${folder.description}
+
+## Expected files
+
+${files}
+
+## Documentation
+
+${folder.docsUrl}
+
+---
+
+This component is not yet managed by Reltio IDE. Files placed here are **not** fetched from or
+applied to the tenant; they are version-controlled alongside the configuration so the repository
+describes the whole tenant. This file exists because Git does not track empty directories.
+`;
+}
+
+/**
+ * Creates every missing directory of the component tree and writes a `README.md` into each
+ * unmanaged leaf that does not already have one.
+ *
+ * Non-destructive by contract: existing directories and existing files are left untouched, so
+ * this is safe to call on an already-populated tenant folder (after a clone, or on re-activation).
+ */
+export async function materializeTenantTree(tenantRoot: vscode.Uri): Promise<void> {
+	for (const dir of allTreeDirectories()) {
+		await vscode.workspace.fs.createDirectory(joinRelative(tenantRoot, dir));
+	}
+
+	const enc = new TextEncoder();
+	for (const folder of unmanagedFolders()) {
+		const readmeUri = joinRelative(tenantRoot, `${folder.path}/README.md`);
+		if (await exists(readmeUri)) continue;
+		await vscode.workspace.fs.writeFile(readmeUri, enc.encode(renderReadme(folder)));
+	}
+}
+
+/**
+ * Removes component folders an earlier build created that are no longer part of the tree.
+ *
+ * Strictly conservative: a folder goes only when everything under it is a README this extension
+ * generated. Anything else, even one file a user dropped in, means the folder stays. Returns the
+ * paths actually removed so the caller can report them.
+ */
+export async function pruneRetiredComponentFolders(tenantRoot: vscode.Uri): Promise<string[]> {
+	const removed: string[] = [];
+	// Deepest first, so `Custom Code` is considered only once its children are gone.
+	const ordered = [...RETIRED_COMPONENT_FOLDERS].sort(
+		(a, b) => b.split('/').length - a.split('/').length,
+	);
+	const containers = new Set(
+		RETIRED_COMPONENT_FOLDERS.filter(p => p.includes('/')).map(p => p.split('/')[0]),
+	);
+
+	for (const relative of [...ordered, ...containers]) {
+		const dir = joinRelative(tenantRoot, relative);
+		if (!(await exists(dir))) continue;
+		if (!(await holdsOnlyGeneratedReadmes(dir))) continue;
+		await vscode.workspace.fs.delete(dir, { recursive: true, useTrash: false });
+		removed.push(relative);
+	}
+	return removed;
+}
+
+/** True when every file beneath `dir` is a README this extension wrote. Empty counts as true. */
+async function holdsOnlyGeneratedReadmes(dir: vscode.Uri): Promise<boolean> {
+	let entries: [string, vscode.FileType][];
+	try {
+		entries = await vscode.workspace.fs.readDirectory(dir);
+	} catch {
+		return false;
+	}
+	for (const [name, type] of entries) {
+		if (type === vscode.FileType.Directory) {
+			if (!(await holdsOnlyGeneratedReadmes(vscode.Uri.joinPath(dir, name)))) return false;
+			continue;
+		}
+		if (name !== 'README.md') return false;
+		// Match on the sentence every generated README carries, so a README the user rewrote is
+		// treated as their content and protects the folder.
+		try {
+			const body = new TextDecoder().decode(
+				await vscode.workspace.fs.readFile(vscode.Uri.joinPath(dir, name)),
+			);
+			if (!body.includes('not yet managed by Reltio IDE')) return false;
+		} catch {
+			return false;
+		}
+	}
+	return true;
+}
+
+/**
+ * True when a folder already carries the component tree.
+ *
+ * Presence of `Business Config/` is the marker: it is the one folder the IDE writes into, so a
+ * repository that has it was either created by this extension or deliberately laid out to match.
+ */
+export async function isComponentTree(root: vscode.Uri): Promise<boolean> {
+	return exists(joinRelative(root, BUSINESS_CONFIG_DIR));
+}
