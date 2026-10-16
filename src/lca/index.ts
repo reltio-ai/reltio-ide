@@ -13,6 +13,7 @@ export {
 } from './present';
 export { selectCloud, cloudRegistration, connectivityRequired, CONNECTIVITY_DOCS, LOG_LOCATIONS } from './cloud';
 export { assessTenantConnection, discoverTenantL3, isComponentConfigPath, isTenantL3Path, locationFromComponentConfig, locationFromTenantIdentity, locationsFromGitMarker, TENANT_CONNECTION_MESSAGE } from './tenantGate';
+export { LCA_DIR, lcaProjectDirectory, lcaProjectSlug, tenantRootFromConfig } from './projectPath';
 export { resolveObjectType, resolveAttributes, listObjectTypes } from './l3Lookup';
 export { proposeLifecycleChange, applyLifecycleProposal } from './lifecycleConfig';
 export {
@@ -24,6 +25,7 @@ export {
 	markImplementationGenerated,
 	markDeploymentPending,
 	markDeployed,
+	noteDeploySuccess,
 	markConnectivityConfirmed,
 	beginCodeChange,
 	markTenantConfigPending,

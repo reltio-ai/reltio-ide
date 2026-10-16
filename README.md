@@ -53,7 +53,7 @@ Reltio IDE supports the people who design and maintain tenant configuration acro
 | **Git repository connectivity** | Connect to your Git repository and fetch the hosted business configuration files. |
 | **Intelligent navigation** | Browse the complete business configuration and navigate among entity, relation, interaction, hierarchy, and other object types. |
 | **AI-assisted authoring** | Create different object types through guided actions or natural-language prompts. |
-| **LCA agent** | Ask about Life Cycle Actions, or generate Java LCA code from your connected configuration. It confirms the type and attributes before writing code, and waits again before deploy or an L3 change. |
+| **LCA agent** | Ask about Life Cycle Actions, or generate Java LCA code from your connected configuration. When the type, hook, and attributes already match, it writes one Maven project at `<tenant>/LifeCycle Actions/<type>-<hook>-<name>-lca/` and asks only whether to deploy. After a successful deploy it updates `lifecycleActions`. |
 | **Code completion and validation** | Get context-aware suggestions and real-time validation as you edit metadata, so issues surface before deployment, not after. |
 | **Automatic dependency management** | Adding a reference attribute automatically creates the relation type it depends on — no separate setup step. |
 | **Ontology visualization** | Visualize your full business configuration as an interactive diagram of entity types and their relationships. |
@@ -280,7 +280,7 @@ Reltio IDE supports two ways to create configuration objects such as entity type
 
 ## Ask the LCA agent
 
-The LCA agent answers questions about Reltio Life Cycle Actions and can generate Java LCA code from your connected configuration. Use it in Cursor. It confirms the type and attributes before writing code, and waits again before deploy or a change to `lifecycleActions`.
+The LCA agent answers questions about Reltio Life Cycle Actions and can generate Java LCA code from your connected configuration. Use it in Cursor. When the type, hook, and attributes already match that configuration, it writes one Maven project at `<tenant>/LifeCycle Actions/<type>-<hook>-<name>-lca/` and asks only whether to deploy. After a successful deploy it updates `lifecycleActions`. A name that is missing or not an exact match stops the turn.
 
 1. Open a folder. Connect a tenant or a Git repository when the question is about your own types or attributes.
 2. In Cursor's agent, ask it to follow the Reltio LCA assistant.

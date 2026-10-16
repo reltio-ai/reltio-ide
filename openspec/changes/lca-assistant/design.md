@@ -16,13 +16,21 @@ The filename must be exact. `notL3.reltio.json` is not an L3. Sample JSON and Ve
 
 Advice that only discusses hooks, architecture, LCA vs DVF, or operations does not require L3. Advice that names a tenant object does. That includes any type name (for example `Individual` or `Course`), not only `HCP`, `HCO`, and `HasAddress`. Generate, update, inspect, and register intents are always tenant-aware.
 
-Named types and attributes must exact-match that L3 before confirmation or code. A near-miss stops the turn.
+Named types and attributes must exact-match that L3 before code is written. A near-miss stops the turn and asks for the actual name.
 
-### D5 — Each external action waits for its own later yes
+### D5 — Known facts are written in the same turn. Deploy waits for its own later yes
 
-Code generation requires, on earlier turns, object and attribute confirmation and then design approval. Deploy and `lifecycleActions` updates require their own preview and a later explicit yes. "Yes, but…", a question, or "ok deploy to production instead" does not approve the pending preview.
+`step` is the turn authority. The agent obeys `allowedActions` from that result. The `gate` command checks a stored workflow and is not a second approval after `step`.
 
-A question is answered in `ASK`. It leaves a pending deploy or L3 approval, so a following yes does not deploy or edit L3. It does not clear a pending object or design confirmation, so a following yes still applies to that confirmation.
+When the type, hook, and attributes already exact-match the connected L3, `step` returns `generate` in that turn. It records the object and design approval itself. The agent prints the design with the Java and asks only whether to deploy. It does not wait for a separate design yes.
+
+The tenant tree includes `LifeCycle Actions/` beside `RDM/` and `Workflows/`, with a generated `README.md` that describes the folder. The Java is one Maven project at `<tenant folder>/LifeCycle Actions/<type>-<hook>-<name>-lca/`. `<name>` is the action name. When it is not known yet, the folder is `<type>-<hook>-lca`. `step` returns that absolute path as `projectDirectory` when the type and hook are known. The agent writes only there and does not replace `LifeCycle Actions/README.md`. The same type, hook, and name reuse that project. Another hook or another name is another project. A different folder is used only after the user names it and confirms it. Later turns for that project pass `projectDirectory` as `workingDirectory`. A project directory still finds the tenant configuration by walking up to the tenant folder.
+
+A missing or non-exact type, hook, or attribute stays in `REQUIREMENT_GATHERING`. The reply asks only for that fact. A near-miss does not generate.
+
+Deploy runs only after an explicit yes to the pending deploy question, and only when `.env` has the cloud access details. "Yes, but…", a question, or "ok deploy to production instead" does not deploy. On an approved deploy, `step` also allows `updateL3`. The agent runs deploy first and applies `lifecycleActions` only when the deploy tool succeeds. It does not ask for a second yes. A failed deploy does not edit L3.
+
+A question is answered in `ASK`. It clears a pending deploy or L3 approval, so a following yes does not deploy or edit L3. It does not clear a pending object or design confirmation left by an older session, so a following yes still applies to that confirmation.
 
 "How do I test…?" is a question. An imperative such as "Help me test this" enters `TEST`.
 
@@ -47,8 +55,10 @@ The LCA skill is materialized with the knowledge-base bundle (`lcaKnowledgeBaseB
 - `attributesAdded` survives a context save and reload.
 - "How do I test this beforeSave hook?" stays in `ASK` and leaves a pending design approval in place.
 - A trailing-slash working directory reloads the same context.
+- HCP + `beforeSave` + `CustomerId` resolves to `<tenant folder>/LifeCycle Actions/hcp-beforesave-customerid-lca`. Discovery starting inside that project still selects the tenant.
 
 ### Manual
 
-- Connect a git-sourced tenant and ask for attributes of a type that is not HCP. The assistant uses that `BusinessConfig.json`.
-- Confirm an object and design, ask a hook question, then say yes. Code generation proceeds. A qualified deploy yes shows a new preview instead of deploying.
+- Connect a git-sourced or component-tree tenant and ask for attributes of a type that is not HCP. The assistant uses that configuration file.
+- Ask to generate a `beforeSave` LCA whose type, hook, and attributes exact-match L3. Code is written in that turn, and the only question is whether to deploy.
+- Ask a hook question, then say yes. Nothing deploys. "ok deploy to production instead" while deploy is pending shows a new preview and does not deploy.

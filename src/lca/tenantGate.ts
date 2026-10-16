@@ -206,19 +206,33 @@ export function locationsFromGitMarker(markerFile: string): TenantL3Location[] {
  * - legacy `*.reltio.tenant/L3.reltio.json`
  * - a git-connected `BusinessConfig.json` or `L3.reltio.json` named by `.reltio-config-source.json`
  */
-export function discoverTenantL3(root: string): TenantL3Location[] {
-	const found: TenantL3Location[] = [];
-	const push = (loc: TenantL3Location) => {
-		if (!loc.tenantId || !loc.path) return;
-		if (found.some(t => t.path === loc.path && t.tenantId === loc.tenantId)) return;
-		found.push(loc);
-	};
-	const rootMarker = path.join(root, GIT_MARKER_FILE);
-	if (fs.existsSync(rootMarker)) {
-		for (const loc of locationsFromGitMarker(rootMarker)) push(loc);
+function considerFile(full: string, name: string, push: (loc: TenantL3Location) => void): void {
+	if (name === GIT_MARKER_FILE) {
+		for (const loc of locationsFromGitMarker(full)) push(loc);
+		const identity = locationFromTenantIdentity(full);
+		if (identity) push(identity);
+		return;
 	}
-	const stack = [{ dir: root, depth: 0 }];
-	while (stack.length && found.length < 20) {
+	if (isComponentConfigPath(full)) {
+		const component = locationFromComponentConfig(full);
+		if (component) push(component);
+		return;
+	}
+	if (!isTenantL3Path(full)) return;
+	const tenantId = tenantIdFromL3Path(full);
+	if (!tenantId) return;
+	push({ tenantId, path: full, environment: environmentFromL3Path(full) });
+}
+
+/** Files under `dir`. When `recurse` is false, only that directory's own files are read. */
+function collectConfigFiles(
+	dir: string,
+	push: (loc: TenantL3Location) => void,
+	recurse: boolean,
+	stop: () => boolean,
+): void {
+	const stack = [{ dir, depth: 0 }];
+	while (stack.length && !stop()) {
 		const current = stack.pop();
 		if (!current || current.depth > 8) continue;
 		let entries: fs.Dirent[];
@@ -228,29 +242,36 @@ export function discoverTenantL3(root: string): TenantL3Location[] {
 			continue;
 		}
 		for (const entry of entries) {
+			if (stop()) return;
 			if (SKIP_DIRS.has(entry.name)) continue;
 			const full = path.join(current.dir, entry.name);
 			if (entry.isDirectory()) {
-				stack.push({ dir: full, depth: current.depth + 1 });
+				if (recurse) stack.push({ dir: full, depth: current.depth + 1 });
 				continue;
 			}
-			if (!entry.isFile()) continue;
-			if (entry.name === GIT_MARKER_FILE) {
-				for (const loc of locationsFromGitMarker(full)) push(loc);
-				const identity = locationFromTenantIdentity(full);
-				if (identity) push(identity);
-				continue;
-			}
-			if (isComponentConfigPath(full)) {
-				const component = locationFromComponentConfig(full);
-				if (component) push(component);
-				continue;
-			}
-			if (!isTenantL3Path(full)) continue;
-			const tenantId = tenantIdFromL3Path(full);
-			if (!tenantId) continue;
-			push({ tenantId, path: full, environment: environmentFromL3Path(full) });
+			if (entry.isFile()) considerFile(full, entry.name, push);
 		}
+	}
+}
+
+export function discoverTenantL3(root: string): TenantL3Location[] {
+	const found: TenantL3Location[] = [];
+	const push = (loc: TenantL3Location) => {
+		if (!loc.tenantId || !loc.path) return;
+		if (found.some(t => t.path === loc.path && t.tenantId === loc.tenantId)) return;
+		found.push(loc);
+	};
+	const stop = () => found.length >= 20;
+	collectConfigFiles(root, push, true, stop);
+	if (found.length > 0) return found;
+	// A generate turn runs inside `<tenant>/LifeCycle Actions/<project>`, which does not contain the configuration.
+	// Walk up to the tenant folder and stop at the first ancestor that has one.
+	let dir = path.resolve(root);
+	for (let i = 0; i < 8 && found.length === 0; i++) {
+		const parent = path.dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+		collectConfigFiles(dir, push, false, stop);
 	}
 	return found;
 }

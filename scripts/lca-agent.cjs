@@ -5,6 +5,7 @@
  * Prints JSON. Does not print .env values.
  */
 const fs = require('fs');
+const path = require('path');
 const { importDist } = require('./lib/import-dist.cjs');
 const lca = importDist('lca/index');
 
@@ -88,6 +89,7 @@ function run() {
 			const tenantAware = lca.tenantAwareIntent(text, intent);
 			let tenantConnected;
 			let l3Model;
+			let selected;
 			if (tenantAware) {
 				const locations = lca.discoverTenantL3(payload.workingDirectory);
 				const gate = lca.assessTenantConnection({
@@ -107,6 +109,7 @@ function run() {
 					};
 				} else {
 					tenantConnected = true;
+					selected = gate.selected;
 					l3Model = readL3(gate.selected.path);
 					if (!l3Model) {
 						return {
@@ -140,14 +143,29 @@ function run() {
 				envText,
 				physicalConfigText,
 			});
+			const projectDirectory = selected && result.workflow.targetType && result.workflow.hook
+				? lca.lcaProjectDirectory(
+					selected.path,
+					result.workflow.targetType,
+					result.workflow.hook,
+					result.workflow.cloudFunctionIdentifier,
+				)
+				: undefined;
 			const patched = { ...opened.context, ...lca.contextPatchFromWorkflow(result.workflow) };
 			store.save(patched, { disk: true });
+			if (projectDirectory && result.writeFiles === true && path.resolve(projectDirectory) !== path.resolve(payload.workingDirectory)) {
+				store.save({ ...patched, workingDirectory: projectDirectory }, { disk: true });
+			}
+			const writeNote = result.writeFiles === true && projectDirectory
+				? ` Write the Maven project only in ${projectDirectory}.`
+				: '';
 			return {
 				phase: result.phase,
 				persistedPhase: result.persistedPhase,
 				allowedActions: result.allowedActions,
 				writeFiles: result.writeFiles === true,
-				message: result.message,
+				projectDirectory,
+				message: `${result.message}${writeNote}`,
 				questions: result.questions,
 				redacted: result.redacted === true ? true : undefined,
 				facts: {
@@ -161,6 +179,7 @@ function run() {
 					objectAttributesConfirmed: result.workflow.objectAttributesConfirmed === true,
 					designApproved: result.workflow.designApproved === true,
 					connectivityStatus: result.workflow.connectivityStatus ?? 'unknown',
+					projectDirectory,
 				},
 				consoleUpdate: result.consoleUpdate,
 				missingCredentials: result.missingCredentials,

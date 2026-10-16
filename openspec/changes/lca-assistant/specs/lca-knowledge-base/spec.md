@@ -40,21 +40,22 @@ The extension SHALL declare an independent `lcaKnowledgeBaseBundleVersion` in `r
 
 ### Requirement: LCA assistant generates code and further-steps docs, not L3 patches
 
-The LCA assistant skill and knowledge-base answering pattern SHALL treat tenant L3 as the source of truth for types and attributes. The agent SHALL generate LCA source (and an opt-in Maven scaffold when requested) and SHALL document further steps (package/deploy, cloud connectivity, the proposed `lifecycleActions` change, verify in non-production). The agent SHALL NOT add, merge, or edit a `lifecycleActions` section until the user confirms that diff for the current working directory and connected tenant.
+The LCA assistant skill and knowledge-base answering pattern SHALL treat tenant L3 as the source of truth for types and attributes. When the type, hook, and attributes already exact-match that L3, the agent SHALL write the LCA source in that turn and SHALL ask only whether to deploy. The agent SHALL NOT add, merge, or edit a `lifecycleActions` section in the generate turn. After the deploy tool succeeds, the agent SHALL apply that `lifecycleActions` change without a second confirmation. A failed deploy SHALL leave L3 unchanged.
 
 #### Scenario: Generate LCA does not patch L3
 
-- **WHEN** the user asks the LCA assistant to generate an LCA for a type that exists in the connected tenant L3
-- **THEN** the agent SHALL produce LCA code (after confirmation) and SHALL leave the L3 file unchanged (no `lifecycleActions` write)
+- **WHEN** the user asks the LCA assistant to generate an LCA for a type, hook, and attributes that exact-match the connected tenant L3
+- **THEN** the agent SHALL produce LCA code in that turn and SHALL leave the L3 file unchanged (no `lifecycleActions` write)
 
 #### Scenario: Further steps are documented instead of applied
 
 - **WHEN** the agent finishes generating LCA code
-- **THEN** the reply SHALL include further-steps documentation covering package/deploy, cloud connectivity, and the suggested `lifecycleActions` binding for the intended type
+- **THEN** the reply SHALL ask whether to deploy and SHALL include further-steps documentation for verification
+- **AND** the agent SHALL NOT apply `lifecycleActions` until the deploy tool succeeds
 
 ### Requirement: Tenant-object LCA queries require a connected tenant L3
 
-The LCA assistant skill and knowledge-base answering pattern SHALL require a **connected tenant L3** before answering queries about tenant objects (entity, relation, or change-request types, attribute URIs, existing `lifecycleActions`, or generating/scaffolding an LCA for a named type). A connected L3 is either `L3.reltio.json` under a `*.reltio.tenant/` directory or a git-connected `BusinessConfig.json` / `L3.reltio.json` named by `.reltio-config-source.json`. Advice that names any tenant object, not only HCP, HCO, or HasAddress, is tenant-object work. If the Reltio IDE plugin is not connected to any tenant, or a tenant exists without fetched L3, the agent SHALL **stop** and ask the user to connect (Setup Wizard, Add Tenant, and/or Get Configuration / fetch L3). The agent SHALL NOT invent type or attribute URIs and SHALL NOT treat Velocity Packs or sample JSON as a substitute for that tenant. Generic conceptual questions (hooks, architecture, LCA vs DVF, ops) MAY be answered from the knowledge base without L3.
+The LCA assistant skill and knowledge-base answering pattern SHALL require a **connected tenant L3** before answering queries about tenant objects (entity, relation, or change-request types, attribute URIs, existing `lifecycleActions`, or generating/scaffolding an LCA for a named type). A connected L3 is `Business Config/BusinessConfig.json` in a tenant folder whose `.reltio-config-source.json` has `kind: "tenant"`, `L3.reltio.json` under a legacy `*.reltio.tenant/` directory, or a git-connected `BusinessConfig.json` / `L3.reltio.json` named by `.reltio-config-source.json`. Advice that names any tenant object, not only HCP, HCO, or HasAddress, is tenant-object work. If the Reltio IDE plugin is not connected to any tenant, or a tenant exists without fetched L3, the agent SHALL **stop** and ask the user to connect (Setup Wizard, Add Tenant, and/or Get Configuration / fetch L3). The agent SHALL NOT invent type or attribute URIs and SHALL NOT treat Velocity Packs or sample JSON as a substitute for that tenant. Generic conceptual questions (hooks, architecture, LCA vs DVF, ops) MAY be answered from the knowledge base without L3.
 
 #### Scenario: Plugin not connected to a tenant
 
@@ -63,7 +64,7 @@ The LCA assistant skill and knowledge-base answering pattern SHALL require a **c
 
 #### Scenario: Tenant added but L3 not fetched
 
-- **WHEN** a tenant folder exists without `L3.reltio.json` and the user asks a tenant-object LCA question
+- **WHEN** a tenant folder exists without `Business Config/BusinessConfig.json` or legacy `L3.reltio.json` and the user asks a tenant-object LCA question
 - **THEN** the agent SHALL ask the user to fetch configuration (`reltio.fetchL3`) before continuing
 
 #### Scenario: Generic LCA knowledge does not require L3
@@ -95,21 +96,21 @@ When tenant L3 is connected, the LCA assistant SHALL resolve user-named tenant, 
 - **WHEN** the user asks to generate an LCA without naming an entity, relation, or DCR type
 - **THEN** the agent SHALL ask which type to target and SHALL list available types from the connected L3
 
-### Requirement: Code generation waits for type and attribute confirmation
+### Requirement: Known L3 names are written in the same turn
 
-When the user asks to **generate or update** LCA source (including an opt-in Maven scaffold), the LCA assistant SHALL, after L3 names resolve, present a confirmation of (1) the object type name (entity type or relation type, with uri), (2) attributes the LCA will **read**, and (3) attributes the LCA will **add or update**. The agent SHALL **not** write or modify LCA code until the user explicitly confirms. Conceptual questions that do not request code SHALL skip this confirmation.
+When the user asks to **generate or update** LCA source (including an opt-in Maven scaffold) and the object type, hook, and attributes already exact-match the connected L3, the agent SHALL print the design (object type with uri, attributes to **read**, attributes to **add or update**) and SHALL write the Java in that turn. The project SHALL be `<tenant folder>/LifeCycle Actions/<type>-<hook>-<name>-lca/`. The agent SHALL ask only whether to deploy. The agent SHALL ask before writing code only when a required name is missing or not an exact L3 match. Conceptual questions that do not request code SHALL skip this step.
 
-#### Scenario: Generate LCA waits for confirmation
+#### Scenario: Generate LCA writes code when the names match
 
-- **WHEN** the user asks to generate an LCA for an entity or relation type that exact-matches L3
-- **THEN** the agent SHALL first list the object type and the attributes to read vs add/update, SHALL wait for confirmation, and SHALL NOT emit LCA source in that turn
+- **WHEN** the user asks to generate an LCA for an entity or relation type, hook, and attributes that exact-match L3
+- **THEN** the agent SHALL list the object type and the attributes to read vs add/update, SHALL emit the Maven project at `<tenant folder>/LifeCycle Actions/<type>-<hook>-<name>-lca/` in that turn, and SHALL ask only whether to deploy
 
-#### Scenario: Update existing LCA waits for confirmation
+#### Scenario: Update existing LCA uses the same rule
 
-- **WHEN** the user asks to update existing LCA code
-- **THEN** the agent SHALL present the same type/attribute confirmation before modifying source
+- **WHEN** the user asks to update existing LCA code and the type, hook, and attributes already exact-match L3
+- **THEN** the agent SHALL write the update in that turn and SHALL ask only whether to deploy
 
 #### Scenario: Advice without code skips confirmation
 
 - **WHEN** the user asks what a hook does and does not request generated code
-- **THEN** the agent MAY answer from the knowledge base without the code-generation confirmation
+- **THEN** the agent MAY answer from the knowledge base without writing code

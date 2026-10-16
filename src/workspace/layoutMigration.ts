@@ -18,6 +18,7 @@ import {
 	LEGACY_HISTORY_DIRNAME,
 	LEGACY_LAYOUT_FILENAME,
 	MIGRATION_BACKUP_DIR,
+	isComponentTree,
 	materializeTenantTree,
 	pruneRetiredComponentFolders,
 	tenantPath,
@@ -320,6 +321,9 @@ export async function migrateWorkspace(
 		for (const tenant of env.tenants) {
 			const root = environmentManager.getTenantRootUri(env.name, tenant.tenantId);
 			try {
+				// Fill in folders added to the tree after the tenant was created, such as LifeCycle Actions/.
+				// Non-destructive: an existing README is left as the user wrote it.
+				if (await isComponentTree(root)) await materializeTenantTree(root);
 				for (const p of await pruneRetiredComponentFolders(root)) {
 					pruned.push(`${tenant.tenantId}/${p}`);
 				}

@@ -249,6 +249,17 @@ export function markDeployed(workflow: LcaWorkflow, cloudFunctionIdentifier: str
 	};
 }
 
+/** A cloud deploy succeeded. The lifecycleActions update is the next step, using the function name already on the workflow. */
+export function noteDeploySuccess(workflow: LcaWorkflow, functionName: string): LcaWorkflow {
+	const name = functionName.trim() || workflow.cloudFunctionIdentifier;
+	return {
+		...markDeployed(workflow, name ?? functionName),
+		state: 'TENANT_CONFIG_PENDING',
+		phase: 'L3_UPDATE',
+		l3UpdateApproved: true,
+	};
+}
+
 export function markConnectivityConfirmed(workflow: LcaWorkflow, status: 'confirmed' | 'not-required' = 'confirmed'): LcaWorkflow {
 	return { ...workflow, state: 'CONNECTIVITY_CONFIRMED', phase: 'TEST', connectivityStatus: status };
 }

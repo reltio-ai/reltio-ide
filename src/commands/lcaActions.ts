@@ -7,6 +7,7 @@ import { parse } from 'jsonc-parser';
 import { buildDeployPlan, redactCommandOutput } from '../lca/deployPlan';
 import { findTypeJsonPath, replaceLifecycleActions } from '../lca/l3Edit';
 import { proposeLifecycleChange } from '../lca/lifecycleConfig';
+import { cloudRegistration } from '../lca/cloud';
 import { discoverEnvFile } from '../lca/envCheck';
 import { readProjectContext, writeProjectContext, type ProjectContext } from '../lca/context';
 import { findDeployArtifact } from '../lca/sources';
@@ -69,6 +70,15 @@ function saveWorkflow(context: ProjectContext, workflow: ReturnType<typeof workf
 		workingDirectory: context.workingDirectory,
 		tenantId: context.tenantId,
 	});
+}
+
+/** Lifecycle registration derived from the deployed function name. AWS is `Lambda/BinaryJSON/<name>`. */
+function registrationName(context: ProjectContext): string | undefined {
+	const name = context.cloudFunctionIdentifier?.trim();
+	if (!name) return undefined;
+	const provider = context.cloudProvider ?? 'aws';
+	if (provider === 'native') return name;
+	return cloudRegistration(provider, name);
 }
 
 function actionNames(entry: unknown): string[] {
@@ -173,16 +183,16 @@ async function deployLca(): Promise<LcaCommandResult> {
 		void vscode.window.showErrorMessage(message.slice(0, 400));
 		return { ok: false, exitCode, message };
 	}
-	const registration = workflow.registrationAction ?? functionName;
-	saveWorkflow(context, noteDeploySuccess(workflow, functionName, registration));
+	saveWorkflow(context, noteDeploySuccess(workflow, functionName));
 	const message = redactCommandOutput(`Deploy succeeded for ${functionName}.\n${stdout}\n${stderr}`, launch.secretValues);
 	void vscode.window.showInformationMessage(`Deploy succeeded for ${functionName}. Review the lifecycleActions diff before applying it.`);
 	return { ok: true, exitCode, message };
 }
 
 async function applyLifecycleActions(): Promise<LcaCommandResult> {
-	const context = loadContexts().find(item => item.phase === 'L3_UPDATE' && item.l3UpdateApproved && !!item.registrationAction && !!item.hooks?.[0]);
-	if (!context?.targetTypeUri || !context.hooks?.[0] || !context.registrationAction) {
+	const context = loadContexts().find(item => item.phase === 'L3_UPDATE' && item.l3UpdateApproved && !!registrationName(item) && !!item.hooks?.[0]);
+	const action = context ? registrationName(context) : undefined;
+	if (!context?.targetTypeUri || !context.hooks?.[0] || !action) {
 		const message = 'The lifecycleActions diff is not approved. Confirm it in the assistant first.';
 		void vscode.window.showInformationMessage(message);
 		return { ok: false, message };
@@ -219,7 +229,7 @@ async function applyLifecycleActions(): Promise<LcaCommandResult> {
 		hook: context.hooks[0],
 		kind: context.targetKind,
 		op: 'append',
-		action: context.registrationAction,
+		action,
 	});
 	if (!proposal.ok) {
 		const message = proposal.message ?? 'The lifecycleActions change was rejected.';
@@ -257,7 +267,7 @@ async function applyLifecycleActions(): Promise<LcaCommandResult> {
 		l3UpdateApproved: true,
 		pendingConfigurationPatch: proposal.proposed,
 	});
-	const message = `Registered ${context.registrationAction} on ${context.hooks[0]} for ${context.targetType ?? context.targetTypeUri}.`;
+	const message = `Registered ${action} on ${context.hooks[0]} for ${context.targetType ?? context.targetTypeUri}.`;
 	void vscode.window.showInformationMessage(message);
 	return { ok: true, message };
 }

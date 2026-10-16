@@ -170,6 +170,18 @@ assert.strictEqual(selectCloud('AWS').provider, 'aws');
 assert.strictEqual(selectCloud('GCP').baseClass, 'LifeCycleGoogleFunction');
 assert.strictEqual(selectCloud('Azure').baseClass, 'LifeCycleAzureFunction');
 assert.strictEqual(selectCloud('Native').baseClass, 'LifeCycleActionBase');
+const afterDeploy = lca.noteDeploySuccess(createWorkflow({
+	state: 'DEPLOYMENT_PENDING',
+	phase: 'DEPLOY',
+	deploymentApproved: true,
+	hook: 'beforeSave',
+	cloudProvider: 'aws',
+	cloudFunctionIdentifier: 'hcp-beforesave',
+}), 'hcp-beforesave');
+assert.strictEqual(afterDeploy.phase, 'L3_UPDATE', 'a successful deploy opens the lifecycleActions update');
+assert.strictEqual(afterDeploy.l3UpdateApproved, true);
+assert.strictEqual(afterDeploy.cloudFunctionIdentifier, 'hcp-beforesave');
+assert.strictEqual(lca.cloudRegistration('aws', afterDeploy.cloudFunctionIdentifier), 'Lambda/BinaryJSON/hcp-beforesave');
 assert.strictEqual(cloudRegistration('aws', 'hcp-customer-id-generator'), 'Lambda/BinaryJSON/hcp-customer-id-generator');
 
 // Validation-only does not generate
@@ -511,6 +523,45 @@ assert.strictEqual(treeGate.connected, true);
 assert.strictEqual(treeGate.selected.tenantId, 'abc123');
 assert.strictEqual(isComponentConfigPath(componentL3), true);
 assert.strictEqual(isTenantL3Path(componentL3), false);
+
+assert.strictEqual(lca.lcaProjectSlug('HCP', 'beforeSave', 'CustomerId'), 'hcp-beforesave-customerid-lca');
+assert.strictEqual(lca.lcaProjectSlug('Has Address', 'beforeSave'), 'has-address-beforesave-lca');
+assert.strictEqual(lca.LCA_DIR, 'LifeCycle Actions');
+assert.strictEqual(
+	lca.lcaProjectDirectory(componentL3, 'HCP', 'beforeSave', 'CustomerId'),
+	path.join(tenantDir, 'LifeCycle Actions', 'hcp-beforesave-customerid-lca'),
+);
+assert.notStrictEqual(
+	lca.lcaProjectDirectory(componentL3, 'HCP', 'beforeSave', 'CustomerId'),
+	lca.lcaProjectDirectory(componentL3, 'HCP', 'afterSave', 'CustomerId'),
+	'same type with a different hook is a different project',
+);
+assert.notStrictEqual(
+	lca.lcaProjectDirectory(componentL3, 'HCP', 'beforeSave', 'CustomerId'),
+	lca.lcaProjectDirectory(componentL3, 'HCP', 'beforeSave', 'MiddleName'),
+	'same type and hook with a different name is a different project',
+);
+const insideProject = path.join(tenantDir, 'LifeCycle Actions', 'hcp-beforesave-customerid-lca');
+fs.mkdirSync(insideProject, { recursive: true });
+const fromProject = discoverTenantL3(insideProject);
+assert.strictEqual(fromProject.length, 1, 'a project under LifeCycle Actions still finds the tenant');
+assert.strictEqual(fromProject[0].tenantId, 'abc123');
+assert.strictEqual(path.resolve(fromProject[0].path), path.resolve(componentL3));
+assert.strictEqual(path.resolve(lca.tenantRootFromConfig(gitL3)), path.resolve(gitRoot));
+
+const legacyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'lca-legacy-'));
+const legacyTenant = path.join(legacyRoot, 'dev.reltio.environment', 'acme.reltio.tenant');
+const legacyL3 = path.join(legacyTenant, 'L3.reltio.json');
+fs.mkdirSync(legacyTenant, { recursive: true });
+fs.writeFileSync(legacyL3, '{}\n');
+assert.strictEqual(path.resolve(lca.tenantRootFromConfig(legacyL3)), path.resolve(legacyTenant));
+assert.strictEqual(
+	lca.lcaProjectDirectory(legacyL3, 'HCP', 'beforeSave', 'CustomerId'),
+	path.join(legacyTenant, 'LifeCycle Actions', 'hcp-beforesave-customerid-lca'),
+);
+const fromLegacyProject = discoverTenantL3(path.join(legacyTenant, 'LifeCycle Actions', 'hcp-beforesave-customerid-lca'));
+assert.strictEqual(fromLegacyProject.length, 1, 'a legacy project under LifeCycle Actions still finds the tenant');
+assert.strictEqual(path.resolve(fromLegacyProject[0].path), path.resolve(legacyL3));
 
 const pkg = require('../package.json');
 const itemMenus = pkg.contributes.menus['view/item/context'];

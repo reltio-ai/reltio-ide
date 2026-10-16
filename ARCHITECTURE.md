@@ -305,15 +305,16 @@ The tenant folder is the **git repository root** once bound to a remote. Everyth
 ├── Business Config/
 │   └── BusinessConfig.json        <- tracked: the tenant metadata
 ├── RDM/README.md
-└── Workflows/
-    ├── BPMN/README.md
-    └── Custom Workflows/README.md
+├── Workflows/
+│   ├── BPMN/README.md
+│   └── Custom Workflows/README.md
+└── LifeCycle Actions/README.md    generated projects live under LifeCycle Actions/<type>-<hook>-<name>-lca/
 ```
 
 - **`Business Config/BusinessConfig.json`** — active tenant metadata being edited. The only component the IDE currently fetches or applies.
 - **`.reltio-ide/BusinessConfig.baseline.json`** — copy of the remote configuration **as of the last successful Fetch Configuration**; used with **Apply Configuration to Tenant** to detect server-side drift before **PUT**. Kept out of the tracked tree so a drift baseline never shows up in a pull request.
-- **The other three component folders** (`RDM`, `Workflows/BPMN`, `Workflows/Custom Workflows`) are structural placeholders for components the IDE does not yet manage. Each carries a generated `README.md` naming the expected files and linking to `docs.reltio.com`, because git does not track empty directories. An existing `README.md` is never overwritten.
-- **Retired folders.** Earlier builds materialized fourteen more components (`Data Validation Functions`, `Metadata Permissions`, `User Management/*`, `Data Loader`, `Reltio Integration Hub`, `LifeCycle Actions`, `DTSS`, `Connectors`, `User Interface`, `Custom Code/*`, `Physical Configuration`). They are listed in **`RETIRED_COMPONENT_FOLDERS`** and removed during the activation migration, but only when a folder holds nothing except a README this extension generated, matched on content. One user file, or a README the user rewrote, keeps the folder.
+- **The other component folders** (`RDM`, `Workflows/BPMN`, `Workflows/Custom Workflows`, `LifeCycle Actions`) are structural placeholders for components the IDE does not yet fetch or apply. Each carries a generated `README.md` naming the expected files and linking to `docs.reltio.com`, because git does not track empty directories. An existing `README.md` is never overwritten. Generated LCA Maven projects are written under `LifeCycle Actions/<type>-<hook>-<name>-lca/`.
+- **Retired folders.** Earlier builds materialized further components (`Data Validation Functions`, `Metadata Permissions`, `User Management/*`, `Data Loader`, `Reltio Integration Hub`, `DTSS`, `Connectors`, `User Interface`, `Custom Code/*`, `Physical Configuration`, and a short `LCA` folder). They are listed in **`RETIRED_COMPONENT_FOLDERS`** and removed during the activation migration, but only when a folder holds nothing except a README this extension generated, matched on content. One user file, or a README the user rewrote, keeps the folder. `Physical Configuration` stays retired until that component is implemented.
 - The tree definition, the documentation URL map, and `materializeTenantTree` live in **`src/workspace/tenantFolderStructure.ts`**, which is the single place any of these paths are named.
 
 ## Configuration history (`.reltio-ide/history/`)
