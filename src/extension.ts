@@ -5,6 +5,7 @@ import { MultiTenantTreeProvider } from './tree/multiTenantTreeProvider';
 import { ConfigTreeItem } from './tree/treeNodes';
 import { getConcreteEntityTypeUris } from './tree/configSubtree';
 import { revealInEditor } from './commands/revealCommand';
+import { registerLcaCommands } from './commands/lcaActions';
 import {
 	addEntityType,
 	addRelationType,
@@ -742,6 +743,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	context.subscriptions.push(treeView);
 
 	registerReltioAutoSave(context);
+	registerLcaCommands(context);
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('reltio.resyncAgentAssets', async () => {
@@ -754,7 +756,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			);
 			if (report && report.conflicts.length === 0 && report.invalid.length === 0) {
 				void vscode.window.showInformationMessage(
-					'Reltio agent skills and Velocity Packs were refreshed (workspace overrides were not changed).',
+					'Reltio agent skills, Velocity Packs, and LCA knowledge base were refreshed (workspace overrides were not changed).',
 				);
 			}
 		}),

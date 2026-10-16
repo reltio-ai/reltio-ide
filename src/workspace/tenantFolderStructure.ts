@@ -114,6 +114,14 @@ export const COMPONENT_FOLDERS: readonly ComponentFolder[] = [
 		docsUrl: 'https://docs.reltio.com/en/objectives/manage-workflow-tasks/workflow-management-at-a-glance/workflow-management-set-up/overview-of-workflow-customizations/overview-of-workflow-configuration/configure-custom-workflows',
 		managed: false,
 	},
+	{
+		path: 'LifeCycle Actions',
+		title: 'LifeCycle Actions',
+		description: 'Life Cycle Actions: Java handlers that run on entity and relation lifecycle hooks. Each generated action is its own Maven project in this folder.',
+		expectedFiles: ['<type>-<hook>-<name>-lca/ (one Maven project per Life Cycle Action, for example hcp-beforesave-customerid-lca/)'],
+		docsUrl: 'https://docs.reltio.com/en/developer-resources/about-developer-resources/developer-resources-at-a-glance/customize-data-tasks-with-lcas/lca-configuration',
+		managed: false,
+	},
 ] as const;
 
 /**
@@ -131,7 +139,7 @@ export const RETIRED_COMPONENT_FOLDERS: readonly string[] = [
 	'User Management/Groups',
 	'Data Loader',
 	'Reltio Integration Hub',
-	'LifeCycle Actions',
+	'LCA',
 	'DTSS',
 	'Connectors',
 	'User Interface',

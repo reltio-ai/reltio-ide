@@ -121,7 +121,7 @@ function guideBody(skills: readonly BundledSkill[], skillDirs: readonly string[]
 		'',
 		'If the skill a request needs is not available to you, or its `SKILL.md` cannot be read, do not write the',
 		'configuration from general knowledge. Tell the user the Reltio skill is missing, and that running',
-		'**Reltio: Resync agent assets (skills & Velocity Packs)** from the Command Palette restores it',
+		'**Reltio: Resync agent assets (skills, Velocity Packs & LCA knowledge base)** from the Command Palette restores it',
 		'(the `reltio.installAgentSkills` setting must be on). Continue only if the user asks you to go ahead',
 		'without it.',
 		'',

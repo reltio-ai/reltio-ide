@@ -4,11 +4,13 @@ import { AGENT_SKILLS_SETTING, detectHost, syncAgentSkills } from './agentSkillD
 export interface ReltioAgentAssets {
 	skillsBundleVersion: string;
 	velocityPacksBundleVersion: string;
+	lcaKnowledgeBaseBundleVersion?: string;
 }
 
 export interface ReltioAgentSyncState {
 	skillsBundleVersion?: string;
 	velocityPacksBundleVersion?: string;
+	lcaKnowledgeBaseBundleVersion?: string;
 	extensionVersion?: string;
 	/** Workspace-relative paths of discoverable skill copies and agent guides the extension created. */
 	ownedAgentFiles?: string[];
@@ -80,10 +82,12 @@ function versionsDiffer(bundled: string | undefined, stamped: string | undefined
 }
 
 /**
- * Copies bundled default skills and Velocity Pack reference files into
+ * Copies bundled default skills, Velocity Packs, and the LCA knowledge base into
  * `.reltio/reltio-agent/` when versions in `resources/reltio-agent-assets.json`
- * advance (or when `force` is true), then installs the discoverable skill copies and agent
- * guides (see `agentSkillDiscovery.ts`). Never touches `skills/workspace/**`.
+ * advance (or when `force` is true). The LCA skill folder is copied with the
+ * knowledge base so shipping it does not recopy every other default skill.
+ * Then installs the discoverable skill copies and agent guides (see
+ * `agentSkillDiscovery.ts`). Never touches `skills/workspace/**`.
  */
 export async function syncReltioAgentAssets(
 	context: vscode.ExtensionContext,
@@ -106,6 +110,7 @@ export async function syncReltioAgentAssets(
 
 	const skillsSrc = vscode.Uri.joinPath(context.extensionUri, 'skills', 'reltio-default');
 	const packsSrc = vscode.Uri.joinPath(context.extensionUri, 'resources', 'velocity-packs');
+	const kbSrc = vscode.Uri.joinPath(context.extensionUri, 'resources', 'lca-knowledge-base');
 
 	for (const ws of folders) {
 		const root = managedRootUri(ws);
@@ -116,6 +121,7 @@ export async function syncReltioAgentAssets(
 
 		const destSkills = vscode.Uri.joinPath(root, 'skills', 'default');
 		const destPacks = vscode.Uri.joinPath(root, 'velocity-packs');
+		const destKb = vscode.Uri.joinPath(root, 'lca-knowledge-base');
 
 		const needSkills =
 			force ||
@@ -125,9 +131,15 @@ export async function syncReltioAgentAssets(
 			force ||
 			!(await pathExists(destPacks)) ||
 			versionsDiffer(bundled.velocityPacksBundleVersion, stamp.velocityPacksBundleVersion);
+		const needKb =
+			Boolean(bundled.lcaKnowledgeBaseBundleVersion) &&
+			(force ||
+				!(await pathExists(destKb)) ||
+				versionsDiffer(bundled.lcaKnowledgeBaseBundleVersion, stamp.lcaKnowledgeBaseBundleVersion));
 
 		let skillsSynced = false;
 		let packsSynced = false;
+		let kbSynced = false;
 
 		if (needSkills && (await pathExists(skillsSrc))) {
 			await deleteIfExists(destSkills);
@@ -141,6 +153,18 @@ export async function syncReltioAgentAssets(
 			packsSynced = true;
 		}
 
+		if (needKb && (await pathExists(kbSrc))) {
+			await deleteIfExists(destKb);
+			await copyDirectory(kbSrc, destKb);
+			const lcaSkillSrc = vscode.Uri.joinPath(skillsSrc, 'lca-assistant');
+			if (await pathExists(lcaSkillSrc)) {
+				const destLcaSkill = vscode.Uri.joinPath(destSkills, 'lca-assistant');
+				await deleteIfExists(destLcaSkill);
+				await copyDirectory(lcaSkillSrc, destLcaSkill);
+			}
+			kbSynced = true;
+		}
+
 		const agent = await syncAgentSkills(ws.uri, skillsSrc, stamp.ownedAgentFiles ?? [], {
 			install: vscode.workspace.getConfiguration('reltio').get<boolean>(AGENT_SKILLS_SETTING, true),
 			host: detectHost(vscode.env),
@@ -150,7 +174,7 @@ export async function syncReltioAgentAssets(
 		const ownershipChanged =
 			JSON.stringify(agent.owned) !== JSON.stringify([...(stamp.ownedAgentFiles ?? [])].sort());
 
-		if (skillsSynced || packsSynced || ownershipChanged) {
+		if (skillsSynced || packsSynced || kbSynced || ownershipChanged) {
 			const next: ReltioAgentSyncState = {
 				extensionVersion: String(context.extension.packageJSON?.version ?? ''),
 			};
@@ -163,6 +187,11 @@ export async function syncReltioAgentAssets(
 				next.velocityPacksBundleVersion = bundled.velocityPacksBundleVersion;
 			} else if (stamp.velocityPacksBundleVersion) {
 				next.velocityPacksBundleVersion = stamp.velocityPacksBundleVersion;
+			}
+			if (kbSynced && bundled.lcaKnowledgeBaseBundleVersion) {
+				next.lcaKnowledgeBaseBundleVersion = bundled.lcaKnowledgeBaseBundleVersion;
+			} else if (stamp.lcaKnowledgeBaseBundleVersion) {
+				next.lcaKnowledgeBaseBundleVersion = stamp.lcaKnowledgeBaseBundleVersion;
 			}
 			next.ownedAgentFiles = agent.owned;
 			await writeJsonFile(stampUri, next);

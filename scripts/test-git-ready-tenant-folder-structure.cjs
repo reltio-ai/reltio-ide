@@ -82,18 +82,17 @@ const {
 (async () => {
 	// ---------------------------------------------------------------- 9.2 component tree
 
-	// The tree was cut back to the components teams version today: Business Config, RDM and
-	// Workflows (with its two sub-folders). Five directories, four of them leaves.
+	// Business Config, RDM, Workflows (with its two sub-folders) and LifeCycle Actions. Six directories, five of them leaves.
 	assert.deepStrictEqual(
 		COMPONENT_FOLDERS.map(f => f.path),
-		['Business Config', 'RDM', 'Workflows/BPMN', 'Workflows/Custom Workflows'],
-		'exactly the four leaf components',
+		['Business Config', 'RDM', 'Workflows/BPMN', 'Workflows/Custom Workflows', 'LifeCycle Actions'],
+		'exactly the five leaf components',
 	);
 	const dirsDeclared = allTreeDirectories();
 	assert.deepStrictEqual(
 		dirsDeclared,
-		['Business Config', 'RDM', 'Workflows', 'Workflows/BPMN', 'Workflows/Custom Workflows'],
-		'five directories, Workflows implied as a container',
+		['Business Config', 'RDM', 'Workflows', 'Workflows/BPMN', 'Workflows/Custom Workflows', 'LifeCycle Actions'],
+		'six directories, Workflows implied as a container',
 	);
 	// A parent is always listed before anything beneath it, so creation order is safe.
 	for (const d of dirsDeclared) {
@@ -109,7 +108,7 @@ const {
 	const managed = COMPONENT_FOLDERS.filter(f => f.managed);
 	assert.deepStrictEqual(managed.map(f => f.path), [BUSINESS_CONFIG_DIR], 'only Business Config is managed');
 	assert.strictEqual(BUSINESS_CONFIG_FILE, `${BUSINESS_CONFIG_DIR}/BusinessConfig.json`);
-	assert.strictEqual(unmanagedFolders().length, 3, '3 unmanaged folders get a README');
+	assert.strictEqual(unmanagedFolders().length, 4, '4 unmanaged folders get a README');
 
 	// Every unmanaged folder carries a real docs.reltio.com URL, asserted offline: the map is the
 	// contract, and making CI depend on the network would be flaky for no added signal.
@@ -145,7 +144,9 @@ const {
 		);
 	}
 	const readmes = [...mem._files.keys()].filter(p => p.endsWith('/README.md'));
-	assert.strictEqual(readmes.length, 3, 'one README per unmanaged folder');
+	assert.strictEqual(readmes.length, 4, 'one README per unmanaged folder');
+	assert.ok(mem._files.has(`${tenant.fsPath}/LifeCycle Actions/README.md`), 'LifeCycle Actions carries a README');
+	assert.match(text(mem._files.get(`${tenant.fsPath}/LifeCycle Actions/README.md`)), /hcp-beforesave-customerid-lca/);
 	assert.ok(
 		!mem._files.has(`${tenant.fsPath}/${BUSINESS_CONFIG_DIR}/README.md`),
 		'Business Config gets no README, it holds a managed file',
@@ -169,9 +170,10 @@ const {
 	assert.ok(RETIRED_COMPONENT_FOLDERS.includes('DTSS'), 'DTSS is retired');
 	assert.ok(RETIRED_COMPONENT_FOLDERS.includes('Custom Code/Utilities'), 'nested leaves are retired');
 	assert.ok(
-		!RETIRED_COMPONENT_FOLDERS.some(p => ['Business Config', 'RDM', 'Workflows/BPMN'].includes(p)),
+		!RETIRED_COMPONENT_FOLDERS.some(p => ['Business Config', 'RDM', 'Workflows/BPMN', 'LifeCycle Actions'].includes(p)),
 		'no surviving component is listed as retired',
 	);
+	assert.ok(RETIRED_COMPONENT_FOLDERS.includes('LCA'), 'the short LCA folder name is not the tree folder');
 
 	mem = installMemoryFs();
 	const old = U('/wsP/env/t1');
@@ -206,7 +208,7 @@ const {
 	assert.ok(mem._files.has(`${old.fsPath}/Data Loader/README.md`), 'the rewritten README survives');
 
 	// Surviving components are never touched, whatever else is pruned.
-	for (const keep of ['Business Config', 'RDM', 'Workflows/BPMN', 'Workflows/Custom Workflows']) {
+	for (const keep of ['Business Config', 'RDM', 'Workflows/BPMN', 'Workflows/Custom Workflows', 'LifeCycle Actions']) {
 		assert.ok(mem._dirs.has(`${old.fsPath}/${keep}`), `${keep} survives pruning`);
 	}
 	// Idempotent: a second pass finds nothing left to do.

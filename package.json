@@ -284,8 +284,16 @@
       },
       {
         "command": "reltio.resyncAgentAssets",
-        "title": "Reltio: Resync agent assets (skills & Velocity Packs)",
+        "title": "Reltio: Resync agent assets (skills, Velocity Packs & LCA knowledge base)",
         "icon": "$(sync)"
+      },
+      {
+        "command": "reltio.lcaDeploy",
+        "title": "Reltio: Deploy LCA"
+      },
+      {
+        "command": "reltio.lcaApplyLifecycleActions",
+        "title": "Reltio: Apply LCA lifecycleActions"
       },
       {
         "command": "reltio.signInEnvironment",
@@ -554,12 +562,12 @@
         },
         {
           "command": "reltio.deleteNode",
-          "when": "viewItem =~ /^reltio\\.item\\./",
+          "when": "viewItem =~ /^reltio\\.item\\./ && viewItem != reltio.item.lifecycleActions",
           "group": "7_modification"
         },
         {
           "command": "reltio.renameNode",
-          "when": "viewItem =~ /^reltio\\.item\\./",
+          "when": "viewItem =~ /^reltio\\.item\\./ && viewItem != reltio.item.lifecycleActions",
           "group": "7_modification"
         },
         {
