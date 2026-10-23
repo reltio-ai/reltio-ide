@@ -1,4 +1,5 @@
 {
-  "skillsBundleVersion": "20",
-  "velocityPacksBundleVersion": "1"
+  "skillsBundleVersion": "21",
+  "velocityPacksBundleVersion": "1",
+  "lcaKnowledgeBaseBundleVersion": "1"
 }

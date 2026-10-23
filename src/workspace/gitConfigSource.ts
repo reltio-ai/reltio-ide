@@ -123,18 +123,19 @@ export function redactUrl(text: string): string {
 	return text.replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^/@\s]*@/gi, '$1');
 }
 
-function escapeRegExp(value: string): string {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/** git's wording for a missing ref, across the versions we support. */
-function isMissingBranchFailure(stderr: string, branch: string): boolean {
+/**
+ * git's wording for a missing ref, across the versions we support.
+ *
+ * The branch name is compared as plain text. Git allows characters such as `(`, `+`, `.` and `{` in
+ * branch names, so compiling it into a regular expression either throws (`feature/(x`) or matches the
+ * wrong thing (`a+b` matching `aab`).
+ */
+export function isMissingBranchFailure(stderr: string, branch: string): boolean {
+	const text = stderr.toLowerCase();
 	return (
 		/Remote branch .* not found in upstream/i.test(stderr) ||
 		/warning: Could not find remote branch/i.test(stderr) ||
-		// The branch is user text; unescaped, a name like `feat(x` would throw a SyntaxError here
-		// and hide git's real error.
-		new RegExp(`pathspec '${escapeRegExp(branch)}' did not match`, 'i').test(stderr)
+		text.includes(`pathspec '${branch.toLowerCase()}' did not match`)
 	);
 }
 

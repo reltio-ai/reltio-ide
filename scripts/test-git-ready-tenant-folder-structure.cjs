@@ -16,117 +16,44 @@ const path = require('path');
 const { importDist } = require('./lib/import-dist.cjs');
 const { loadCanonicalFixture, repoRoot } = require('./lib/load-canonical-fixture.cjs');
 
-// The shared stub's `workspace.fs` is inert. Install an in-memory filesystem on it so the real
-// folder-creation and migration code can be exercised without touching disk. Mutating the stub
-// object (rather than the shared file) keeps every other test script unaffected.
 const vscode = require('./lib/vscode-stub.cjs');
 
 const FileType = vscode.FileType;
 
-/** Directory set + file map keyed by the stub Uri's `fsPath`, normalized to forward slashes. */
-function createMemoryFs() {
-	const dirs = new Set();
-	const files = new Map();
-	const norm = u => (typeof u === 'string' ? u : u.fsPath).replace(/\\/g, '/').replace(/\/+$/, '');
+const { installMemoryFs } = require('./lib/memory-fs.cjs');
 
-	const api = {
-		_dirs: dirs,
-		_files: files,
-		async createDirectory(uri) {
-			// Mirror real behaviour: parents come into existence too.
-			const p = norm(uri);
-			const parts = p.split('/');
-			for (let i = 1; i <= parts.length; i++) {
-				const prefix = parts.slice(0, i).join('/');
-				if (prefix) dirs.add(prefix);
-			}
-		},
-		async writeFile(uri, bytes) {
-			const p = norm(uri);
-			await api.createDirectory(p.slice(0, p.lastIndexOf('/')));
-			files.set(p, Buffer.from(bytes));
-		},
-		async readFile(uri) {
-			const p = norm(uri);
-			if (!files.has(p)) {
-				const e = new Error(`ENOENT ${p}`);
-				e.code = 'FileNotFound';
-				throw e;
-			}
-			return new Uint8Array(files.get(p));
-		},
-		async stat(uri) {
-			const p = norm(uri);
-			if (files.has(p)) return { type: FileType.File };
-			if (dirs.has(p)) return { type: FileType.Directory };
-			const e = new Error(`ENOENT ${p}`);
-			e.code = 'FileNotFound';
-			throw e;
-		},
-		async readDirectory(uri) {
-			const p = norm(uri);
-			if (!dirs.has(p)) {
-				const e = new Error(`ENOENT ${p}`);
-				e.code = 'FileNotFound';
-				throw e;
-			}
-			const out = new Map();
-			for (const f of files.keys()) {
-				if (!f.startsWith(p + '/')) continue;
-				const rest = f.slice(p.length + 1);
-				const head = rest.split('/')[0];
-				out.set(head, rest.includes('/') ? FileType.Directory : FileType.File);
-			}
-			for (const d of dirs) {
-				if (!d.startsWith(p + '/')) continue;
-				out.set(d.slice(p.length + 1).split('/')[0], FileType.Directory);
-			}
-			return [...out.entries()];
-		},
-		async delete(uri) {
-			const p = norm(uri);
-			files.delete(p);
-			dirs.delete(p);
-			for (const f of [...files.keys()]) if (f.startsWith(p + '/')) files.delete(f);
-			for (const d of [...dirs]) if (d.startsWith(p + '/')) dirs.delete(d);
-		},
-		async rename(from, to) {
-			const a = norm(from);
-			const b = norm(to);
-			if (files.has(a)) {
-				await api.writeFile(b, files.get(a));
-				files.delete(a);
-				return;
-			}
-			for (const f of [...files.keys()]) {
-				if (!f.startsWith(a + '/')) continue;
-				await api.writeFile(b + f.slice(a.length), files.get(f));
-				files.delete(f);
-			}
-			dirs.delete(a);
-			dirs.add(b);
-		},
-		async copy(from, to) {
-			const a = norm(from);
-			const b = norm(to);
-			if (files.has(a)) {
-				await api.writeFile(b, files.get(a));
-				return;
-			}
-			for (const f of [...files.keys()]) {
-				if (f.startsWith(a + '/')) await api.writeFile(b + f.slice(a.length), files.get(f));
-			}
-			dirs.add(b);
-		},
-	};
-	return api;
+/**
+ * Regression (Wiz SAST, PR #14): the branch name was compiled into a regular expression, so a valid
+ * git branch such as `feature/(x` threw and `a+b` matched `aab`. It is now compared as plain text.
+ */
+function testMissingBranchDetection() {
+	const { isMissingBranchFailure } = importDist('workspace/gitConfigSource');
+	const pathspec = b => `error: pathspec '${b}' did not match any file(s) known to git`;
+	for (const branch of ['dev', 'feature/(x', 'feature/(x)', 'a+b', 'release/1.0', 'feat/a{2}', 'Feature/Mixed']) {
+		assert.doesNotThrow(() => isMissingBranchFailure(pathspec(branch), branch), branch);
+		assert.strictEqual(isMissingBranchFailure(pathspec(branch), branch), true, `${branch} recognised as missing`);
+	}
+	assert.strictEqual(isMissingBranchFailure(pathspec('aab'), 'a+b'), false, 'a+b is not a pattern');
+	assert.strictEqual(isMissingBranchFailure(pathspec('releasex1.0'), 'release/1.0'), false);
+	assert.strictEqual(isMissingBranchFailure("warning: Could not find remote branch dev to clone.", 'dev'), true);
+	assert.strictEqual(isMissingBranchFailure('fatal: Authentication failed', 'dev'), false);
 }
+testMissingBranchDetection();
 
-function installMemoryFs() {
-	const mem = createMemoryFs();
-	vscode.workspace.fs = mem;
-	return mem;
+/** A failed migration is shown to the user, says why, and says it will retry (Wiz SAST follow-up, PR #14). */
+function testMigrationFailureMessage() {
+	const { migrationFailureMessage } = importDist('workspace/layoutMigration');
+	const msg = migrationFailureMessage(new Error('EBUSY: resource busy or locked'));
+	assert.ok(msg.includes('EBUSY: resource busy or locked'), 'names the cause');
+	assert.ok(/try again the next time this workspace opens/.test(msg), 'says it will retry');
+	assert.ok(!/\n\s+at /.test(msg), 'no stack trace');
+	assert.ok(migrationFailureMessage('plain string').includes('plain string'));
+	// The failure path must not fall back to console logging.
+	const ext = fs.readFileSync(path.join(repoRoot, 'src', 'extension.ts'), 'utf8');
+	const catchBlock = ext.slice(ext.indexOf('report = await migrateWorkspace('), ext.indexOf('report.migrated.length === 0'));
+	assert.ok(catchBlock.includes('migrationFailureMessage(e)') && !catchBlock.includes('console.'), 'migration failure is shown, not logged');
 }
+testMigrationFailureMessage();
 
 const text = s => Buffer.from(s).toString('utf8');
 let pkgCache;
@@ -155,18 +82,17 @@ const {
 (async () => {
 	// ---------------------------------------------------------------- 9.2 component tree
 
-	// The tree was cut back to the components teams version today: Business Config, RDM and
-	// Workflows (with its two sub-folders). Five directories, four of them leaves.
+	// Business Config, RDM, Workflows (with its two sub-folders) and LifeCycle Actions. Six directories, five of them leaves.
 	assert.deepStrictEqual(
 		COMPONENT_FOLDERS.map(f => f.path),
-		['Business Config', 'RDM', 'Workflows/BPMN', 'Workflows/Custom Workflows'],
-		'exactly the four leaf components',
+		['Business Config', 'RDM', 'Workflows/BPMN', 'Workflows/Custom Workflows', 'LifeCycle Actions'],
+		'exactly the five leaf components',
 	);
 	const dirsDeclared = allTreeDirectories();
 	assert.deepStrictEqual(
 		dirsDeclared,
-		['Business Config', 'RDM', 'Workflows', 'Workflows/BPMN', 'Workflows/Custom Workflows'],
-		'five directories, Workflows implied as a container',
+		['Business Config', 'RDM', 'Workflows', 'Workflows/BPMN', 'Workflows/Custom Workflows', 'LifeCycle Actions'],
+		'six directories, Workflows implied as a container',
 	);
 	// A parent is always listed before anything beneath it, so creation order is safe.
 	for (const d of dirsDeclared) {
@@ -182,7 +108,7 @@ const {
 	const managed = COMPONENT_FOLDERS.filter(f => f.managed);
 	assert.deepStrictEqual(managed.map(f => f.path), [BUSINESS_CONFIG_DIR], 'only Business Config is managed');
 	assert.strictEqual(BUSINESS_CONFIG_FILE, `${BUSINESS_CONFIG_DIR}/BusinessConfig.json`);
-	assert.strictEqual(unmanagedFolders().length, 3, '3 unmanaged folders get a README');
+	assert.strictEqual(unmanagedFolders().length, 4, '4 unmanaged folders get a README');
 
 	// Every unmanaged folder carries a real docs.reltio.com URL, asserted offline: the map is the
 	// contract, and making CI depend on the network would be flaky for no added signal.
@@ -218,7 +144,9 @@ const {
 		);
 	}
 	const readmes = [...mem._files.keys()].filter(p => p.endsWith('/README.md'));
-	assert.strictEqual(readmes.length, 3, 'one README per unmanaged folder');
+	assert.strictEqual(readmes.length, 4, 'one README per unmanaged folder');
+	assert.ok(mem._files.has(`${tenant.fsPath}/LifeCycle Actions/README.md`), 'LifeCycle Actions carries a README');
+	assert.match(text(mem._files.get(`${tenant.fsPath}/LifeCycle Actions/README.md`)), /hcp-beforesave-customerid-lca/);
 	assert.ok(
 		!mem._files.has(`${tenant.fsPath}/${BUSINESS_CONFIG_DIR}/README.md`),
 		'Business Config gets no README, it holds a managed file',
@@ -242,9 +170,10 @@ const {
 	assert.ok(RETIRED_COMPONENT_FOLDERS.includes('DTSS'), 'DTSS is retired');
 	assert.ok(RETIRED_COMPONENT_FOLDERS.includes('Custom Code/Utilities'), 'nested leaves are retired');
 	assert.ok(
-		!RETIRED_COMPONENT_FOLDERS.some(p => ['Business Config', 'RDM', 'Workflows/BPMN'].includes(p)),
+		!RETIRED_COMPONENT_FOLDERS.some(p => ['Business Config', 'RDM', 'Workflows/BPMN', 'LifeCycle Actions'].includes(p)),
 		'no surviving component is listed as retired',
 	);
+	assert.ok(RETIRED_COMPONENT_FOLDERS.includes('LCA'), 'the short LCA folder name is not the tree folder');
 
 	mem = installMemoryFs();
 	const old = U('/wsP/env/t1');
@@ -279,7 +208,7 @@ const {
 	assert.ok(mem._files.has(`${old.fsPath}/Data Loader/README.md`), 'the rewritten README survives');
 
 	// Surviving components are never touched, whatever else is pruned.
-	for (const keep of ['Business Config', 'RDM', 'Workflows/BPMN', 'Workflows/Custom Workflows']) {
+	for (const keep of ['Business Config', 'RDM', 'Workflows/BPMN', 'Workflows/Custom Workflows', 'LifeCycle Actions']) {
 		assert.ok(mem._dirs.has(`${old.fsPath}/${keep}`), `${keep} survives pruning`);
 	}
 	// Idempotent: a second pass finds nothing left to do.

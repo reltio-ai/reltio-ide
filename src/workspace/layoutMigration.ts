@@ -18,6 +18,7 @@ import {
 	LEGACY_HISTORY_DIRNAME,
 	LEGACY_LAYOUT_FILENAME,
 	MIGRATION_BACKUP_DIR,
+	isComponentTree,
 	materializeTenantTree,
 	pruneRetiredComponentFolders,
 	tenantPath,
@@ -320,6 +321,9 @@ export async function migrateWorkspace(
 		for (const tenant of env.tenants) {
 			const root = environmentManager.getTenantRootUri(env.name, tenant.tenantId);
 			try {
+				// Fill in folders added to the tree after the tenant was created, such as LifeCycle Actions/.
+				// Non-destructive: an existing README is left as the user wrote it.
+				if (await isComponentTree(root)) await materializeTenantTree(root);
 				for (const p of await pruneRetiredComponentFolders(root)) {
 					pruned.push(`${tenant.tenantId}/${p}`);
 				}
@@ -417,4 +421,14 @@ export async function undoMigration(
 /** True when this workspace has a migration backup that `undoMigration` could restore from. */
 export async function hasMigrationBackup(workspaceRoot: vscode.Uri): Promise<boolean> {
 	return exists(vscode.Uri.joinPath(workspaceRoot, MIGRATION_BACKUP_DIR));
+}
+
+/**
+ * What the user sees when the automatic migration throws. The stamp is written only on full
+ * success, so the migration runs again next time the workspace opens; the message says so rather
+ * than leaving the user to guess whether their tenants are in a half-moved state.
+ */
+export function migrationFailureMessage(error: unknown): string {
+	const detail = error instanceof Error ? error.message : String(error);
+	return `Reltio IDE could not move your tenants to the Git-ready folder structure: ${detail}. It will try again the next time this workspace opens.`;
 }

@@ -1,14 +1,27 @@
 import * as vscode from 'vscode';
+import { AGENT_SKILLS_SETTING, detectHost, syncAgentSkills } from './agentSkillDiscovery';
 
 export interface ReltioAgentAssets {
 	skillsBundleVersion: string;
 	velocityPacksBundleVersion: string;
+	lcaKnowledgeBaseBundleVersion?: string;
 }
 
 export interface ReltioAgentSyncState {
 	skillsBundleVersion?: string;
 	velocityPacksBundleVersion?: string;
+	lcaKnowledgeBaseBundleVersion?: string;
 	extensionVersion?: string;
+	/** Workspace-relative paths of discoverable skill copies and agent guides the extension created. */
+	ownedAgentFiles?: string[];
+}
+
+/** What a sync could not do, for the caller to tell the user about. */
+export interface ReltioAgentSyncReport {
+	/** Paths already occupied by something the extension did not create; left untouched. */
+	conflicts: string[];
+	/** Bundled skills an agent would reject, with the reason. */
+	invalid: string[];
 }
 
 const MANAGED_SEGMENTS = ['.reltio', 'reltio-agent'] as const;
@@ -180,9 +193,12 @@ function versionsDiffer(bundled: string | undefined, stamped: string | undefined
 }
 
 /**
- * Copies bundled default skills and Velocity Pack reference files into
+ * Copies bundled default skills, Velocity Packs, and the LCA knowledge base into
  * `.reltio/reltio-agent/` when versions in `resources/reltio-agent-assets.json`
- * advance (or when `force` is true). Never touches `skills/workspace/**`.
+ * advance (or when `force` is true). The LCA skill folder is copied with the
+ * knowledge base so shipping it does not recopy every other default skill.
+ * Then installs the discoverable skill copies and agent guides (see
+ * `agentSkillDiscovery.ts`). Never touches `skills/workspace/**`.
  */
 export function syncReltioAgentAssets(
 	context: vscode.ExtensionContext,
@@ -228,13 +244,14 @@ function reportStartupFailure(err: unknown): void {
 async function syncOnce(
 	context: vscode.ExtensionContext,
 	options?: { force?: boolean; workspaceFolder?: vscode.WorkspaceFolder },
-): Promise<void> {
+): Promise<ReltioAgentSyncReport> {
+	const report: ReltioAgentSyncReport = { conflicts: [], invalid: [] };
 	const force = options?.force ?? false;
 	const folders = options?.workspaceFolder
 		? [options.workspaceFolder]
 		: vscode.workspace.workspaceFolders ?? [];
 	if (folders.length === 0) {
-		return;
+		return report;
 	}
 
 	// Everything the agent needs lives under `.reltio/reltio-agent/`. Clear what 1.0.24–1.0.26 left outside
@@ -247,11 +264,12 @@ async function syncOnce(
 	const assetsUri = vscode.Uri.joinPath(context.extensionUri, ...ASSETS_SEGMENTS);
 	const bundled = await readJsonFile<ReltioAgentAssets>(assetsUri);
 	if (!bundled?.skillsBundleVersion || !bundled?.velocityPacksBundleVersion) {
-		return;
+		return report;
 	}
 
 	const skillsSrc = vscode.Uri.joinPath(context.extensionUri, 'skills', 'reltio-default');
 	const packsSrc = vscode.Uri.joinPath(context.extensionUri, 'resources', 'velocity-packs');
+	const kbSrc = vscode.Uri.joinPath(context.extensionUri, 'resources', 'lca-knowledge-base');
 
 	for (const ws of folders) {
 		const root = managedRootUri(ws);
@@ -262,6 +280,7 @@ async function syncOnce(
 
 		const destSkills = vscode.Uri.joinPath(root, 'skills', 'default');
 		const destPacks = vscode.Uri.joinPath(root, 'velocity-packs');
+		const destKb = vscode.Uri.joinPath(root, 'lca-knowledge-base');
 
 		const needSkills =
 			force ||
@@ -271,9 +290,15 @@ async function syncOnce(
 			force ||
 			!(await pathExists(destPacks)) ||
 			versionsDiffer(bundled.velocityPacksBundleVersion, stamp.velocityPacksBundleVersion);
+		const needKb =
+			Boolean(bundled.lcaKnowledgeBaseBundleVersion) &&
+			(force ||
+				!(await pathExists(destKb)) ||
+				versionsDiffer(bundled.lcaKnowledgeBaseBundleVersion, stamp.lcaKnowledgeBaseBundleVersion));
 
 		let skillsSynced = false;
 		let packsSynced = false;
+		let kbSynced = false;
 
 		if (needSkills && (await pathExists(skillsSrc))) {
 			await deleteIfExists(destSkills);
@@ -287,7 +312,28 @@ async function syncOnce(
 			packsSynced = true;
 		}
 
-		if (skillsSynced || packsSynced) {
+		if (needKb && (await pathExists(kbSrc))) {
+			await deleteIfExists(destKb);
+			await copyDirectory(kbSrc, destKb);
+			const lcaSkillSrc = vscode.Uri.joinPath(skillsSrc, 'lca-assistant');
+			if (await pathExists(lcaSkillSrc)) {
+				const destLcaSkill = vscode.Uri.joinPath(destSkills, 'lca-assistant');
+				await deleteIfExists(destLcaSkill);
+				await copyDirectory(lcaSkillSrc, destLcaSkill);
+			}
+			kbSynced = true;
+		}
+
+		const agent = await syncAgentSkills(ws.uri, skillsSrc, stamp.ownedAgentFiles ?? [], {
+			install: vscode.workspace.getConfiguration('reltio').get<boolean>(AGENT_SKILLS_SETTING, true),
+			host: detectHost(vscode.env),
+		});
+		report.conflicts.push(...agent.conflicts);
+		report.invalid.push(...agent.invalid);
+		const ownershipChanged =
+			JSON.stringify(agent.owned) !== JSON.stringify([...(stamp.ownedAgentFiles ?? [])].sort());
+
+		if (skillsSynced || packsSynced || kbSynced || ownershipChanged) {
 			const next: ReltioAgentSyncState = {
 				extensionVersion: String(context.extension.packageJSON?.version ?? ''),
 			};
@@ -301,7 +347,35 @@ async function syncOnce(
 			} else if (stamp.velocityPacksBundleVersion) {
 				next.velocityPacksBundleVersion = stamp.velocityPacksBundleVersion;
 			}
+			if (kbSynced && bundled.lcaKnowledgeBaseBundleVersion) {
+				next.lcaKnowledgeBaseBundleVersion = bundled.lcaKnowledgeBaseBundleVersion;
+			} else if (stamp.lcaKnowledgeBaseBundleVersion) {
+				next.lcaKnowledgeBaseBundleVersion = stamp.lcaKnowledgeBaseBundleVersion;
+			}
+			next.ownedAgentFiles = agent.owned;
 			await writeJsonFile(stampUri, next);
 		}
 	}
+	return report;
+}
+
+/**
+ * Decides when a workspace's mode change should sync agent assets.
+ *
+ * Syncing waits until a mode (tenant or repository) is chosen, because creating `.reltio/` in a
+ * freshly opened folder would make it look non-empty to Connect your Repository. It syncs once per
+ * mode, and losing the mode re-arms it: a user who empties the folder and connects again must get
+ * the assets back, or agents are left without the skills the guides promise.
+ */
+export function createModeSyncTrigger(sync: () => void): (mode: string | undefined) => void {
+	let synced = false;
+	return mode => {
+		if (mode === undefined) {
+			synced = false;
+			return;
+		}
+		if (synced) return;
+		synced = true;
+		sync();
+	};
 }

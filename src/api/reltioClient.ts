@@ -61,6 +61,8 @@ export class ReltioApiError extends Error {
 		 * handler suggest an actual wait instead of inventing one.
 		 */
 		readonly retryAfterSeconds?: number,
+		/** Raw response body, kept where a caller needs to show the server's own explanation. */
+		readonly responseBody?: string,
 	) {
 		super(message);
 		this.name = 'ReltioApiError';
@@ -551,4 +553,76 @@ export async function putL3Configuration(
 		const message = formatPutConfigurationFailureMessage(res.status, fullText);
 		throw new ReltioApiError(message, res.status);
 	}
+}
+
+/** Match explanation evaluates candidates server-side, so it gets a longer budget than config calls. */
+const VERIFY_MATCHES_TIMEOUT_MS = 30_000;
+
+/** An inline entity (`type` + `attributes`, optionally `crosswalks`) or a stored-entity URI. */
+export type VerifyMatchesEntity = string | Record<string, unknown>;
+
+export interface VerifyMatchesRequestBody {
+	first: VerifyMatchesEntity;
+	second: VerifyMatchesEntity;
+	/** Candidate match groups, evaluated instead of the tenant's deployed rules. */
+	matchGroups: unknown[];
+}
+
+/** One rule's verdict in a `_verifyMatches` explanation (the fields this extension reads). */
+export interface VerifyMatchesRuleExplanation {
+	label?: string;
+	/** True only when the rule matched *and* the pair shares a match token (candidate discovery). */
+	matched?: boolean;
+	/** True when the rule logic is satisfied, regardless of whether a match token is shared. */
+	matchedByDocuments?: boolean;
+	matchAction?: string;
+	bypassed?: boolean;
+	relevance?: number;
+	/** The rule's operator tree with a relevance per operand and attribute, as Reltio evaluated it. */
+	rule?: unknown;
+}
+
+export interface VerifyMatchesExplanation {
+	summary?: string[];
+	rules?: Record<string, VerifyMatchesRuleExplanation>;
+	[key: string]: unknown;
+}
+
+/**
+ * Explains how two entities match under the candidate `matchGroups` in `body`.
+ *
+ * Read-only: the endpoint evaluates and explains, and never creates, merges or changes an entity.
+ * Used by the match-verification bridge so an agent can test a rule before it is written to the
+ * configuration, let alone deployed.
+ */
+export async function verifyMatches(
+	baseUrl: string,
+	tenantId: string,
+	token: string,
+	body: VerifyMatchesRequestBody,
+): Promise<VerifyMatchesExplanation> {
+	const root = toHttpsBase(baseUrl);
+	const url = `${root}/reltio/api/${encodeURIComponent(tenantId)}/entities/_verifyMatches`;
+	const res = await fetchWithTimeout(
+		url,
+		{
+			method: 'POST',
+			headers: reltioHeaders(token, { 'Content-Type': 'application/json' }),
+			body: JSON.stringify(body),
+		},
+		VERIFY_MATCHES_TIMEOUT_MS,
+	);
+	if (res.status === 401) {
+		throw new ReltioApiError('Unauthorized (401)', 401);
+	}
+	if (!res.ok) {
+		let text = '';
+		try {
+			text = await res.text();
+		} catch {
+			/* ignore */
+		}
+		throw new ReltioApiError(`Verify matches failed: HTTP ${res.status}`, res.status, undefined, text.slice(0, MAX_ERROR_BODY_CHARS));
+	}
+	return (await res.json()) as VerifyMatchesExplanation;
 }

@@ -8,10 +8,12 @@ Business Config/
 RDM/
 Workflows/BPMN/
 Workflows/Custom Workflows/
+LifeCycle Actions/
 ```
 
 The tree covers the components teams version today. `Workflows/` exists as an implied container,
-giving five directories in total.
+giving six directories in total. `LifeCycle Actions/` holds generated Life Cycle Action projects at
+`<type>-<hook>-<name>-lca/` and carries a `README.md` like the other unmanaged folders.
 
 #### Scenario: Adding a tenant creates the full tree
 - **WHEN** the user adds a tenant to an environment
@@ -87,7 +89,7 @@ folder and everything in it.
 
 #### Scenario: Surviving components are never pruned
 - **WHEN** retired folders are removed
-- **THEN** `Business Config/`, `RDM/`, `Workflows/BPMN/` and `Workflows/Custom Workflows/` remain
+- **THEN** `Business Config/`, `RDM/`, `Workflows/BPMN/`, `Workflows/Custom Workflows/` and `LifeCycle Actions/` remain
 
 #### Scenario: Pruning is idempotent
 - **WHEN** the prune runs a second time on the same tenant

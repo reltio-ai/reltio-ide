@@ -8,6 +8,10 @@
  * generic helper "not (yet) promoted to scripts/lib/"; a third consumer
  * (`test-workflow-repo-java-discovery.cjs`) is the point at which copying it again costs
  * more than sharing it.
+ *
+ * In-memory `vscode.workspace.fs` for unit tests. The shared stub's `fs` is inert; installing this on
+ * it lets real folder, gitignore and sync code run without touching disk. Mutating the stub object
+ * (rather than the shared file) keeps every other test script unaffected.
  */
 const vscode = require('./vscode-stub.cjs');
 
@@ -23,6 +27,7 @@ function createMemoryFs() {
 		_dirs: dirs,
 		_files: files,
 		async createDirectory(uri) {
+			// Mirror real behaviour: parents come into existence too.
 			const p = norm(uri);
 			const parts = p.split('/');
 			for (let i = 1; i <= parts.length; i++) {
@@ -78,6 +83,34 @@ function createMemoryFs() {
 			dirs.delete(p);
 			for (const f of [...files.keys()]) if (f.startsWith(p + '/')) files.delete(f);
 			for (const d of [...dirs]) if (d.startsWith(p + '/')) dirs.delete(d);
+		},
+		async rename(from, to) {
+			const a = norm(from);
+			const b = norm(to);
+			if (files.has(a)) {
+				await api.writeFile(b, files.get(a));
+				files.delete(a);
+				return;
+			}
+			for (const f of [...files.keys()]) {
+				if (!f.startsWith(a + '/')) continue;
+				await api.writeFile(b + f.slice(a.length), files.get(f));
+				files.delete(f);
+			}
+			dirs.delete(a);
+			dirs.add(b);
+		},
+		async copy(from, to) {
+			const a = norm(from);
+			const b = norm(to);
+			if (files.has(a)) {
+				await api.writeFile(b, files.get(a));
+				return;
+			}
+			for (const f of [...files.keys()]) {
+				if (f.startsWith(a + '/')) await api.writeFile(b + f.slice(a.length), files.get(f));
+			}
+			dirs.add(b);
 		},
 	};
 	return api;
