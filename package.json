@@ -367,6 +367,7 @@
       {
         "command": "reltio.editWorkflowAdapterUrl",
         "title": "Edit Workflow Adapter URL",
+        "category": "Reltio",
         "icon": "$(edit)"
       },
       {
@@ -377,16 +378,19 @@
       {
         "command": "reltio.newWorkflowDraft",
         "title": "New Workflow...",
+        "category": "Reltio",
         "icon": "$(new-file)"
       },
       {
         "command": "reltio.duplicateWorkflowDraft",
         "title": "Duplicate as Draft...",
+        "category": "Reltio",
         "icon": "$(files)"
       },
       {
         "command": "reltio.deployWorkflow",
         "title": "Deploy to Tenant",
+        "category": "Reltio",
         "icon": "$(cloud-upload)"
       },
       {
@@ -422,16 +426,19 @@
       {
         "command": "reltio.registerJarDeployment",
         "title": "Register JAR...",
+        "category": "Reltio",
         "icon": "$(add)"
       },
       {
         "command": "reltio.previewWorkflowDiagram",
         "title": "Show BPMN Diagram",
+        "category": "Reltio",
         "icon": "$(type-hierarchy)"
       },
       {
         "command": "reltio.connectWorkflowRepository",
         "title": "Connect Custom Workflow Repository...",
+        "category": "Reltio",
         "icon": "$(repo)"
       },
       {
@@ -581,7 +588,11 @@
         { "command": "reltio.openWorkflowBpmn", "when": "false" },
         { "command": "reltio.discardWorkflowBpmnChanges", "when": "false" },
         { "command": "reltio.compareWorkflowBpmn", "when": "false" },
-        { "command": "reltio.deleteWorkflowDraft", "when": "false" }
+        { "command": "reltio.deleteWorkflowDraft", "when": "false" },
+        { "command": "reltio.disconnectWorkflowRepository", "when": "false" },
+        { "command": "reltio.refreshWorkflowRepoSync", "when": "false" },
+        { "command": "reltio.openWorkflowRepoFolder", "when": "false" },
+        { "command": "reltio.openWorkflowRepoInBrowser", "when": "false" }
       ],
       "view/title": [
         {
