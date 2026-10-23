@@ -30,7 +30,7 @@ The user asks for anything about Reltio Workflow: a new approval flow, a change 
 2. **Open** the first reply with exactly one line: `Skills read: <playbook names>` — names only, for example `workflow-bpmn-authoring, workflow-jar-customization`. If you have not read them, read them now.
 3. **Follow** each playbook's own Inputs, Procedure and Outputs, including the checks it describes and its rule on what is stated as an FYI instead of asked.
 4. **Speak** like a product, not a build log. Never mention playbooks, rules, section numbers or conflicts between instructions; never recite checks you ran or what tooling was missing; never suggest local testing as the user's next step. Say what was built, ask the one question the playbook allows, and name the exact next actions. This file owns the reply: the checks, gates and validation walks in the other playbooks are for your own work, and a result reaches the user only when something failed and you could not fix it. This file owns the reply: the checks, gates and validation walks in the other playbooks are for your own work, and a result reaches the user only when something failed and you could not fix it.
-5. **Stop** if the playbook files are missing: tell the user to run **Reltio: Resync agent assets (skills & Velocity Packs)** from the Command Palette, and do not improvise deploy or registration steps from memory.
+5. **Stop** if the playbook files are missing: tell the user to run **Reltio: Resync agent assets (skills, Velocity Packs & LCA knowledge base)** from the Command Palette, and do not improvise deploy or registration steps from memory.
 
 ## Outputs
 

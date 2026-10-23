@@ -28,8 +28,8 @@ const fs = require('fs');
 const path = require('path');
 
 // Pinned together: change the skills, bump skillsBundleVersion, update both values.
-const PINNED_SKILLS_BUNDLE_VERSION = '21';
-const PINNED_SKILLS_HASH = '1dcc4acc098c86b8dd66cf51c11b8d7b214b80e0e7b6068bf3608204045ffc92';
+const PINNED_SKILLS_BUNDLE_VERSION = '22';
+const PINNED_SKILLS_HASH = 'dd792da2720a598fd95635acda30aecdf8abbaaea76b028db27e2bc61f29f0f9';
 
 
 const repoRoot = path.join(__dirname, '..');
@@ -40,6 +40,7 @@ const PLAYBOOKS = [
 	'workflow-jar-customization',
 	'workflow-repo-contribution',
 	'workflow-local-adapter-setup',
+	'workflow-assistant',
 ];
 
 // ── 1. The bundle actually reaches existing users ───────────────────────────
