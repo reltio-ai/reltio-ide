@@ -3732,7 +3732,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		const drafts = await listWorkflowDrafts(
 			environmentManager!.getWorkflowDraftsDirectoryUri(environmentName, tenantId),
 		);
-		const takenByDraft = new Set(drafts.map(d => d.processId));
+		// Lower-cased: the file this becomes (`{processId}.bpmn20.xml`) lives on NTFS/APFS by
+		// default, both case-insensitive, so "MyProcess" colliding with an existing "myProcess"
+		// is a real same-file overwrite, not two distinct drafts, even though the two ids are
+		// not the same string.
+		const takenByDraft = new Set(drafts.map(d => d.processId.toLowerCase()));
 
 		const processId = await vscode.window.showInputBox({
 			title: `New workflow on ${tenantId}`,
@@ -3742,7 +3746,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			validateInput(value) {
 				const message = processIdValidationMessage(value);
 				if (message) return message;
-				if (takenByDraft.has(value.trim())) return 'A draft with this ID already exists.';
+				if (takenByDraft.has(value.trim().toLowerCase())) return 'A draft with this ID already exists.';
 				return undefined;
 			},
 		});
@@ -3790,11 +3794,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			await createInConnectedRepo(environmentName, tenantId, processId, xml);
 			return;
 		}
-		const fileUri = await writeWorkflowDraft(
-			environmentManager!.getWorkflowDraftsDirectoryUri(environmentName, tenantId),
-			draftFileName(processId),
-			xml,
-		);
+		let fileUri: vscode.Uri;
+		try {
+			fileUri = await writeWorkflowDraft(
+				environmentManager!.getWorkflowDraftsDirectoryUri(environmentName, tenantId),
+				draftFileName(processId),
+				xml,
+			);
+		} catch (e) {
+			void vscode.window.showErrorMessage(
+				`Could not create "${processId}": ${(e as Error).message || 'the file could not be written.'}`,
+			);
+			return;
+		}
 		treeProvider.notifyWorkflowDraftsChanged();
 		const doc = await vscode.workspace.openTextDocument(fileUri);
 		await vscode.window.showTextDocument(doc, { preview: false });

@@ -342,6 +342,19 @@ export async function writeWorkflowDraft(
 ): Promise<vscode.Uri> {
 	await vscode.workspace.fs.createDirectory(draftsDir);
 	const fileUri = vscode.Uri.joinPath(draftsDir, fileName);
+	// This is the one call site that creates a brand-new draft — never a re-save of an existing
+	// one — so an existing file here means something else claimed this name between the caller's
+	// own (case-insensitive, pre-trimmed) duplicate check and this write, on a case-insensitive
+	// filesystem (NTFS/APFS default) that check cannot fully see across two different inputs.
+	// Checked here, immediately before the write, to close that window rather than widen it.
+	try {
+		await vscode.workspace.fs.stat(fileUri);
+		throw new Error(`"${fileName}" already exists.`);
+	} catch (e) {
+		// FileSystemError with code 'FileNotFound' is the expected, good outcome of `stat` here;
+		// anything else (including the Error thrown just above) must propagate.
+		if (!(e instanceof vscode.FileSystemError) || e.code !== 'FileNotFound') throw e;
+	}
 	await vscode.workspace.fs.writeFile(fileUri, Buffer.from(xml, 'utf-8'));
 	return fileUri;
 }
