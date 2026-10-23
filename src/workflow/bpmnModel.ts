@@ -200,7 +200,13 @@ export function extractProcessModel(xml: string): BpmnProcessModel {
 	const scannable = blankIgnoredRegions(xml);
 	const processMatch = PROCESS_TAG.exec(scannable);
 	const processBody = processMatch?.[1] ?? '';
-	const { nodes, duplicates } = extractFlowNodes(scannable);
+	// Nodes and flows are read from `processScope`, not `scannable`: a second `<process>` later
+	// in the same file is free to reuse the same local ids as the first (they are two different
+	// id spaces), so scanning the whole document folded the second process's nodes and flows
+	// into the first's, reporting phantom duplicate ids and drawing flows between elements that
+	// were never connected.
+	const processScope = scopeToFirstProcess(scannable, processMatch);
+	const { nodes, duplicates } = extractFlowNodes(processScope);
 
 	return {
 		processId: attribute(processBody, 'id'),
@@ -208,11 +214,39 @@ export function extractProcessModel(xml: string): BpmnProcessModel {
 		isExecutable: attribute(processBody, 'isExecutable') === 'true',
 		nodes,
 		duplicates,
-		flows: extractSequenceFlows(scannable),
+		flows: extractSequenceFlows(processScope),
 		processTag: processMatch
 			? { offset: processMatch.index, length: processMatch[0].length }
 			: undefined,
 	};
+}
+
+/**
+ * Blank out everything outside the first `<process>`'s own body, the same same-length way
+ * `blankIgnoredRegions()` blanks comments and the diagram block — so every offset this module
+ * reports stays an absolute offset into the original `xml`, not an index into a shorter slice.
+ *
+ * Reltio deploys one process per file and the first `<process>` is already the one whose id and
+ * name this module reports (see `extractProcessModel`'s own doc comment); this is what makes
+ * `extractFlowNodes`/`extractSequenceFlows` agree, instead of reading every process in the file
+ * as if it were one.
+ */
+function scopeToFirstProcess(scannable: string, processMatch: RegExpExecArray | null): string {
+	if (!processMatch || processMatch[0].endsWith('/>')) {
+		// No process at all, or a self-closing `<process … />` with no body to read.
+		return ' '.repeat(scannable.length);
+	}
+	const bodyStart = processMatch.index + processMatch[0].length;
+	const closing = /<\/(?:[\w.-]+:)?process\s*>/g;
+	closing.lastIndex = bodyStart;
+	const closeMatch = closing.exec(scannable);
+	const bodyEnd = closeMatch ? closeMatch.index : scannable.length;
+
+	return (
+		' '.repeat(bodyStart) +
+		scannable.slice(bodyStart, bodyEnd) +
+		' '.repeat(scannable.length - bodyEnd)
+	);
 }
 
 function extractFlowNodes(scannable: string): {
@@ -282,6 +316,33 @@ function extractFlowNodes(scannable: string): {
 const TASK_LISTENER_SOURCE = String.raw`<(?:[\w.-]+:)?taskListener\b([^>]*?)\/?>`;
 
 /**
+ * Hard ceiling on how far `readTaskListeners()`/`readCondition()` will look for their
+ * element's closing tag.
+ *
+ * Both are called once per task/flow, from inside `extractFlowNodes`'s and
+ * `extractSequenceFlows`'s own loops over every element in the document. Without a ceiling,
+ * each call that fails to find its closing tag (an unclosed or truncated element — malformed,
+ * not necessarily malicious) scans all the way to the end of the document; a document with many
+ * such elements turns one bad file into an O(n²) scan, the kind of cost a file only has to be
+ * *opened* or *previewed*, not deployed, to pay. 20,000 characters comfortably covers any
+ * legitimate task body or condition expression this extension has seen.
+ */
+const MAX_ELEMENT_BODY_SEARCH = 20_000;
+
+/**
+ * Find where an element's body ends, searching forward from `bodyStart` for `closingSource` but
+ * never past `MAX_ELEMENT_BODY_SEARCH` characters — see that constant's own doc comment for why.
+ * The window is sliced out and searched with a fresh, non-global regex, rather than seeking a
+ * global one with `lastIndex`, specifically so a `.exec()` that fails to match cannot cost more
+ * than scanning that one bounded slice.
+ */
+function findElementBodyEnd(scannable: string, bodyStart: number, closingSource: string): number {
+	const windowEnd = Math.min(scannable.length, bodyStart + MAX_ELEMENT_BODY_SEARCH);
+	const closeMatch = new RegExp(closingSource).exec(scannable.slice(bodyStart, windowEnd));
+	return closeMatch ? bodyStart + closeMatch.index : windowEnd;
+}
+
+/**
  * Read the `<activiti:taskListener>` elements nested in one task.
  *
  * Scoped to this element's own body, not searched globally: `bpmn-rules.md` §3
@@ -290,12 +351,8 @@ const TASK_LISTENER_SOURCE = String.raw`<(?:[\w.-]+:)?taskListener\b([^>]*?)\/?>
  * case worth catching — and a global search would report both tasks as fine.
  */
 function readTaskListeners(scannable: string, bodyStart: number, tag: string): BpmnTaskListener[] {
-	// Constructed per call, so seeking with `lastIndex` is safe here — the hazard
-	// noted at the top of this file is a *shared* global regex, not a local one.
-	const closing = new RegExp(String.raw`<\/(?:[\w.-]+:)?${tag}\s*>`, 'g');
-	closing.lastIndex = bodyStart;
-	const closeMatch = closing.exec(scannable);
-	const body = scannable.slice(bodyStart, closeMatch ? closeMatch.index : undefined);
+	const bodyEnd = findElementBodyEnd(scannable, bodyStart, String.raw`<\/(?:[\w.-]+:)?${tag}\s*>`);
+	const body = scannable.slice(bodyStart, bodyEnd);
 
 	const listeners: BpmnTaskListener[] = [];
 	const pattern = new RegExp(TASK_LISTENER_SOURCE, 'g');
@@ -352,13 +409,10 @@ function readCondition(scannable: string, bodyStart: number): string | undefined
 	// that happens to contain that literal substring — e.g. referencing another flow's tag name in
 	// a comment-like string — would otherwise truncate the body early. Optional namespace prefix
 	// matches the convention `BPMNDI_BLOCK` in `workflowBpmnFiles.ts` uses for the same kind of
-	// closing-tag search. Constructed per call and sought with `lastIndex` the same way
-	// `readTaskListeners()` above does — safe here because the hazard noted at the top of this
-	// file is a *shared* global regex, not one built fresh for this call.
-	const closing = /<\/(?:[\w.-]+:)?sequenceFlow\s*>/g;
-	closing.lastIndex = bodyStart;
-	const closeMatch = closing.exec(scannable);
-	const body = scannable.slice(bodyStart, closeMatch ? closeMatch.index : undefined);
+	// closing-tag search. Bounded by `findElementBodyEnd()` — see `MAX_ELEMENT_BODY_SEARCH`'s own
+	// doc comment for why an unbounded search here is a per-flow cost, not a one-time one.
+	const bodyEnd = findElementBodyEnd(scannable, bodyStart, String.raw`<\/(?:[\w.-]+:)?sequenceFlow\s*>`);
+	const body = scannable.slice(bodyStart, bodyEnd);
 	const expression = CONDITION_EXPRESSION.exec(body);
 	if (!expression?.[1]) return undefined;
 

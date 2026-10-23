@@ -8,6 +8,8 @@
  *       the Reltio-specific `activiti:candidateGroups` / `activiti:class`.
  *   2.  Namespace prefixes are optional everywhere — the same document deploys
  *       with `<userTask>` or `<bpmn:userTask>`, so both must read the same.
+ *   2b. A second `<process>` later in the same file must not leak its own nodes
+ *       and flows into the first's result, even when it reuses the first's ids.
  *   3.  A commented-out element is not a real one, and the diagram section is
  *       not a second copy of every node. Both are blanked with same-length
  *       runs so reported offsets still index the original text.
@@ -17,6 +19,9 @@
  *       exact pair Activiti rejects.
  *   5b. A condition whose CDATA contains the literal substring "sequenceFlow>"
  *       must not have its body truncated there (security/code-quality review).
+ *   5c. An unclosed task/flow must not force `readTaskListeners`/`readCondition`
+ *       to scan the rest of the document looking for a closing tag that was
+ *       never written — the search is capped at a fixed window.
  *   6.  Serialization: shapes before edges, the plane names the process, every
  *       value XML-escaped, and elements without positions skipped rather than
  *       stacked at the origin.
@@ -149,6 +154,54 @@ const TRICKY_CDATA = `<?xml version="1.0" encoding="UTF-8"?>
 `;
 
 /**
+ * Two `<process>` elements in one file. Not something Reltio deploys — one process per file,
+ * `bpmn-rules.md` §8 — but a file can still be opened/previewed with more than one, and the
+ * second process's own "start"/"end" ids are not duplicates of the first's: they are a
+ * different process's own id space. `extractFlowNodes`/`extractSequenceFlows` used to scan the
+ * whole document rather than just the first `<process>`, so the second process's elements leaked
+ * into the first's result and the reused ids were reported as duplicates that do not exist.
+ */
+const MULTI_PROCESS = `<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <process id="first" isExecutable="true">
+    <startEvent id="start" name="First start" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="end" />
+    <endEvent id="end" name="First end" />
+  </process>
+  <process id="second" isExecutable="true">
+    <startEvent id="start" name="Second start" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="end" />
+    <endEvent id="end" name="Second end" />
+  </process>
+</definitions>
+`;
+
+/**
+ * A `<userTask>` that is never closed, with one `<activiti:taskListener>` well inside
+ * `MAX_ELEMENT_BODY_SEARCH` (20,000 characters) and a second one placed past it, separated by
+ * filler long enough to push the second past the cap. Regression guard for the DoS fix: before
+ * the cap, a missing closing tag made `readTaskListeners()` scan to the end of the document
+ * looking for one that was never written — bounding that search is the fix this fixture proves,
+ * by asserting the far listener is (correctly) not seen.
+ */
+const NEAR_LISTENER = '<activiti:taskListener event="create" class="near.Listener" />';
+const FAR_LISTENER = '<activiti:taskListener event="create" class="far.Listener" />';
+const PAST_SEARCH_WINDOW_FILLER = 'x'.repeat(25_000);
+const UNCLOSED_TASK = `<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:activiti="http://activiti.org/bpmn">
+  <process id="unclosedProcess" isExecutable="true">
+    <startEvent id="start" />
+    <userTask id="t" name="Never closed">
+      <extensionElements>
+        ${NEAR_LISTENER}
+        <!-- ${PAST_SEARCH_WINDOW_FILLER} -->
+        ${FAR_LISTENER}
+      </extensionElements>
+</definitions>
+`;
+
+/**
  * The shape of the two screenshots that prompted this: a gateway fanning out on
  * conditions, into end events whose names are longer than the circles they hang
  * under. Both of the failure modes — a condition drawn across its own gateway,
@@ -239,6 +292,24 @@ function disjoint(a, b) {
 	assert.strictEqual(plain.flows.length, model.flows.length);
 }
 
+// ── 2b. A second <process> must not leak into the first's result ───────────
+{
+	const model = extractProcessModel(MULTI_PROCESS);
+	assert.strictEqual(model.processId, 'first');
+	assert.strictEqual(model.nodes.length, 2, 'only the first process\'s two nodes');
+	assert.deepStrictEqual(
+		model.nodes.map(n => n.name),
+		['First start', 'First end'],
+		'the second process\'s nodes must not be read at all',
+	);
+	assert.strictEqual(model.flows.length, 1, 'only the first process\'s one flow');
+	assert.strictEqual(
+		model.duplicates.length,
+		0,
+		'the second process reusing "start"/"end" is not a duplicate id — it is a different process\'s own id space',
+	);
+}
+
 // ── 3. Comments and the diagram block are not content ───────────────────────
 {
 	const model = extractProcessModel(BRANCHING);
@@ -311,6 +382,24 @@ function disjoint(a, b) {
 		'a literal "sequenceFlow>" substring inside the CDATA must not truncate the condition',
 	);
 	assert.strictEqual(byId.get('fOther').condition, undefined, 'the sibling flow must not inherit anything from the truncation');
+}
+
+// ── 5c. An unclosed element's closing-tag search is capped, not unbounded ──
+// Regression guard (DoS fix): `readTaskListeners()`/`readCondition()` used to scan all the way
+// to the end of the document for a closing tag that may never exist. `UNCLOSED_TASK`'s
+// `<userTask>` is never closed; a listener well inside the fixed search window must still be
+// read, and one placed past it — by design, via `PAST_SEARCH_WINDOW_FILLER` — must not be, which
+// is what proves the search actually stopped rather than running to the end of the document.
+{
+	const model = extractProcessModel(UNCLOSED_TASK);
+	const task = model.nodes.find(n => n.id === 't');
+	assert.ok(task, 'the unclosed userTask must still be read as a node');
+	const classNames = task.taskListeners.map(l => l.className);
+	assert.ok(classNames.includes('near.Listener'), 'a listener inside the search window must be read');
+	assert.ok(
+		!classNames.includes('far.Listener'),
+		'a listener placed past the bounded search window must not be read',
+	);
 }
 
 // ── 6. Serialization ────────────────────────────────────────────────────────
