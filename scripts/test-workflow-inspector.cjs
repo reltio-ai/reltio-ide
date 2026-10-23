@@ -15,10 +15,12 @@
  *   7.  HTTP 4xx maps to `ReltioApiError` with the correct status code.
  *   7b. A large error body is truncated before it reaches the error message,
  *       on every endpoint — regression guard for finding 81120 (CWE-209).
- *   8.  Network-level failure maps to `WorkflowConnectionError`.
+ *   8.  Network-level failure maps to `WorkflowConnectionError`, on
+ *       `listJarDeployments`, `listAvailableJars` and `registerJarDeployment` alike.
  *   9.  `toHttpsBase()` is re-exported from `reltioClient` (Slice 1 sanity check).
- *  10.  Sidecar round-trip: `saveWorkflowAdapterUrl` writes a file that
- *       `loadWorkflowAdapterUrl` reads back correctly.
+ *  10.  Sidecar round-trip, through `installMemoryFs()` and the real
+ *       `saveWorkflowAdapterUrl`/`loadWorkflowAdapterUrl` — missing, corrupt and
+ *       wrong-version files all load as `undefined` rather than throwing.
  *  10b. Tenant children: Business Config then Workflows in tenant mode, and no
  *       Workflows row at all in git mode (both modes render `TenantNode`).
  *
@@ -42,7 +44,6 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { importDist } = require('./lib/import-dist.cjs');
 
@@ -64,7 +65,9 @@ const {
 } = importDist('api/reltioClient');
 
 const vscode = require('./lib/vscode-stub.cjs');
+const { installMemoryFs } = require('./lib/memory-fs.cjs');
 const { EnvironmentManager } = importDist('workspace/environmentManager');
+const { saveWorkflowAdapterUrl, loadWorkflowAdapterUrl } = importDist('workspace/workflowAdapterConfig');
 const { TokenStore, GIT_SOURCE_TOKEN } = importDist('api/tokenStore');
 const { MultiTenantTreeProvider } = importDist('tree/multiTenantTreeProvider');
 const { BusinessConfigFolderNode } = importDist('tree/multiTenantNodes');
@@ -325,14 +328,35 @@ function textResponse(status, text) {
 	}
 
 	// ── 8. Network error → WorkflowConnectionError ────────────────────────────
+	// Every endpoint that calls `fetchWithTimeout` wraps it in its own try/catch — a raw,
+	// non-HTTP failure (DNS, connection refused, timeout) never reaches the caller as the
+	// underlying error, only as `WorkflowConnectionError`. `listAvailableJars` and
+	// `registerJarDeployment` had no coverage of their own try/catch doing this; only
+	// `listJarDeployments` did, leaving the other two's wrapping unverified.
 	{
 		globalThis.fetch = async () => { throw new Error('Network error: connection refused'); };
-		await assert.rejects(
-			() => listJarDeployments('demo-01-workflow.reltio.com', 'T', 'https://demo-01.reltio.com', 'tok'),
-			e => e instanceof WorkflowConnectionError,
-			'Network-level failure must be wrapped in WorkflowConnectionError',
-		);
-		delete globalThis.fetch;
+		try {
+			await assert.rejects(
+				() => listJarDeployments('demo-01-workflow.reltio.com', 'T', 'https://demo-01.reltio.com', 'tok'),
+				e => e instanceof WorkflowConnectionError,
+				'listJarDeployments: network-level failure must be wrapped in WorkflowConnectionError',
+			);
+			await assert.rejects(
+				() => listAvailableJars('demo-01-workflow.reltio.com', 'T', 'https://demo-01.reltio.com', 'tok'),
+				e => e instanceof WorkflowConnectionError,
+				'listAvailableJars: network-level failure must be wrapped in WorkflowConnectionError',
+			);
+			await assert.rejects(
+				() => registerJarDeployment('demo-01-workflow.reltio.com', 'T', 'https://demo-01.reltio.com', 'tok', {
+					module: 'acme/workflow/MyListener.jar',
+					name: 'MyListener',
+				}),
+				e => e instanceof WorkflowConnectionError,
+				'registerJarDeployment: network-level failure must be wrapped in WorkflowConnectionError',
+			);
+		} finally {
+			delete globalThis.fetch;
+		}
 	}
 
 	// ── 9. toHttpsBase() is exported from reltioClient ────────────────────────
@@ -343,20 +367,42 @@ function textResponse(status, text) {
 	}
 
 	// ── 10. Sidecar round-trip ────────────────────────────────────────────────
+	// Goes through `installMemoryFs()` and the real `saveWorkflowAdapterUrl`/
+	// `loadWorkflowAdapterUrl` rather than hand-rolling a JSON file with Node's own `fs` —
+	// the previous version of this test wrote and read a temp file directly, which proved
+	// `JSON.stringify`/`JSON.parse` round-trip a plain object (always true) and nothing about
+	// the two functions it claimed to test.
 	{
-		// The sidecar module uses vscode.workspace.fs which is stubbed by import-dist.
-		// Exercise the pure JSON logic by calling the module functions with a temp file.
-		// Since vscode.workspace.fs.readFile/writeFile are stubbed as no-ops, we test
-		// the file shape manually instead.
-		const expectedShape = { version: 1, workflowAdapterUrl: 'https://demo-01-workflow.reltio.com' };
-		const tmpFile = path.join(os.tmpdir(), `reltio-sidecar-test-${Date.now()}.json`);
-		fs.writeFileSync(tmpFile, JSON.stringify(expectedShape, null, 2), 'utf-8');
-		const onDisk = JSON.parse(fs.readFileSync(tmpFile, 'utf-8'));
+		const mem = installMemoryFs();
+		const mgr = new EnvironmentManager(vscode.Uri.file('/ws-sidecar'));
+		const configUri = mgr.getWorkflowAdapterConfigUri('demo-01.reltio.com', 'AcmeTenant');
+
+		assert.strictEqual(
+			await loadWorkflowAdapterUrl(configUri), undefined,
+			'no sidecar on disk yet must load as undefined, not throw',
+		);
+
+		await saveWorkflowAdapterUrl(configUri, 'https://demo-01-workflow.reltio.com');
+		assert.ok(mem._files.has(configUri.path), 'save must create the sidecar file');
+
+		const onDisk = JSON.parse(Buffer.from(mem._files.get(configUri.path)).toString('utf-8'));
 		assert.strictEqual(onDisk.version, 1, 'sidecar version must be 1');
 		assert.strictEqual(onDisk.workflowAdapterUrl, 'https://demo-01-workflow.reltio.com', 'sidecar URL must round-trip');
 		assert.ok(!('token' in onDisk), 'sidecar must not contain a token field');
 		assert.ok(!('password' in onDisk), 'sidecar must not contain a password field');
-		fs.unlinkSync(tmpFile);
+
+		assert.strictEqual(
+			await loadWorkflowAdapterUrl(configUri), 'https://demo-01-workflow.reltio.com',
+			'loadWorkflowAdapterUrl must read back exactly what saveWorkflowAdapterUrl wrote',
+		);
+
+		// A corrupt or future-versioned sidecar is treated as "no URL saved", per the module's
+		// own doc comment — never thrown, since the caller's fallback is a prompt, not a crash.
+		await mem.writeFile(configUri, Buffer.from('{ not json', 'utf-8'));
+		assert.strictEqual(await loadWorkflowAdapterUrl(configUri), undefined, 'corrupt JSON must load as undefined');
+
+		await mem.writeFile(configUri, Buffer.from(JSON.stringify({ version: 2, workflowAdapterUrl: 'https://x.reltio.com' }), 'utf-8'));
+		assert.strictEqual(await loadWorkflowAdapterUrl(configUri), undefined, 'an unexpected version must load as undefined');
 	}
 
 	// ── 10b. Workflows appears in tenant mode and never in git mode ──────────
