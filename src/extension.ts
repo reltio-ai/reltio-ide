@@ -4325,22 +4325,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	}
 
 	/**
-	 * Decide what a deploy would do, validate it, and — for an agent — get the user's
-	 * confirmation before anything leaves the machine.
+	 * Decide what a deploy would do, validate it, and get the user's confirmation before
+	 * anything leaves the machine — always when it would replace something already deployed,
+	 * and otherwise only for an agent.
 	 *
 	 * `requireConfirmation` is never a parameter an agent gets to set: the call sites in
 	 * `reltio.deployWorkflow` derive it structurally from *how* the command was invoked, not
 	 * from anything the caller asked for. A tree row, an editor title-bar button, or the
 	 * command palette with no args all mean a person just clicked something with their own
-	 * eyes on the row that said "deploy this" — that click is the confirmation, and a second
-	 * modal asking the same question a different way is friction, not safety. A
-	 * `WorkflowCommandArgs` object naming a tenant and a process id is different in kind: it is
-	 * how an agent reaches this command with no Uri and no tree selection to click, which means
-	 * no human had anything in front of them to click on in the first place — so that path
-	 * still shows the modal, unconditionally, with no way for anything upstream to suppress it.
-	 * That is what keeps this the one checkpoint between a chat message and a change on a
-	 * customer's live tenant, while a human's own, deliberate click stops asking it to confirm
-	 * itself.
+	 * eyes on the row that said "deploy this" — for a brand-new process id, that click is
+	 * the confirmation, and a second modal asking the same question a different way is
+	 * friction, not safety. A `WorkflowCommandArgs` object naming a tenant and a process id is
+	 * different in kind: it is how an agent reaches this command with no Uri and no tree
+	 * selection to click, which means no human had anything in front of them to click on in
+	 * the first place — so that path still shows the modal, unconditionally, with no way for
+	 * anything upstream to suppress it.
+	 *
+	 * `plan.replacesLive`, however, always shows the modal regardless of `requireConfirmation`:
+	 * a direct click only ever confirmed "deploy the thing I'm looking at", never "and also
+	 * replace whatever process id is already live on the tenant with it" — that second fact
+	 * is not visible from the row someone clicked, so it needs its own confirmation every time,
+	 * human or agent.
 	 *
 	 * Validation (`plan.ok === false` — no process id, an invalid one, the tenant's deployed
 	 * list not loaded yet) always runs and always reports, regardless of `requireConfirmation`:
@@ -4366,7 +4371,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			void vscode.window.showErrorMessage(plan.message);
 			return undefined;
 		}
-		if (!requireConfirmation) return plan;
+		if (!requireConfirmation && !plan.replacesLive) return plan;
 		const confirmation = describeDeploy(plan, tenantId);
 		const choice = await vscode.window.showWarningMessage(
 			confirmation.message,
