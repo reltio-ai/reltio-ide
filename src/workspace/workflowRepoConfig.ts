@@ -58,6 +58,14 @@ export function relativePathProblem(relativePath: string): string | undefined {
 	if (relativePath.split(/[\\/]/).some(segment => segment === '..')) {
 		return 'relativePath must not contain "..".';
 	}
+	// `workflowRepoGitignore.ts` writes this value as the first character(s) of its own
+	// `.gitignore` line. A leading `!` is gitignore negation syntax (un-ignores a path) and a
+	// leading `#` is a comment (silently disables the line) — either would let a hand-edited or
+	// tampered sidecar inject a rule into the *outer* repository's `.gitignore` instead of the
+	// exclusion entry D10 exists to guarantee.
+	if (/^[!#]/.test(relativePath)) {
+		return 'relativePath must not start with "!" or "#".';
+	}
 	return undefined;
 }
 

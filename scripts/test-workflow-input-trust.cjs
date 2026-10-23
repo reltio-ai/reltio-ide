@@ -205,6 +205,8 @@ async function captureClone(url, branch) {
 			['backslash traversal', { ...good, relativePath: 'a\\..\\b' }],
 			['posix absolute', { ...good, relativePath: '/etc' }],
 			['windows absolute', { ...good, relativePath: 'C:\\x' }],
+			['leading negation', { ...good, relativePath: '!important' }],
+			['leading comment', { ...good, relativePath: '#hidden' }],
 			['credentials in repoUrl', { ...good, repoUrl: 'https://u:tok@bitbucket.org/acme/wf.git' }],
 			['command scheme', { ...good, repoUrl: 'command:workbench.action.openSettings' }],
 			['option-looking repoUrl', { ...good, repoUrl: '-oProxyCommand=evil' }],
@@ -235,6 +237,19 @@ async function captureClone(url, branch) {
 		await reconcileWorkflowRepoGitignore(root, configUri);
 		const ignore = mem._files.get('/ws/env/tenant/.gitignore');
 		assert.ok(!ignore || !/important/.test(ignore.toString()), 'nothing injected');
+	});
+
+	test('1.3 a relativePath starting with "!" never reaches .gitignore as a negation', async () => {
+		// No newline here — a plain leading "!" (gitignore negation syntax) would, without this
+		// check, be written verbatim as the sidecar-managed line's first character and un-ignore
+		// an attacker-chosen path in the *outer* repository's .gitignore.
+		const mem = installMemoryFs();
+		const root = vscode.Uri.file('/ws/env/tenant');
+		await mem.createDirectory(vscode.Uri.joinPath(root, '.git'));
+		await writeSidecar(mem, { version: 1, repoUrl: 'https://bitbucket.org/acme/wf.git', relativePath: '!important' });
+		await reconcileWorkflowRepoGitignore(root, configUri);
+		const ignore = mem._files.get('/ws/env/tenant/.gitignore');
+		assert.ok(!ignore || !/important/.test(ignore.toString()), 'nothing injected, sidecar treated as invalid');
 	});
 
 	test('1.4 toOpenableHttpsUrl opens https only', () => {
