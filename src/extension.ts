@@ -5142,6 +5142,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	// Auto-open the Setup Guide on first activation in a workspace with no envs.
 	// Per-workspace flag in workspaceState — auto-opens once per workspace.
+	//
+	// This is the second, independent reason `onStartupFinished` is in package.json's
+	// `activationEvents` (see ARCHITECTURE.md's Application Bootstrap section for the first): a
+	// workspace with zero Reltio markers is exactly the case every `workspaceContains:*` event is
+	// guaranteed not to match, so without it `activate()` — and this onboarding path, the one
+	// meant for a user with nothing set up yet — would never run at all.
 	if (environmentManager && !isClassic) {
 		const guideAutoOpenedKey = 'reltio.setupGuideAutoOpened';
 		const alreadyAutoOpened = context.workspaceState.get<boolean>(guideAutoOpenedKey, false);
