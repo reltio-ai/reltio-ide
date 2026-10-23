@@ -3690,13 +3690,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		if (!environmentManager) return;
 		const config = await loadWorkflowRepoConfig(environmentManager.getWorkflowRepoConfigUri(environmentName, tenantId));
 		if (!config) return;
+		// Claimed up front, before the filesystem walk, so the one-shot discovery, a post-create
+		// write and a debounced watcher callback racing on the same tenant resolve in claim order
+		// regardless of which walk finishes first — see `markWorkflowRepoFilesDiscovered()`. Claimed
+		// once here rather than at each of the three callers, since they all go through this one
+		// wrapper.
+		const generation = treeProvider.beginWorkflowFetch('repoDiscovery', environmentName, tenantId);
 		const repoDir = environmentManager.getWorkflowRepoDirectoryUri(environmentName, tenantId);
 		const [discovery, javaSources] = await Promise.all([
 			discoverBpmnFilesDetailed(repoDir),
 			discoverJavaSources(repoDir),
 		]);
 		noteTruncatedDiscovery(environmentName, tenantId, discovery.truncated);
-		treeProvider.markWorkflowRepoFilesDiscovered(environmentName, tenantId, discovery.files, javaSources);
+		treeProvider.markWorkflowRepoFilesDiscovered(environmentName, tenantId, discovery.files, javaSources, generation);
 	}
 	treeProvider.setInvalidRepoConfigHandler((_environmentName, tenantId, reason) => {
 		void vscode.window.showWarningMessage(

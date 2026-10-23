@@ -82,8 +82,8 @@ export type MultiTenantTreeElement =
 /** Shared by the key builder and the by-environment sweep in `removeEnvironment`. */
 const HISTORY_EXPOSED_PREFIX = 'reltio.history.exposed::';
 
-/** One of the four independently-fetched halves of a tenant's workflow cache — see `fetchGenerations`. */
-export type WorkflowFetchKind = 'workflows' | 'processDefinitions' | 'jarDeployments' | 'repoSync';
+/** One of the five independently-fetched halves of a tenant's workflow cache — see `fetchGenerations`. */
+export type WorkflowFetchKind = 'workflows' | 'processDefinitions' | 'jarDeployments' | 'repoSync' | 'repoDiscovery';
 
 /**
  * Key for the "history has been fetched for this tenant" marker.
@@ -469,13 +469,22 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 	 * Record what a purely local walk of the connected repository found, keeping any sync badges
 	 * already computed. Used for the first render after a reload and when a file is created or
 	 * deleted: neither needs the tenant, and neither should throw away a badge that is still true.
+	 *
+	 * Three independent triggers can race for the same tenant — the one-shot discovery on first
+	 * render, a direct call right after this extension creates a file, and a debounced file-watcher
+	 * callback on every create/delete — and the slowest filesystem walk must not win. Same race
+	 * guard as `markWorkflowRepoSync()`, scoped to `'repoDiscovery'`.
 	 */
 	markWorkflowRepoFilesDiscovered(
 		environmentName: string,
 		tenantId: string,
 		files: DiscoveredBpmnFile[],
 		javaSources: DiscoveredJavaSource[],
+		generation?: number,
 	): void {
+		if (generation !== undefined && !this.isLatestWorkflowFetch('repoDiscovery', environmentName, tenantId, generation)) {
+			return;
+		}
 		const key = `${environmentName}/${tenantId}`;
 		const existing = this.workflowCache.get(key);
 		this.workflowCache.set(key, {
