@@ -28,8 +28,8 @@ const fs = require('fs');
 const path = require('path');
 
 // Pinned together: change the skills, bump skillsBundleVersion, update both values.
-const PINNED_SKILLS_BUNDLE_VERSION = '20';
-const PINNED_SKILLS_HASH = '8a27f6d1a5496a97eda42951cdb99bcdd9c5758fa9534c9608a8158e8c3cbdf1';
+const PINNED_SKILLS_BUNDLE_VERSION = '21';
+const PINNED_SKILLS_HASH = '1dcc4acc098c86b8dd66cf51c11b8d7b214b80e0e7b6068bf3608204045ffc92';
 
 
 const repoRoot = path.join(__dirname, '..');
@@ -370,8 +370,11 @@ for (const folder of PLAYBOOKS) {
 
 	const cmdIds = new Set();
 	for (const [rel, text] of all) {
-		for (const m of text.matchAll(/reltio\.[A-Za-z]+/g)) {
-			if (/^reltio\.(com|json|workflow|bpmnDiagnosticsSeverity|addEntityType|addRelationType|insert[A-Za-z]+)$/.test(m[0])) continue;
+		// `com.reltio.<pkg>.<Class>` Java package/class names (e.g. match comparator and token
+		// classes) are not VS Code command ids; a lookbehind for the preceding "com." tells them
+		// apart from a real `reltio.<commandId>` reference without needing to list every package.
+		for (const m of text.matchAll(/(?<!com\.)reltio\.[A-Za-z0-9]+/g)) {
+			if (/^reltio\.(com|json|tenant|environment|workflow|bpmnDiagnosticsSeverity|addEntityType|addRelationType|insert[A-Za-z]+)$/.test(m[0])) continue;
 			cmdIds.add(m[0]);
 		}
 		assert.ok(!text.includes('Reveal in File Explorer'), `${rel} names a menu label that does not exist`);

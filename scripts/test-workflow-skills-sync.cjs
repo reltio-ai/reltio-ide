@@ -65,8 +65,17 @@ function world(options = {}) {
 		assert.ok(w.has('/ws/.reltio/reltio-agent/skills/default/workflow-bpmn-authoring/references/bpmn-rules.md'));
 		assert.ok(w.has('/ws/.reltio/reltio-agent/velocity-packs/pack.json'));
 		assert.strictEqual(JSON.parse(w.text('/ws/.reltio/reltio-agent/.sync-state.json')).skillsBundleVersion, '20');
+		// Agent skill discovery (openspec: match-rule-generation-skill) also always writes the
+		// always-on guide file for the detected host and keeps `.gitignore` current for it — both
+		// outside `.reltio/` by design, since they are what makes a skill discoverable without an
+		// @-mention. Neither fixture skill above has valid frontmatter, so no skill folder itself
+		// is written in this world; anything beyond these two paths would be a real leak.
 		const outside = [...w.mem._files.keys()].filter(f => f.startsWith('/ws/') && !f.startsWith('/ws/.reltio/'));
-		assert.deepStrictEqual(outside, [], 'nothing may be written outside .reltio/');
+		assert.deepStrictEqual(
+			outside.sort(),
+			['/ws/.claude/rules/reltio-skills.md', '/ws/.gitignore'],
+			'only the always-on guide file and .gitignore may be written outside .reltio/',
+		);
 	}
 
 	// ── 2 + 3 + 5. Legacy cleanup on a workspace that is already current ───────

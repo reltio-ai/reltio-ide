@@ -203,14 +203,14 @@ function versionsDiffer(bundled: string | undefined, stamped: string | undefined
 export function syncReltioAgentAssets(
 	context: vscode.ExtensionContext,
 	options?: { force?: boolean; workspaceFolder?: vscode.WorkspaceFolder },
-): Promise<void> {
+): Promise<ReltioAgentSyncReport> {
 	const force = options?.force ?? false;
 	const shareable = !force && !options?.workspaceFolder;
 	// An identical request while one is running shares it. Anything else (a forced resync, a single
 	// folder) waits for the running sync to finish, then runs: two syncs never delete and copy the same
 	// directories at once.
 	if (shareable && sharedRun) return sharedRun;
-	const run: Promise<void> = tail
+	const run: Promise<ReltioAgentSyncReport> = tail
 		.then(() => syncOnce(context, options))
 		.catch(err => {
 			if (!force) reportStartupFailure(err);
@@ -228,7 +228,7 @@ export function syncReltioAgentAssets(
 }
 
 let tail: Promise<void> = Promise.resolve();
-let sharedRun: Promise<void> | undefined;
+let sharedRun: Promise<ReltioAgentSyncReport> | undefined;
 let startupFailureReported = false;
 
 /** Startup has no caller to show an error: log it, and tell the user once so a broken sync is not silent. */
