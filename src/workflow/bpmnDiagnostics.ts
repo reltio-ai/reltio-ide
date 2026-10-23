@@ -379,12 +379,18 @@ function gatewayFindings(model: BpmnProcessModel): BpmnFinding[] {
 const START_LISTENER = 'com.reltio.workflow.activiti.service.TaskStartEventListener';
 const DCR_TYPE_LISTENER = 'com.reltio.workflow.activiti.service.DCRTypeTaskListener';
 const ENTITY_TYPE_LISTENER = 'com.reltio.workflow.activiti.service.EntityTypeTaskListener';
-const RELATION_TYPE_LISTENER = 'com.reltio.workflow.activiti.service.RelationTypeTaskListener';
 
 /**
  * What a task still needs, by process kind: a `dataChangeRequestReview` task needs the DCR type
- * listener, a `potentialMatchReview` task the entity one, and any other process one of the three.
- * The kind comes from the process id, so a custom id falls back to "one of the three".
+ * listener, a `potentialMatchReview` task the entity one, and any other process one of the two.
+ *
+ * `RelationTypeTaskListener` is deliberately not accepted here even though the public Reltio
+ * Workflow source defines it: `bpmn-rules.md` §12.5 is explicit that a class merely *discovered*
+ * in that source is not the same as one safe to treat as *supported*, and that this file's §5
+ * tables and this allow-list must be updated together, by a maintainer, before either changes —
+ * accepting it on only the enforcement side would make a task that uses it pass this check while
+ * still being flagged by `classAllowListFindings` below as an unknown class, one finding telling
+ * the author the opposite of the other about the same `activiti:class`.
  */
 function missingListeners(present: ReadonlySet<string>, processId: string | undefined): string[] {
 	const missing: string[] = [];
@@ -393,8 +399,8 @@ function missingListeners(present: ReadonlySet<string>, processId: string | unde
 		if (!present.has(DCR_TYPE_LISTENER)) missing.push(DCR_TYPE_LISTENER);
 	} else if (processId === 'potentialMatchReview') {
 		if (!present.has(ENTITY_TYPE_LISTENER)) missing.push(ENTITY_TYPE_LISTENER);
-	} else if (![DCR_TYPE_LISTENER, ENTITY_TYPE_LISTENER, RELATION_TYPE_LISTENER].some(c => present.has(c))) {
-		missing.push(`one of ${DCR_TYPE_LISTENER}, ${ENTITY_TYPE_LISTENER} or ${RELATION_TYPE_LISTENER}`);
+	} else if (![DCR_TYPE_LISTENER, ENTITY_TYPE_LISTENER].some(c => present.has(c))) {
+		missing.push(`one of ${DCR_TYPE_LISTENER} or ${ENTITY_TYPE_LISTENER}`);
 	}
 	return missing;
 }

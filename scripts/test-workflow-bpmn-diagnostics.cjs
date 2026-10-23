@@ -396,10 +396,26 @@ ${LISTENERS.replace(/class="[^"]*"/g, 'class="com.reltio.workflow.activiti.servi
 	assert.strictEqual(hits('dataChangeRequestReview', DCR).length, 0);
 	assert.strictEqual(hits('dataChangeRequestReview', ENTITY).length, 1, 'the entity listener does not satisfy a DCR review');
 	assert.strictEqual(hits('dataChangeRequestReview', undefined).length, 1);
-	for (const listener of [DCR, ENTITY, 'com.reltio.workflow.activiti.service.RelationTypeTaskListener']) {
+	for (const listener of [DCR, ENTITY]) {
 		assert.strictEqual(hits('customReview', listener).length, 0, `any process accepts ${listener}`);
 	}
 	assert.strictEqual(hits('customReview', undefined).length, 1);
+
+	// `RelationTypeTaskListener` is deliberately excluded from the above, even though the public
+	// Reltio Workflow source defines it (bpmn-rules.md §12.5): it is not yet on the §5 allow-list
+	// either, so a task using it must be flagged by *both* checks consistently, rather than this
+	// one accepting it while `reltio-bpmn/unknown-class` warns on the same class.
+	const RELATION = 'com.reltio.workflow.activiti.service.RelationTypeTaskListener';
+	assert.strictEqual(
+		hits('customReview', RELATION).length, 1,
+		'RelationTypeTaskListener is not yet wired into enforcement and must not satisfy the check',
+	);
+	const relationFixture = buildFixture({ processId: 'customReview', reviewListeners: only(RELATION) });
+	const unknownClassHits = findingsFor(relationFixture, 'reltio-bpmn/unknown-class', { fileProcessId: 'customReview' });
+	assert.strictEqual(
+		unknownClassHits.length, 1,
+		'the same class must also warn as unknown — not satisfy one check while tripping the other',
+	);
 }
 
 // ── 8. §10.6 The class allow-list ───────────────────────────────────────────
