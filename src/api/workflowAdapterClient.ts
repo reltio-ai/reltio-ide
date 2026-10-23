@@ -317,9 +317,16 @@ async function fetchList<T>(
 		throw await adapterHttpError(response);
 	}
 
+	// Reading the body is not guarded here: a stalled connection or an oversized
+	// body is a real failure (see `readResponseText`'s own doc comment) and must
+	// propagate as one, not be swallowed into "nothing is deployed" — that is
+	// exactly the silent-empty-tree failure mode this function's own doc comment
+	// above says to avoid. Only the subsequent `JSON.parse` — a genuinely
+	// unexpected but harmless non-JSON response — is treated as empty.
+	const text = await readResponseText(response, WORKFLOW_TIMEOUT_MS);
 	let body: unknown;
 	try {
-		body = JSON.parse(await readResponseText(response, WORKFLOW_TIMEOUT_MS)) as unknown;
+		body = JSON.parse(text) as unknown;
 	} catch {
 		// A non-JSON response for a list endpoint is unexpected; treat as empty.
 		return [];
@@ -497,9 +504,14 @@ export async function listAvailableJars(
 		throw await adapterHttpError(response, text);
 	}
 
+	// As in `fetchList()`: the read itself is not guarded, so a stalled connection
+	// or an oversized body propagates as a real error instead of a false "no
+	// unregistered JARs" result. Only the subsequent `JSON.parse` of an
+	// unexpected non-JSON 200 is treated as empty.
+	const okText = await readResponseText(response, WORKFLOW_TIMEOUT_MS);
 	let body: unknown;
 	try {
-		body = JSON.parse(await readResponseText(response, WORKFLOW_TIMEOUT_MS)) as unknown;
+		body = JSON.parse(okText) as unknown;
 	} catch {
 		return { kind: 'ok', jars: [] };
 	}
