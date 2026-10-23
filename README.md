@@ -372,11 +372,12 @@ Reltio IDE also manages your tenant's BPMN workflows and the Java modules that i
 
 ### Browse your workflows
 
-In the **RELTIO IDE** view, expand your tenant's **Workflows** folder. It has three subfolders:
+In the **RELTIO IDE** view, expand your tenant's **Workflows** folder. It has four subfolders:
 
 - **Process Definitions** — the BPMN workflows currently deployed to your tenant.
 - **Drafts** — your local, undeployed work in progress.
 - **JAR Deployments** — the Java modules registered against your tenant, plus any **Unregistered JARs** Reltio IDE finds but doesn't yet know about.
+- **Custom Workflow Repository** — a connected Git repository tracking your BPMN and Java source, when you have one connected (see [Connect a Custom Workflow Repository](#connect-a-custom-workflow-repository) below).
 
 <p align="center">
   <img src="docs/images/workflows-folder-tree.png" alt="Workflows folder expanded in the RELTIO IDE view, showing Process Definitions and a BPMN file open in the editor" width="700" />
