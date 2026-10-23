@@ -54,6 +54,13 @@ export class ReltioApiError extends Error {
 	constructor(
 		message: string,
 		readonly statusCode: number,
+		/**
+		 * The `Retry-After` header's value in seconds, when the response carried one and it parsed
+		 * as a plain integer — `undefined` otherwise (no header, a non-429, or the less common
+		 * HTTP-date form, which no caller of this error currently needs to handle). Lets a 429
+		 * handler suggest an actual wait instead of inventing one.
+		 */
+		readonly retryAfterSeconds?: number,
 		/** Raw response body, kept where a caller needs to show the server's own explanation. */
 		readonly responseBody?: string,
 	) {
@@ -67,31 +74,50 @@ export class ReltioApiError extends Error {
  * call below is built from. Single enforcement point: forces an explicit
  * `http://` scheme to `https://` rather than preserving it, and rejects any
  * host outside the allowlist — before the caller attaches a bearer token.
+ *
+ * Exported so that callers with a separate service URL (e.g. the Workflow
+ * Adapter) can run the same allowlist check before attaching a bearer token,
+ * without duplicating the logic.
  */
-function toHttpsBase(baseUrl: string): string {
+export function toHttpsBase(baseUrl: string): string {
 	const trimmed = baseUrl.trim().replace(/^\/+/, '');
 	const withScheme = /^http:\/\//i.test(trimmed)
 		? trimmed.replace(/^http:\/\//i, 'https://')
 		: /^https:\/\//i.test(trimmed)
 			? trimmed
 			: `https://${trimmed}`;
-	const normalized = withScheme.replace(/\/+$/, '');
 
-	let hostname: string;
+	let parsed: URL;
 	try {
-		hostname = new URL(normalized).hostname;
+		parsed = new URL(withScheme);
 	} catch {
-		throw new UntrustedHostError(`Invalid Reltio environment URL: "${baseUrl}".`);
+		// The input is not echoed: it may carry credentials.
+		throw new UntrustedHostError('Invalid Reltio environment URL.');
 	}
+	// Only the origin is ever contacted. Userinfo would ride along into every request line and a
+	// path or query would silently redirect calls to somewhere the allowlist never looked at.
+	if (parsed.username || parsed.password) {
+		throw new UntrustedHostError('A Reltio environment URL must not contain credentials.');
+	}
+	if ((parsed.pathname !== '/' && parsed.pathname !== '') || parsed.search || parsed.hash) {
+		throw new UntrustedHostError(
+			`A Reltio environment URL must be a bare host (https://${parsed.host}), without a path or query.`,
+		);
+	}
+	const hostname = parsed.hostname;
 	if (!hostname || !isTrustedHost(hostname)) {
 		throw new UntrustedHostError(
 			`Refusing to contact untrusted host "${hostname}". If this is a sanctioned Reltio environment, add it to the "reltio.trustedHostSuffixes" setting.`,
 		);
 	}
-	return normalized;
+	return parsed.origin;
 }
 
-async function fetchWithTimeout(
+/**
+ * Exported so that callers with a separate service URL (e.g. the Workflow
+ * Adapter) can reuse the same timeout/abort logic without duplicating it.
+ */
+export async function fetchWithTimeout(
 	url: string,
 	init: RequestInit,
 	timeoutMs: number,
@@ -99,14 +125,73 @@ async function fetchWithTimeout(
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), timeoutMs);
 	try {
-		return await fetch(url, { ...init, signal: controller.signal });
+		// `redirect: 'error'`: a bearer token must never be replayed to wherever a 3xx points.
+		return await fetch(url, { redirect: 'error', ...init, signal: controller.signal });
 	} catch (e) {
 		if ((e as Error).name === 'AbortError') {
 			throw new Error(`Request timed out after ${timeoutMs}ms: ${url}`);
 		}
-		throw new Error(`Network error: ${(e as Error).message}`);
+		const cause = (e as { cause?: { message?: string } }).cause?.message;
+		throw new Error(`Network error: ${(e as Error).message}${cause ? ` (${cause})` : ''}`);
 	} finally {
 		clearTimeout(timer);
+	}
+}
+
+/** Largest response body any adapter call will buffer. Real payloads (BPMN, job lists) are far smaller. */
+export const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Reads a response body as text, bounded in time and size. `fetchWithTimeout`'s timer stops once
+ * headers arrive, so without this a server that sends headers and then stalls (or streams forever)
+ * would hang the progress notification and exhaust memory.
+ */
+export async function readResponseText(
+	response: Response,
+	timeoutMs: number,
+	maxBytes: number = MAX_RESPONSE_BYTES,
+): Promise<string> {
+	const declared = Number(response.headers?.get('Content-Length') ?? NaN);
+	if (Number.isFinite(declared) && declared > maxBytes) {
+		throw new Error(`Response body is too large (${declared} bytes, limit ${maxBytes}).`);
+	}
+
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	let cancel: (() => void) | undefined;
+	const timedOut = new Promise<never>((_, reject) => {
+		timer = setTimeout(() => {
+			cancel?.();
+			reject(new Error(`Reading the response timed out after ${timeoutMs}ms.`));
+		}, timeoutMs);
+	});
+	const read = async (): Promise<string> => {
+		const reader = response.body?.getReader?.();
+		if (!reader) {
+			const text = await response.text();
+			if (Buffer.byteLength(text, 'utf-8') > maxBytes) {
+				throw new Error(`Response body is too large (limit ${maxBytes} bytes).`);
+			}
+			return text;
+		}
+		cancel = () => { void reader.cancel().catch(() => undefined); };
+		const chunks: Uint8Array[] = [];
+		let total = 0;
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			total += value.byteLength;
+			if (total > maxBytes) {
+				cancel();
+				throw new Error(`Response body is too large (limit ${maxBytes} bytes).`);
+			}
+			chunks.push(value);
+		}
+		return Buffer.concat(chunks).toString('utf-8');
+	};
+	try {
+		return await Promise.race([read(), timedOut]);
+	} finally {
+		if (timer) clearTimeout(timer);
 	}
 }
 
@@ -130,6 +215,7 @@ export async function validateEnvironment(baseUrl: string): Promise<boolean> {
 		return false;
 	}
 }
+
 
 /** One row from `GET …/reltio/enhancedTenants`. */
 export interface TenantRecord {
@@ -536,7 +622,7 @@ export async function verifyMatches(
 		} catch {
 			/* ignore */
 		}
-		throw new ReltioApiError(`Verify matches failed: HTTP ${res.status}`, res.status, text.slice(0, MAX_ERROR_BODY_CHARS));
+		throw new ReltioApiError(`Verify matches failed: HTTP ${res.status}`, res.status, undefined, text.slice(0, MAX_ERROR_BODY_CHARS));
 	}
 	return (await res.json()) as VerifyMatchesExplanation;
 }

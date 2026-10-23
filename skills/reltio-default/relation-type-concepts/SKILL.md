@@ -5,8 +5,6 @@ description: Plan Reltio relation types with valid endpoints and consistent nami
 
 # Relation type concepts
 
-Normative product context: `openspec/changes/skills-and-enablement-packs-library/design.md` (D2, D5).
-
 ## When to use
 
 The user needs a **new relation type**, or to adjust **start/end** entity constraints, cardinality language, or labels.

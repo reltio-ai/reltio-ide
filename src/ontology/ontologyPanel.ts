@@ -160,8 +160,13 @@ function findFullUri(model: ReltioBusinessModel, shortName: string): string | un
 	return undefined;
 }
 
+/**
+ * `.path` is always `/`-separated regardless of platform, unlike `.fsPath`, which uses `\` on
+ * Windows and would otherwise leave this returning the whole path instead of its last segment —
+ * see the same pattern in `bpmnPanel.ts` and `bpmnDiagnosticsManager.ts`.
+ */
 function fileName(uri: vscode.Uri): string {
-	const parts = uri.fsPath.split('/');
+	const parts = uri.path.split('/');
 	return parts[parts.length - 1];
 }
 

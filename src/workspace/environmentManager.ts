@@ -15,6 +15,7 @@ import {
 	writeEnvironmentIdentityMarker,
 	writeTenantIdentityMarker,
 } from './gitSourceMarker';
+import { bpmnFileName, bpmnBaselineFileName } from './workflowBpmnFiles';
 
 const ENV_SUFFIX = '.reltio.environment';
 const TENANT_SUFFIX = '.reltio.tenant';
@@ -79,6 +80,16 @@ export class EnvironmentManager {
 	 * Folder names no longer encode identity, so it cannot be parsed back out of a path.
 	 * Callers needing the reverse mapping (`getParent`, first-open tracking) are synchronous
 	 * and cannot read a marker on demand, so the scan records it here.
+	 *
+	 * Keyed on `.fsPath`, deliberately not `.path`: every caller of `locFromPath()` passes
+	 * `uri.fsPath` (a real filesystem path a draft/BPMN file watcher just read off disk), and
+	 * on Windows the two differ by more than casing — `.path` always carries a leading `/`
+	 * before the drive letter (`/c:/Users/...`) that `.fsPath` never has (`c:\Users\...`).
+	 * Indexing by `.path` while looking up by `.fsPath` meant `target.startsWith(`${dir}/`)`
+	 * could never match on Windows, so every lookup silently returned "not under any tenant" —
+	 * Deploy on a Draft/repo file failing with "no tenant to deploy it to", and the Custom
+	 * Workflow Repository watcher's rediscovery (`extension.ts`) silently never firing, were
+	 * both this same bug.
 	 */
 	private readonly tenantPathIndex = new Map<string, { environmentName: string; tenantId: string }>();
 
@@ -200,6 +211,66 @@ export class EnvironmentManager {
 		return tenantPath(this.tenantUri(environment, tenantId), HISTORY_DIR);
 	}
 
+	/**
+	 * `{tenant}/WorkflowAdapter.reltio.json` — persists the user-supplied Workflow
+	 * Adapter base URL for this tenant. Contains a URL only; no token ever stored.
+	 */
+	getWorkflowAdapterConfigUri(environment: string, tenantId: string): vscode.Uri {
+		return vscode.Uri.joinPath(this.tenantUri(environment, tenantId), 'WorkflowAdapter.reltio.json');
+	}
+
+	/**
+	 * `{tenant}/Workflows/BPMN` — local BPMN drafts not yet deployed. Naming and
+	 * parsing rules live in `workflowDrafts.ts`; this only supplies the URI.
+	 *
+	 * Previously `{tenant}/workflows`, flat. Moved to sit inside `tenantFolderStructure.ts`'s
+	 * `Workflows/BPMN` component-tree leaf (self-service Drafts alongside Java-backed custom
+	 * workflows in the sibling `Workflows/Custom Workflows/`), with no migration step: Part 2
+	 * had not shipped to any customer when this moved, so there was no on-disk data at the old
+	 * path to preserve. A brand new path segment, not a rename of data.
+	 */
+	getWorkflowDraftsDirectoryUri(environment: string, tenantId: string): vscode.Uri {
+		return vscode.Uri.joinPath(this.tenantUri(environment, tenantId), 'Workflows', 'BPMN');
+	}
+
+	/** One draft inside `{tenant}/Workflows/BPMN`. `fileName` comes from `draftFileName()`. */
+	getWorkflowDraftUri(environment: string, tenantId: string, fileName: string): vscode.Uri {
+		return vscode.Uri.joinPath(this.getWorkflowDraftsDirectoryUri(environment, tenantId), fileName);
+	}
+
+	/**
+	 * `{tenant}/WorkflowRepo.reltio.json` — persists the customer's Custom Workflow
+	 * Repository binding (D3). Follows `getWorkflowAdapterConfigUri()`'s exact shape:
+	 * tenant root, tracked and committed, never gitignored — a repo URL is shared,
+	 * non-secret configuration, not IDE-owned working state.
+	 */
+	getWorkflowRepoConfigUri(environment: string, tenantId: string): vscode.Uri {
+		return vscode.Uri.joinPath(this.tenantUri(environment, tenantId), 'WorkflowRepo.reltio.json');
+	}
+
+	/**
+	 * `{tenant}/Workflows/Custom Workflows` — Snehil's reserved component-tree leaf,
+	 * reused (D1) as the clone target for the Custom Workflow Repository. Distinct
+	 * from `getWorkflowDraftsDirectoryUri()`'s `Workflows/BPMN`: this is Java-backed,
+	 * customer-authored content, not a self-service draft.
+	 */
+	getWorkflowRepoDirectoryUri(environment: string, tenantId: string): vscode.Uri {
+		return vscode.Uri.joinPath(this.tenantUri(environment, tenantId), 'Workflows', 'Custom Workflows');
+	}
+
+	/**
+	 * `{tenant}/Workflows/BPMN/{processId}.bpmn20.xml` — the editable local copy of a
+	 * process definition, and its baseline sibling. Same relationship as
+	 * `L3.reltio.json` to `L3.remote-baseline.reltio.json`.
+	 */
+	getWorkflowBpmnUri(environment: string, tenantId: string, processId: string): vscode.Uri {
+		return this.getWorkflowDraftUri(environment, tenantId, bpmnFileName(processId));
+	}
+
+	getWorkflowBpmnBaselineUri(environment: string, tenantId: string, processId: string): vscode.Uri {
+		return this.getWorkflowDraftUri(environment, tenantId, bpmnBaselineFileName(processId));
+	}
+
 	/** Git-sourced L3 files, when the workspace is in git-config-source mode. */
 	private gitSources: GitSource[] = [];
 
@@ -304,7 +375,7 @@ export class EnvironmentManager {
 
 			// Record before resolving paths: a legacy folder is not named after its id.
 			const tenantDir = vscode.Uri.joinPath(root, n);
-			this.tenantPathIndex.set(normalizePath(tenantDir.path), { environmentName: environment, tenantId });
+			this.tenantPathIndex.set(normalizePath(tenantDir.fsPath), { environmentName: environment, tenantId });
 			this.tenantLocations.set(tenantKey(environment, tenantId), tenantDir);
 
 			const l3 = this.getL3Uri(environment, tenantId);
@@ -352,7 +423,7 @@ export class EnvironmentManager {
 		// `.reltio-ide/` would be staged as tracked content.
 		await writeTenantIdentityMarker(uri, { kind: 'tenant', environmentName: environment, tenantId });
 		await ensureMarkerGitignored(uri);
-		this.tenantPathIndex.set(normalizePath(uri.path), { environmentName: environment, tenantId });
+		this.tenantPathIndex.set(normalizePath(uri.fsPath), { environmentName: environment, tenantId });
 		this.tenantLocations.set(tenantKey(environment, tenantId), uri);
 		return uri;
 	}
@@ -363,7 +434,7 @@ export class EnvironmentManager {
 		const uri = this.tenantUri(environment, tenantId);
 		await this.deleteRecursive(uri);
 		this.tenantLocations.delete(tenantKey(environment, tenantId));
-		this.tenantPathIndex.delete(normalizePath(uri.path));
+		this.tenantPathIndex.delete(normalizePath(uri.fsPath));
 	}
 
 	/**
