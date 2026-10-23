@@ -4301,13 +4301,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	 * workflow without a warning. `silent` is for flows that must keep working offline (creating a
 	 * draft): any failure returns `undefined` without a toast, and the deploy path — which cannot
 	 * proceed without the list — asks again, loudly.
+	 *
+	 * `forceRefresh` is the deploy path's own extra guarantee: the session cache can be arbitrarily
+	 * old (fetched once, minutes or hours ago, by an unrelated draft/duplicate flow), and a
+	 * replace-vs-new decision made from a stale list is wrong in exactly the way this whole function
+	 * exists to prevent — just later, outside the "never fetched" window the plain cache check
+	 * covers. The actual deploy gate (`confirmedDeployPlan`) always passes it; advisory id-pickers
+	 * (duplicate/new-draft prefill) do not need the extra round trip and keep using the cache.
 	 */
 	async function ensureDeployedDefinitions(
 		environmentName: string,
 		tenantId: string,
-		options: { silent: boolean },
+		options: { silent: boolean; forceRefresh?: boolean },
 	): Promise<ProcessDefinition[] | undefined> {
-		if (treeProvider.hasFetchedProcessDefinitions(environmentName, tenantId)) {
+		if (!options.forceRefresh && treeProvider.hasFetchedProcessDefinitions(environmentName, tenantId)) {
 			return treeProvider.getCachedProcessDefinitions(environmentName, tenantId);
 		}
 		if (options.silent) {
@@ -4364,7 +4371,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		requireConfirmation: boolean,
 	): Promise<Extract<DeployPlan, { ok: true }> | undefined> {
 		const doc = await vscode.workspace.openTextDocument(fileUri);
-		const deployed = await ensureDeployedDefinitions(environmentName, tenantId, { silent: false });
+		const deployed = await ensureDeployedDefinitions(environmentName, tenantId, { silent: false, forceRefresh: true });
 		if (deployed === undefined) return undefined;
 		const plan = planDeploy(doc.getText(), fileProcessId, deployed);
 		if (!plan.ok) {
@@ -4689,13 +4696,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					return;
 				}
 
-				// `objectArgs?.processId` is only set on the agent path above — a tenant/process-id
-				// object with no Uri and no tree node to have clicked. Every other way into this
-				// branch (a Draft/Repo tree row, the editor title bar, the palette with no args
-				// falling back to the active editor) is a human who just clicked something.
+				// Whether `arg` resolved to a recognized `WorkflowCommandArgs` object at all — not
+				// whether it happened to carry a `processId` — is what separates "an agent reached
+				// this command with no Uri and no tree node to have clicked" from a human. An agent
+				// can legitimately omit `processId` (e.g. relying on the active editor), and a naive
+				// `Boolean(objectArgs?.processId)` check would then misread that as a human's own
+				// click and skip the one checkpoint this function exists for. A genuinely bare
+				// invocation (a Draft/Repo tree row, the editor title bar, or the palette with
+				// truly no args) has `arg === undefined` and is never mistaken for one.
+				const isAgentArgsObject = arg !== undefined && arg !== null && objectArgs !== undefined;
 				const planned = await confirmedDeployPlan(
 					draftCtx.environmentName, draftCtx.tenantId, draftCtx.processId, fileUri,
-					Boolean(objectArgs?.processId),
+					isAgentArgsObject,
 				);
 				if (!planned) return;
 
