@@ -119,6 +119,40 @@ function clamp(value: number, low: number, high: number): number {
 }
 
 /**
+ * Gap, in diagram units, between a boundary event's own edge and its host task's border.
+ * Matches `elk.spacing.edgeNode` below in spirit — close enough to read as "attached", far
+ * enough that the event's own border does not overlap the task's.
+ */
+const BOUNDARY_EVENT_OFFSET = 6;
+
+/**
+ * Where a boundary event sits once its host task has a position: centred on the task's
+ * bottom-right corner, the conventional BPMN placement, offset outward by `BOUNDARY_EVENT_OFFSET`
+ * so its circle reads as sitting *on* the border rather than straddling it exactly.
+ *
+ * Laid out this way, rather than handed to ELK as an ordinary node, because ELK has no concept of
+ * "attached to" — it would place a boundary event as a free-floating node wherever the layered
+ * algorithm finds room, which is almost never on the border of the task it actually belongs to.
+ *
+ * `index` spaces out a second (or third) boundary event on the same task leftward along the
+ * bottom edge, by one event-width-plus-gap each — rare in practice, but the alternative of
+ * stacking every sibling at the exact same point would hide all but the last one drawn.
+ */
+function boundaryEventBounds(
+	host: Bounds,
+	size: { width: number; height: number },
+	index: number,
+): Bounds {
+	const spacing = size.width + BOUNDARY_EVENT_OFFSET;
+	return {
+		x: host.x + host.width - size.width / 2 + BOUNDARY_EVENT_OFFSET - index * spacing,
+		y: host.y + host.height - size.height / 2 + BOUNDARY_EVENT_OFFSET,
+		width: size.width,
+		height: size.height,
+	};
+}
+
+/**
  * Pull one end of a route back onto the shape it connects to.
  *
  * ELK routes to the boxes it was given, and `layoutBox` made those larger than
@@ -196,6 +230,24 @@ export async function layoutProcess(model: BpmnProcessModel): Promise<DiagramLay
 
 	const flows = routableFlows(model);
 
+	// A boundary event is excluded from ELK's own graph only when its host actually resolves to
+	// another node in this process — see `boundaryEventBounds()`'s doc comment for why ELK is the
+	// wrong tool for positioning it at all. An unresolved `attachedToRef` (missing attribute, or
+	// naming a node that is not in this process) falls back to being handed to ELK like any other
+	// node, so it still gets *a* position instead of silently vanishing from the diagram.
+	const nonBoundaryIds = new Set(model.nodes.filter(n => n.tag !== 'boundaryEvent').map(n => n.id));
+	const attachedBoundaryEvents = model.nodes.filter(
+		n => n.tag === 'boundaryEvent' && n.attachedToRef !== undefined && nonBoundaryIds.has(n.attachedToRef),
+	);
+	const attachedIds = new Set(attachedBoundaryEvents.map(n => n.id));
+	const elkNodes = model.nodes.filter(n => !attachedIds.has(n.id));
+	// Flows into/out of an attached boundary event are excluded the same way: ELK was never given
+	// the node, so an edge naming it would be the "endpoint not in the graph" exception
+	// `routableFlows()`'s own doc comment already protects against for a missing node. These are
+	// picked up by the straight-line fallback near the end of this function instead, same as any
+	// other edge ELK declines to route.
+	const elkFlows = flows.filter(f => !attachedIds.has(f.sourceRef) && !attachedIds.has(f.targetRef));
+
 	const laid = (await elk.layout({
 		id: 'root',
 		layoutOptions: {
@@ -212,8 +264,8 @@ export async function layoutProcess(model: BpmnProcessModel): Promise<DiagramLay
 			'elk.layered.spacing.edgeNodeBetweenLayers': '30',
 			'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
 		},
-		children: model.nodes.map(node => ({ id: node.id, ...layoutBox(node) })),
-		edges: flows.map(elkEdge),
+		children: elkNodes.map(node => ({ id: node.id, ...layoutBox(node) })),
+		edges: elkFlows.map(elkEdge),
 	})) as ElkLaidOut;
 
 	const shapes = new Map(model.nodes.map(node => [node.id, node.shape]));
@@ -232,6 +284,23 @@ export async function layoutProcess(model: BpmnProcessModel): Promise<DiagramLay
 			y: (child.y ?? 0) + ((child.height ?? size.height) - size.height) / 2,
 			width: size.width,
 			height: size.height,
+		});
+	}
+
+	// Now that every host task has a position, place each attached boundary event relative to it.
+	// Grouped by host first so two siblings on the same task are spread out rather than stacked.
+	const boundariesByHost = new Map<string, BpmnFlowNode[]>();
+	for (const boundary of attachedBoundaryEvents) {
+		const hostId = boundary.attachedToRef as string;
+		const siblings = boundariesByHost.get(hostId) ?? [];
+		siblings.push(boundary);
+		boundariesByHost.set(hostId, siblings);
+	}
+	for (const [hostId, siblings] of boundariesByHost) {
+		const host = bounds.get(hostId);
+		if (!host) continue;
+		siblings.forEach((boundary, index) => {
+			bounds.set(boundary.id, boundaryEventBounds(host, shapeSize(boundary.shape), index));
 		});
 	}
 

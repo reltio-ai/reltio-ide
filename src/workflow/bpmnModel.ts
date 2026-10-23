@@ -64,6 +64,12 @@ export interface BpmnFlowNode {
 	readonly defaultFlow: string | undefined;
 	/** `class` values of nested `<activiti:taskListener>` elements, by event. */
 	readonly taskListeners: readonly BpmnTaskListener[];
+	/**
+	 * A `boundaryEvent`'s `attachedToRef` — the task it sits on the border of. `undefined` for
+	 * every other node, and for a `boundaryEvent` missing the attribute (invalid BPMN, but this
+	 * module degrades rather than throws — see the file's own doc comment).
+	 */
+	readonly attachedToRef: string | undefined;
 	/** Character offset of the `<` that opens this element. */
 	readonly offset: number;
 	/** Length of the opening tag, so a range can cover it rather than one character. */
@@ -301,6 +307,7 @@ function extractFlowNodes(scannable: string): {
 			candidateGroups: attribute(body, 'candidateGroups', true),
 			delegateClass: attribute(body, 'class', true),
 			defaultFlow: attribute(body, 'default'),
+			attachedToRef: tag === 'boundaryEvent' ? attribute(body, 'attachedToRef') : undefined,
 			taskListeners: candidate.selfClosing
 				? []
 				: readTaskListeners(scannable, offset + length, tag),

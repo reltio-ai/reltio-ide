@@ -53,6 +53,9 @@
  *       green throughout the period those captions were unreadable.
  *  21.  Layout-time inflation stays out of the file (the DI still carries BPMN's
  *       default sizes) and off the connectors (both ends still land on a shape).
+ *  13b. A boundary event is positioned relative to its host task, not laid out
+ *       by ELK as a free-floating node — and one whose `attachedToRef` does not
+ *       resolve still gets a position rather than vanishing from the diagram.
  *
  * Tier B — structural:
  *  15.  The viewer's command is declared, menu-scoped and registered; its
@@ -151,6 +154,43 @@ const TRICKY_CDATA = `<?xml version="1.0" encoding="UTF-8"?>
     <bpmn:endEvent id="e2" />
   </bpmn:process>
 </bpmn:definitions>
+`;
+
+/**
+ * A task with a boundary event attached, each with its own outgoing flow. The boundary event's
+ * `attachedToRef` names the task it sits on — `layoutProcess()` must position it relative to
+ * that task rather than handing it to ELK as an ordinary free-floating node.
+ */
+const BOUNDARY_EVENT = `<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <process id="withBoundary" isExecutable="true">
+    <startEvent id="start" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="task" />
+    <userTask id="task" name="Review" />
+    <sequenceFlow id="f2" sourceRef="task" targetRef="end" />
+    <endEvent id="end" />
+    <boundaryEvent id="timeout" attachedToRef="task" />
+    <sequenceFlow id="fTimeout" sourceRef="timeout" targetRef="timeoutEnd" />
+    <endEvent id="timeoutEnd" name="Timed out" />
+  </process>
+</definitions>
+`;
+
+/**
+ * Same shape, but `attachedToRef` names a node that does not exist in the process — invalid
+ * BPMN, but a file this module must still degrade on rather than throw or drop the element.
+ */
+const BOUNDARY_EVENT_UNRESOLVED = `<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <process id="orphanBoundary" isExecutable="true">
+    <startEvent id="start" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="task" />
+    <userTask id="task" name="Review" />
+    <sequenceFlow id="f2" sourceRef="task" targetRef="end" />
+    <endEvent id="end" />
+    <boundaryEvent id="orphan" attachedToRef="doesNotExist" />
+  </process>
+</definitions>
 `;
 
 /**
@@ -671,6 +711,56 @@ function disjoint(a, b) {
 		assert.ok(layout.bounds.get('s'), 'the real nodes are still positioned');
 		assert.ok(layout.bounds.get('e'));
 		assert.ok(!layout.waypoints.has('bad'), 'an unresolvable flow is dropped');
+	}
+
+	// 13b. A boundary event is positioned relative to its host, not laid out by ELK.
+	{
+		const model = extractProcessModel(BOUNDARY_EVENT);
+		const timeoutNode = model.nodes.find(n => n.id === 'timeout');
+		assert.strictEqual(timeoutNode.attachedToRef, 'task', 'attachedToRef must be read off the element');
+		assert.strictEqual(
+			model.nodes.find(n => n.id === 'start').attachedToRef,
+			undefined,
+			'attachedToRef is boundaryEvent-specific — every other node must report undefined',
+		);
+
+		const layout = await layoutProcess(model);
+		const host = layout.bounds.get('task');
+		const boundary = layout.bounds.get('timeout');
+		assert.ok(host, 'the host task must be positioned');
+		assert.ok(boundary, 'the boundary event must be positioned');
+
+		// Centred on the host's bottom-right corner (plus the fixed outward offset), not wherever
+		// ELK's layered algorithm would have put a free node with this one's two edges.
+		const boundaryCentre = { x: boundary.x + boundary.width / 2, y: boundary.y + boundary.height / 2 };
+		assert.ok(
+			Math.abs(boundaryCentre.x - (host.x + host.width)) < boundary.width,
+			'the boundary event must be centred near its host\'s right edge',
+		);
+		assert.ok(
+			Math.abs(boundaryCentre.y - (host.y + host.height)) < boundary.height,
+			'the boundary event must be centred near its host\'s bottom edge',
+		);
+
+		// Its own outgoing flow — unroutable by ELK, since ELK was never given the node — still
+		// gets a waypoint via the same straight-line fallback a flow ELK declines to route uses.
+		assert.ok(layout.waypoints.has('fTimeout'), 'the boundary event\'s outgoing flow must still be routed');
+		assert.ok(layout.bounds.get('timeoutEnd'), 'the flow\'s target must still be positioned');
+
+		// Nothing the main flow already asserts disjoint-ness for is broken by the boundary event's
+		// presence: the host and its boundary event are allowed to touch (that is the point), but
+		// the boundary event must not land on top of an unrelated node.
+		assert.ok(disjoint(boundary, layout.bounds.get('start')), 'the boundary event must not overlap an unrelated node');
+	}
+
+	// 13c. An unresolved attachedToRef still gets a position, rather than vanishing.
+	{
+		const model = extractProcessModel(BOUNDARY_EVENT_UNRESOLVED);
+		const layout = await layoutProcess(model);
+		assert.ok(
+			layout.bounds.get('orphan'),
+			'a boundary event whose host cannot be resolved must still be positioned, not dropped',
+		);
 	}
 
 	// 14. A DI-less document becomes a complete one.
