@@ -27,6 +27,8 @@ const SCRIPTS = [
 	'test-harden-reltio-client-base-url.cjs',
 	'test-hide-reference-attribute-for-relation-types.cjs',
 	'test-insert-interaction-type.cjs',
+	'test-lca-assistant.cjs',
+	'test-lca-workflow.cjs',
 	'test-match-rule-generation-skill.cjs',
 	'test-multi-tenant-tree-view.cjs',
 	'test-no-create-wizards.cjs',

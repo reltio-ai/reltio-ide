@@ -587,7 +587,7 @@ function testSkillContent() {
 	const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
 	const titles = pkg.contributes.commands.map(c => c.title);
 	assert.ok(titles.includes('Apply Configuration to Tenant') && skill.includes('Apply Configuration to Tenant'));
-	assert.ok(titles.includes('Reltio: Resync agent assets (skills & Velocity Packs)'));
+	assert.ok(titles.includes('Reltio: Resync agent assets (skills, Velocity Packs & LCA knowledge base)'));
 
 	// Both settings are declared, default on, under the keys the code reads.
 	const props = pkg.contributes.configuration.properties;

@@ -21,7 +21,8 @@ export type ConfigNodeType =
 	| 'activity' | 'groupingType' | 'associationGroup' | 'surrogateCrosswalk'
 	| 'ruleBasedAttribute' | 'dependentAttribute' | 'indexingConfig'
 	| 'dataPipelineConfig' | 'unmerge' | 'hiddenConfig' | 'matchAssets'
-	| 'negativeMatchRule' | 'startObject' | 'endObject' | 'entityBrowser';
+	| 'negativeMatchRule' | 'startObject' | 'endObject' | 'entityBrowser'
+	| 'lifecycleActions';
 
 const NODE_ICONS: Record<string, string> = {
 	entityTypesFolder: 'symbol-class',
@@ -88,6 +89,7 @@ const NODE_ICONS: Record<string, string> = {
 	startObject: 'arrow-right',
 	endObject: 'arrow-left',
 	entityBrowser: 'table',
+	lifecycleActions: 'symbol-event',
 };
 
 function contextValueFor(nodeType: ConfigNodeType, jsonPath: (string | number)[]): string {

@@ -160,6 +160,8 @@ function getNodeChildren(model: ReltioBusinessModel, element: ConfigTreeItem): C
 	switch (type) {
 		case 'entityType': return getEntityTypeChildren(model, path);
 		case 'relationType': return getRelationTypeChildren(model, path);
+		case 'changeRequestType': return getChangeRequestTypeChildren(model, path);
+		case 'lifecycleActions': return [];
 		case 'nestedAttribute':
 		case 'simpleAttribute':
 		case 'referenceAttribute': return getAttributeChildren(model, path);
@@ -272,6 +274,7 @@ function getEntityTypeChildren(model: ReltioBusinessModel, path: (string | numbe
 			items.push(new ConfigTreeItem('Match Assets', 'matchAssets', [...path, 'matchAssets'],
 				vscode.TreeItemCollapsibleState.None));
 		}
+		pushLifecycleActions(items, et.lifecycleActions, path);
 		return items;
 	}
 
@@ -300,8 +303,17 @@ function getRelationTypeChildren(model: ReltioBusinessModel, path: (string | num
 		if (rt.survivorshipGroups?.length) {
 			items.push(folder('Survivorship Groups', 'survivorshipGroupsFolder', [...path, 'survivorshipGroups'], rt.survivorshipGroups.length));
 		}
+		pushLifecycleActions(items, rt.lifecycleActions, path);
 		return items;
 	}
+
+function getChangeRequestTypeChildren(model: ReltioBusinessModel, path: (string | number)[]): ConfigTreeItem[] {
+	const crt = resolveModelPath(model, path) as ChangeRequestType | undefined;
+	if (!crt) return [];
+	const items: ConfigTreeItem[] = [];
+	pushLifecycleActions(items, crt.lifecycleActions, path);
+	return items;
+}
 
 	// -----------------------------------------------------------------------
 	// Attribute children (recursive nesting)
@@ -578,6 +590,25 @@ function getCategoryTypeChildren(model: ReltioBusinessModel, path: (string | num
 // Helpers
 // ---------------------------------------------------------------------------
 
+function hasLifecycleActions(value: unknown): boolean {
+	return !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value as object).length > 0;
+}
+
+/** Read-only leaf. Selecting it reveals the lifecycleActions JSON; it has no hook children. */
+function pushLifecycleActions(items: ConfigTreeItem[], value: unknown, path: (string | number)[]): void {
+	if (!hasLifecycleActions(value)) return;
+	items.push(new ConfigTreeItem(
+		'lifecycleActions',
+		'lifecycleActions',
+		[...path, 'lifecycleActions'],
+		vscode.TreeItemCollapsibleState.None,
+	));
+}
+
+export function isLifecycleActionsReadOnly(nodeType: string): boolean {
+	return nodeType === 'lifecycleActions';
+}
+
 function folder(label: string, type: ConfigNodeType, path: (string | number)[], count: number): ConfigTreeItem {
 	return new ConfigTreeItem(
 		`${label} (${count})`,
@@ -676,12 +707,12 @@ function hasExpandableChildren(itemType: ConfigNodeType, item: any): boolean {
 				et.associationGroups?.length || et.surrogateCrosswalks?.length ||
 				et.ruleBasedAttributes?.length || et.dependentAttributes?.length ||
 				(Array.isArray(et.hidden) && et.hidden.length) || et.unmerge || et.indexingConfig ||
-				et.dataPipelineConfig || et.matchAssets);
+				et.dataPipelineConfig || et.matchAssets || hasLifecycleActions(et.lifecycleActions));
 		}
 		case 'relationType': {
 			const rt = item as RelationType;
 			return !!(rt.startObject || rt.endObject || rt.attributes?.length ||
-				rt.survivorshipGroups?.length);
+				rt.survivorshipGroups?.length || hasLifecycleActions(rt.lifecycleActions));
 		}
 		case 'simpleAttribute':
 		case 'nestedAttribute':
@@ -697,6 +728,8 @@ function hasExpandableChildren(itemType: ConfigNodeType, item: any): boolean {
 			return !!(item as InteractionType).attributes?.length;
 		case 'categoryType':
 			return !!(item as CategoryType).attributes?.length;
+		case 'changeRequestType':
+			return hasLifecycleActions((item as ChangeRequestType).lifecycleActions);
 		case 'associationGroup':
 			return !!(item as AssociationGroup).rule;
 		default:
