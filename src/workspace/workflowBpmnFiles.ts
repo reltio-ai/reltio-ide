@@ -165,6 +165,59 @@ export async function writeBpmnFile(
 	return fileUri;
 }
 
+// ─── Compare / discard plans ─────────────────────────────────────────────────
+//
+// Same decide/say split as `workflowDeployPlan.ts`'s `planDeploy()`: deciding
+// whether there is anything to compare or restore, and what the file write
+// should contain, is pure and total over a baseline that may not exist. Only
+// the actual `vscode.workspace.fs` read/write and the diff editor stay in the
+// `extension.ts` command handlers, which become thin wrappers around these.
+
+export type BpmnDiffPlan =
+	| { readonly ok: false; readonly message: string }
+	| { readonly ok: true };
+
+/**
+ * Whether "Compare with Last Fetch" has anything to show. A BPMN that was
+ * never downloaded — a draft — has no baseline to diff against, so this
+ * refuses rather than opening an empty or misleading comparison.
+ */
+export function planBpmnDiff(processId: string, baselineText: string | undefined): BpmnDiffPlan {
+	if (baselineText === undefined) {
+		return { ok: false, message: `"${processId}" has not been downloaded yet, so there is nothing to compare.` };
+	}
+	return { ok: true };
+}
+
+export type DiscardBpmnPlan =
+	| { readonly ok: false; readonly message: string }
+	| {
+		readonly ok: true;
+		readonly fileName: string;
+		readonly text: string;
+		readonly successMessage: string;
+	};
+
+/**
+ * What "Discard Local Changes" should write, given the baseline captured at
+ * the last fetch. Same refusal as `planBpmnDiff()` when there is no baseline:
+ * a draft has nothing fetched to restore to.
+ */
+export function planDiscardBpmnChanges(processId: string, baselineText: string | undefined): DiscardBpmnPlan {
+	if (baselineText === undefined) {
+		return {
+			ok: false,
+			message: `No baseline exists for "${processId}", so there is nothing to restore. Fetch it from the tenant first.`,
+		};
+	}
+	return {
+		ok: true,
+		fileName: bpmnFileName(processId),
+		text: baselineText,
+		successMessage: `Local changes to "${processId}" discarded.`,
+	};
+}
+
 export interface LocalBpmnState {
 	readonly processId: string;
 	readonly fileUri: vscode.Uri;

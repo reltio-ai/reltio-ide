@@ -22,6 +22,7 @@ const vscode = require('./lib/vscode-stub.cjs');
 const { installMemoryFs } = require('./lib/memory-fs.cjs');
 
 const { planDeploy, describeDeploy, REPLACEABLE_BUILT_IN_IDS } = importDist('workspace/workflowDeployPlan');
+const { planBpmnDiff, planDiscardBpmnChanges, bpmnFileName } = importDist('workspace/workflowBpmnFiles');
 const { KeyedDebouncer } = importDist('util/keyedDebouncer');
 const { compareBpmnContent } = importDist('workspace/workflowRepoSync');
 const { discoverBpmnFilesDetailed } = importDist('workspace/workflowRepoDiscovery');
@@ -384,6 +385,32 @@ const ADAPTER = 'https://tst-01-workflow.reltio.com';
 		for (const c of ['newWorkflowDraft', 'deployWorkflow', 'previewWorkflowDiagram', 'connectWorkflowRepository', 'registerJarDeployment']) {
 			assert.ok(!hidden.has(`reltio.${c}`), `reltio.${c} works without a node and must stay in the palette`);
 		}
+	}
+
+	// ── 8. Compare / discard plans: the decide/say split behind the two
+	// commands that used to read a baseline and branch inline. A draft's
+	// `undefined` baseline must refuse both, with the message each command
+	// actually shows; a real baseline must hand back exactly what the
+	// handler needs to write, so the handler itself has nothing left to get
+	// wrong beyond the read and the write.
+	{
+		const draftDiff = planBpmnDiff('draftOnly', undefined);
+		assert.strictEqual(draftDiff.ok, false);
+		assert.ok(draftDiff.message.includes('"draftOnly"') && draftDiff.message.includes('has not been downloaded'));
+
+		const fetchedDiff = planBpmnDiff('fetched', '<definitions/>');
+		assert.strictEqual(fetchedDiff.ok, true);
+
+		const draftDiscard = planDiscardBpmnChanges('draftOnly', undefined);
+		assert.strictEqual(draftDiscard.ok, false);
+		assert.ok(draftDiscard.message.includes('"draftOnly"') && draftDiscard.message.includes('nothing to restore'));
+
+		const baselineXml = bpmn('fetched');
+		const discard = planDiscardBpmnChanges('fetched', baselineXml);
+		assert.strictEqual(discard.ok, true);
+		assert.strictEqual(discard.fileName, bpmnFileName('fetched'), 'must restore to the draft/local file name, not the baseline file');
+		assert.strictEqual(discard.text, baselineXml, 'must write back exactly the baseline, untouched');
+		assert.ok(discard.successMessage.includes('"fetched"') && discard.successMessage.includes('discarded'));
 	}
 
 	console.log('test-workflow-review-fixes: OK');

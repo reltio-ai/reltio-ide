@@ -121,6 +121,8 @@ import {
 	bpmnFileName,
 	hasLocalBpmnChanges,
 	listLocalBpmnFiles,
+	planBpmnDiff,
+	planDiscardBpmnChanges,
 	readTextFile,
 	remoteBpmnMatchesBaseline,
 	writeBpmnFile,
@@ -4083,16 +4085,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	): Promise<void> {
 		const baselineUri = environmentManager!.getWorkflowBpmnBaselineUri(environmentName, tenantId, processId);
 		const baselineText = await readTextFile(baselineUri);
-		if (baselineText === undefined) {
-			void vscode.window.showErrorMessage(
-				`No baseline exists for "${processId}", so there is nothing to restore. Fetch it from the tenant first.`,
-			);
+		const plan = planDiscardBpmnChanges(processId, baselineText);
+		if (!plan.ok) {
+			void vscode.window.showErrorMessage(plan.message);
 			return;
 		}
 		const dir = environmentManager!.getWorkflowDraftsDirectoryUri(environmentName, tenantId);
-		await writeBpmnFile(dir, bpmnFileName(processId), baselineText);
+		await writeBpmnFile(dir, plan.fileName, plan.text);
 		treeProvider.notifyWorkflowDraftsChanged();
-		void vscode.window.showInformationMessage(`Local changes to "${processId}" discarded.`);
+		void vscode.window.showInformationMessage(plan.successMessage);
 	}
 
 	/**
@@ -4847,10 +4848,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				const baselineText = await readTextFile(
 					environmentManager.getWorkflowBpmnBaselineUri(node.environmentName, node.tenantId, processId),
 				);
-				if (baselineText === undefined) {
-					void vscode.window.showErrorMessage(
-						`"${processId}" has not been downloaded yet, so there is nothing to compare.`,
-					);
+				const plan = planBpmnDiff(processId, baselineText);
+				if (!plan.ok) {
+					void vscode.window.showErrorMessage(plan.message);
 					return;
 				}
 				await openBpmnLocalVsBaselineDiff(node.environmentName, node.tenantId, processId);
