@@ -1,6 +1,14 @@
 'use strict';
-
 /**
+ * An in-memory stand-in for `vscode.workspace.fs`, so tests that exercise directory
+ * discovery walk a genuine tree rather than a hand-listed array of paths.
+ *
+ * Extracted from `test-custom-workflow-repository.cjs`, which in turn mirrored it from
+ * `test-git-ready-tenant-folder-structure.cjs`. That file's own comment flagged it as a
+ * generic helper "not (yet) promoted to scripts/lib/"; a third consumer
+ * (`test-workflow-repo-java-discovery.cjs`) is the point at which copying it again costs
+ * more than sharing it.
+ *
  * In-memory `vscode.workspace.fs` for unit tests. The shared stub's `fs` is inert; installing this on
  * it lets real folder, gitignore and sync code run without touching disk. Mutating the stub object
  * (rather than the shared file) keeps every other test script unaffected.
@@ -43,7 +51,7 @@ function createMemoryFs() {
 		},
 		async stat(uri) {
 			const p = norm(uri);
-			if (files.has(p)) return { type: FileType.File };
+			if (files.has(p)) return { type: FileType.File, size: files.get(p).length };
 			if (dirs.has(p)) return { type: FileType.Directory };
 			const e = new Error(`ENOENT ${p}`);
 			e.code = 'FileNotFound';
@@ -108,6 +116,7 @@ function createMemoryFs() {
 	return api;
 }
 
+/** Creates a fresh filesystem and installs it as `vscode.workspace.fs`. */
 function installMemoryFs() {
 	const mem = createMemoryFs();
 	vscode.workspace.fs = mem;

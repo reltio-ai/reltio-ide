@@ -1,0 +1,11 @@
+# Velocity Pack reference assets are byte-counted, not just content-checked:
+# `resources/velocity-packs/manifest.json` records each BusinessConfig.json's
+# exact size, and `scripts/test-skills-and-enablement-packs-library.cjs` asserts
+# the declared total against the filesystem.
+#
+# With Git's default `core.autocrlf=true` on Windows, checkout rewrites every LF
+# to CRLF and adds one byte per line — 15,431 bytes on Account360 alone — so that
+# test failed on every Windows clone while passing in CI and on macOS. `-text`
+# disables end-of-line conversion for these paths, so the working tree matches
+# the bytes the manifest describes on every platform.
+resources/velocity-packs/** -text

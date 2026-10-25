@@ -5,8 +5,6 @@ description: Advise on and generate Reltio Life Cycle Action code using the bund
 
 # LCA assistant
 
-Normative product context: `openspec/changes/lca-assistant/design.md` (D2, D5, D6). Tracking: RP-191824.
-
 ## When to use
 
 The user asks about **Life Cycle Actions**: hook choice, architecture, config, troubleshooting, LCA vs DVF, or scaffolding an LCA Java/Maven project. For any question about **tenant objects** (entity, relation, or change-request types such as HCP / HCO / HasAddress, attribute names, existing `lifecycleActions`, generate/scaffold an LCA for a named type), the **connected tenant L3** from the Reltio IDE plugin is required as read-only context.
@@ -186,4 +184,4 @@ Package: `com.reltio.lca.<customerName>.<type>`, else `com.reltio.lca.<tenantId>
 
 Validation-only rules prefer DVF. Do not generate Java for a rule that only checks a value.
 
-Deterministic gates live in `src/lca` (`context`, `workflow`, `hooks`, `packageName`, `lifecycleConfig`, `envCheck`, `physicalConfig`). Use them instead of chat memory for tenant connection, hook validity, package names, `.env` keys, physical configuration, and `lifecycleActions` diffs. `node scripts/lca-agent.cjs env`, `physical`, and `deploy-error` read those checks. They never print secret values.
+Use `node scripts/lca-agent.cjs env`, `physical`, and `deploy-error` for tenant connection, hook validity, package names, `.env` keys, physical configuration, and `lifecycleActions` diffs, instead of chat memory. They never print secret values.

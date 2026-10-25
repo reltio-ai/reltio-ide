@@ -1,0 +1,164 @@
+/*
+ * Styling for the read-only BPMN diagram preview.
+ *
+ * Built on VS Code's theme variables rather than the fixed palette
+ * `ontologyView.css` uses. That view predates the light-theme work and renders
+ * dark regardless of the user's theme; a diagram that is going to be
+ * screenshotted into a review or a change request should follow the editor.
+ */
+
+* {
+	margin: 0;
+	padding: 0;
+	box-sizing: border-box;
+}
+
+html, body {
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	background: var(--vscode-editor-background);
+	color: var(--vscode-editor-foreground);
+	font-family: var(--vscode-font-family);
+	font-size: var(--vscode-font-size);
+}
+
+body {
+	display: flex;
+	flex-direction: column;
+}
+
+/*
+ * The one piece of context a floating diagram otherwise has none of: which
+ * process this is. `#diagram-root` fills whatever the header does not, via
+ * flex rather than a fixed height, so a name long enough to wrap costs the
+ * canvas a few pixels instead of getting clipped.
+ */
+#diagram-header {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: baseline;
+	gap: 0.5rem;
+	padding: 0.5rem 0.75rem;
+	border-bottom: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+	overflow-wrap: anywhere;
+}
+
+/* Hidden by the script (not just empty) before the first diagram arrives and
+   whenever it reports null, rather than showing an empty bar. */
+#diagram-header[hidden] {
+	display: none;
+}
+
+#diagram-header-name {
+	font-weight: 600;
+}
+
+#diagram-header-id {
+	color: var(--vscode-descriptionForeground);
+	font-family: var(--vscode-editor-font-family);
+	font-size: 0.9em;
+}
+
+#diagram-root {
+	flex: 1 1 auto;
+	width: 100%;
+	position: relative;
+	min-height: 0;
+}
+
+svg {
+	width: 100%;
+	height: 100%;
+	display: block;
+	cursor: grab;
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+svg.panning {
+	cursor: grabbing;
+}
+
+/* ── Shapes ── */
+
+.shape {
+	fill: var(--vscode-editorWidget-background);
+	stroke: var(--vscode-editorWidget-border, var(--vscode-editor-foreground));
+	stroke-width: 2;
+}
+
+/*
+ * BPMN draws an end event with a thick border — the only thing distinguishing it
+ * from a start event of identical size, so it cannot be dropped as decoration.
+ */
+.shape-end {
+	stroke-width: 4;
+}
+
+.node {
+	cursor: pointer;
+}
+
+.node:hover .shape {
+	stroke: var(--vscode-focusBorder);
+}
+
+/* ── Labels ── */
+
+.node-label {
+	fill: var(--vscode-editor-foreground);
+	font-size: 11px;
+	pointer-events: none;
+}
+
+/*
+ * The role or delegate line. Dimmer than the name so a glance reads the
+ * process first and the wiring second.
+ */
+.node-detail {
+	fill: var(--vscode-descriptionForeground);
+	font-size: 9px;
+	font-family: var(--vscode-editor-font-family);
+	pointer-events: none;
+}
+
+/* ── Flows ── */
+
+.flow-line {
+	fill: none;
+	stroke: var(--vscode-editor-foreground);
+	stroke-width: 1.5;
+}
+
+.flow-arrow {
+	fill: var(--vscode-editor-foreground);
+	stroke: none;
+}
+
+.flow-label {
+	fill: var(--vscode-descriptionForeground);
+	font-size: 9px;
+	font-family: var(--vscode-editor-font-family);
+	pointer-events: none;
+}
+
+/* ── Empty state ── */
+
+#diagram-status {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 2rem;
+	text-align: center;
+	color: var(--vscode-descriptionForeground);
+}
+
+#diagram-status[hidden] {
+	display: none;
+}

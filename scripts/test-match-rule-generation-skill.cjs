@@ -182,7 +182,7 @@ async function testBridgeAuthAndFailures() {
 	({ result } = await run(request(), {
 		verify: async (...args) => {
 			sent.push(args);
-			if (++n === 2) throw new client.ReltioApiError('Verify matches failed: HTTP 400', 400, '{"errorMessage":"bad uri"}');
+			if (++n === 2) throw new client.ReltioApiError('Verify matches failed: HTTP 400', 400, undefined, '{"errorMessage":"bad uri"}');
 			return { rules: {} };
 		},
 	}));
@@ -231,18 +231,28 @@ async function testVerifyMatchesClient() {
 
 // --- Agent skill discovery ---------------------------------------------------------------------
 
+/** Copies a real directory into the memory filesystem recursively, so nested skill subfolders (e.g. `references/`) come along. */
+function copyDirInto(realDir, destUri) {
+	const writes = [];
+	for (const entry of fs.readdirSync(realDir, { withFileTypes: true })) {
+		const realPath = path.join(realDir, entry.name);
+		const dest = vscode.Uri.joinPath(destUri, entry.name);
+		if (entry.isDirectory()) writes.push(...copyDirInto(realPath, dest));
+		else writes.push(vscode.workspace.fs.writeFile(dest, fs.readFileSync(realPath)));
+	}
+	return writes;
+}
+
 /** Copies the real bundled skills into the memory filesystem as the extension's skill source. */
 async function seedBundledSkills(src) {
 	const realSrc = path.join(repoRoot, 'skills', 'reltio-default');
-	for (const playbook of fs.readdirSync(realSrc)) {
-		for (const file of fs.readdirSync(path.join(realSrc, playbook))) {
-			await vscode.workspace.fs.writeFile(
-				vscode.Uri.joinPath(src, playbook, file),
-				fs.readFileSync(path.join(realSrc, playbook, file)),
-			);
-		}
+	const playbooks = fs.readdirSync(realSrc, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name);
+	const writes = [];
+	for (const playbook of playbooks) {
+		writes.push(...copyDirInto(path.join(realSrc, playbook), vscode.Uri.joinPath(src, playbook)));
 	}
-	return fs.readdirSync(realSrc);
+	await Promise.all(writes);
+	return playbooks;
 }
 
 const read = async uri => Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');

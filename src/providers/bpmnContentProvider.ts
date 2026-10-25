@@ -1,0 +1,73 @@
+/**
+ * Read-only virtual document provider for BPMN XML content.
+ *
+ * VS Code requires a `TextDocumentContentProvider` on a custom URI scheme to
+ * open a document that has no file-system backing and is genuinely read-only
+ * (no dirty flag, no "Save As" prompt on close). Using `openTextDocument({
+ * content })` instead would produce an "Untitled" tab with a dirty state,
+ * which misleads the user into thinking they can save the BPMN back to the
+ * server — they cannot, as the API is read-only.
+ *
+ * Scheme: `reltio-workflow-bpmn`
+ * URI shape: `reltio-workflow-bpmn://{environmentName}/{tenantId}/{processType}`
+ *
+ * The extension registers this provider once in `extension.ts` and calls
+ * `BpmnContentProvider.store()` to cache content before opening the document,
+ * so VS Code's `provideTextDocumentContent()` callback can return it
+ * synchronously (no network call inside the provider).
+ */
+import * as vscode from 'vscode';
+
+export const BPMN_SCHEME = 'reltio-workflow-bpmn';
+
+/**
+ * Upper bound on `cache`'s size. More than anyone would reasonably have open across tenants in
+ * one session — this is a backstop against an unbounded `Map` growing for the lifetime of the
+ * window, not a limit a real session is expected to brush up against.
+ */
+const MAX_CACHE_ENTRIES = 50;
+
+export class BpmnContentProvider implements vscode.TextDocumentContentProvider {
+	/** Cached XML strings keyed by the URI's string form. */
+	private readonly cache = new Map<string, string>();
+
+	readonly onDidChangeEmitter = new vscode.EventEmitter<vscode.Uri>();
+	readonly onDidChange = this.onDidChangeEmitter.event;
+
+	/**
+	 * Store BPMN XML for a given environment / tenant / processType triple
+	 * before calling `vscode.workspace.openTextDocument(uri)`.
+	 */
+	store(environmentName: string, tenantId: string, processType: string, xml: string): vscode.Uri {
+		const uri = vscode.Uri.from({
+			scheme: BPMN_SCHEME,
+			authority: environmentName,
+			path: `/${encodeURIComponent(tenantId)}/${encodeURIComponent(processType)}`,
+		});
+		const key = uri.toString();
+		const alreadyStored = this.cache.has(key);
+		this.cache.set(key, xml);
+		// An open editor keeps showing the old text until told the document changed; a first store
+		// has no open document yet, so there is nothing to refresh.
+		if (alreadyStored) this.onDidChangeEmitter.fire(uri);
+		// Insertion-order eviction, not a full LRU: `store()` is always called immediately before
+		// `vscode.workspace.openTextDocument(uri)` reads it back, so the entry that matters is
+		// always the one just inserted — a `Map` already iterates oldest-first, so the entry to
+		// drop is just whatever `.keys().next()` returns.
+		while (this.cache.size > MAX_CACHE_ENTRIES) {
+			const oldestKey = this.cache.keys().next().value;
+			if (oldestKey === undefined) break;
+			this.cache.delete(oldestKey);
+		}
+		return uri;
+	}
+
+	/**
+	 * Called by VS Code when it needs the content for a `reltio-workflow-bpmn`
+	 * document. Returns the cached XML, or a placeholder if the content was
+	 * somehow evicted before the document opened.
+	 */
+	provideTextDocumentContent(uri: vscode.Uri): string {
+		return this.cache.get(uri.toString()) ?? '<!-- BPMN content unavailable — please re-open. -->';
+	}
+}

@@ -92,11 +92,23 @@ export interface TenantNaming {
 	folders: string[];
 }
 
-/** Path of `l3Uri` relative to `root`, split into segments. Windows drive letters compare case-insensitively. */
+/**
+ * Path of `l3Uri` relative to `root`, split into segments.
+ *
+ * Case-insensitive on win32 (drive letters, and NTFS itself, compare case-insensitively) and on
+ * darwin: APFS is case-insensitive-but-preserving by default, so `root` and a file discovered
+ * beneath it can legitimately differ in case (e.g. a workspace opened via a symlink whose target
+ * is spelled differently) while still being the same path on disk. Getting this wrong does not
+ * throw — it falls back to the untrimmed absolute path below — but that absolute path then gets
+ * fed into folder/environment naming as if its segments were real tenant folders, so it is worth
+ * getting right rather than merely safe. Linux keeps the strict comparison: its common
+ * filesystems (ext4, etc.) are case-sensitive, and being lenient there would risk collapsing two
+ * genuinely different directories that merely share a spelling.
+ */
 function relativeParts(root: vscode.Uri, l3Uri: vscode.Uri): string[] {
 	const rootPath = root.path.replace(/\/+$/, '');
 	let relative: string;
-	if (process.platform === 'win32') {
+	if (process.platform === 'win32' || process.platform === 'darwin') {
 		const startsWithRoot = l3Uri.path.toLowerCase().startsWith(rootPath.toLowerCase());
 		relative = startsWithRoot ? l3Uri.path.slice(rootPath.length) : l3Uri.path;
 	} else {

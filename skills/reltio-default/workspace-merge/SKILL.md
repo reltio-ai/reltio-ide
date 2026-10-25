@@ -5,8 +5,6 @@ description: Combine team skill overrides with defaults without silent conflicts
 
 # Workspace merge (skills)
 
-Normative product context: `openspec/changes/skills-and-enablement-packs-library/design.md` (D3, D3b).
-
 ## When to use
 
 The repo uses **`skills/workspace/**`** (or Cursor workspace skills) alongside bundled defaults.

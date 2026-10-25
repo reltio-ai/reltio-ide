@@ -89,11 +89,11 @@ export class TenantNode extends vscode.TreeItem {
 		readonly isGitBound: boolean = false,
 	) {
 		const label = displayLabel ?? tenantId;
+		// Every tenant now has at least the Workflows sub-folder, so it is
+		// always collapsible — the None state is no longer valid here.
 		super(
 			label,
-			hasL3
-				? (autoExpand ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed)
-				: vscode.TreeItemCollapsibleState.None,
+			autoExpand ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed,
 		);
 		// `.gitbound` drives which Git actions the context menu offers: Connect before binding,
 		// then New Branch and Disconnect afterwards.
@@ -159,6 +159,24 @@ export class GitFolderNode extends vscode.TreeItem {
 		this.iconPath = vscode.ThemeIcon.Folder;
 		this.tooltip = folderPath.join('/');
 		this.id = `gitFolder:${environmentName}/${folderPath.join('/')}`;
+	}
+}
+
+/**
+ * Folder node that groups the tenant's configuration children (Configuration
+ * History + all config root sections such as Entity Types, Relationship Types,
+ * Sources, etc.) under a single "Business Config" row. Shown only when
+ * `hasL3` is true on the parent `TenantNode`.
+ */
+export class BusinessConfigFolderNode extends vscode.TreeItem {
+	constructor(
+		readonly environmentName: string,
+		readonly tenantId: string,
+	) {
+		super('Business Config', vscode.TreeItemCollapsibleState.Expanded);
+		this.contextValue = 'reltio.businessConfig.folder';
+		this.iconPath = new vscode.ThemeIcon('settings');
+		this.id = `businessConfig:${environmentName}/${tenantId}`;
 	}
 }
 

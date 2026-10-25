@@ -19,6 +19,7 @@ const SCRIPTS = [
 	'test-context-menu-reorganization.cjs',
 	'test-copy-tenant-id-to-clipboard.cjs',
 	'test-csp-nonce-hardening.cjs',
+	'test-custom-workflow-repository.cjs',
 	'test-docs-light-theme-screenshots-and-setup-guide.cjs',
 	'test-editor-navigation.cjs',
 	'test-extension-packaging.cjs',
@@ -39,6 +40,16 @@ const SCRIPTS = [
 	'test-setup-ux-redesign.cjs',
 	'test-skills-and-enablement-packs-library.cjs',
 	'test-terms-of-use-gate.cjs',
+	'test-workflow-adapter-registry.cjs',
+	'test-workflow-authoring.cjs',
+	'test-workflow-bpmn-diagnostics.cjs',
+	'test-workflow-bpmn-diagram.cjs',
+	'test-workflow-inspector.cjs',
+	'test-workflow-repo-java-discovery.cjs',
+	'test-workflow-skills-library.cjs',
+	'test-workflow-skills-sync.cjs',
+	'test-workflow-input-trust.cjs',
+	'test-workflow-review-fixes.cjs',
 ];
 
 function main() {

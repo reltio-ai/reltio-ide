@@ -30,6 +30,7 @@
 - [Ask the LCA agent](#ask-the-lca-agent)
 - [Visualize the ontology](#visualize-the-ontology)
 - [Apply configuration and track changes](#apply-configuration-and-track-changes)
+- [Workflows](#workflows)
 - [Security and credential handling](#security-and-credential-handling)
 - [Requirements](#requirements)
 
@@ -59,6 +60,7 @@ Reltio IDE supports the people who design and maintain tenant configuration acro
 | **Ontology visualization** | Visualize your full business configuration as an interactive diagram of entity types and their relationships. |
 | **Safe deployment** | Review a side-by-side comparison of your changes before they're applied to your tenant, reducing deployment risk. |
 | **Version history** | View configuration history, compare any two versions, and see who changed what and when. |
+| **Workflow authoring** | Browse, author, and deploy Reltio BPMN workflows and their Java modules — manually or with AI-assisted authoring — from the same tree as your configuration. |
 
 ---
 
@@ -355,6 +357,139 @@ If the tenant configuration changed since your last fetch, the dialog asks you t
    - **Compare with Current L3** — compares a snapshot against your current local configuration.
    - **Compare with Previous Snapshot** — compares a snapshot against the version before it.
    - **Select for Compare**, then **Compare Selected** on a second snapshot — compares any two versions.
+
+---
+
+## Workflows
+
+Reltio IDE also manages your tenant's BPMN workflows and the Java modules that implement them, alongside your business configuration. Workflows require a tenant connection — this feature is not available in a git-only workspace.
+
+<p align="center">
+  <img src="docs/images/workflows-entry-point.png" alt="Workflows row under a connected tenant in the RELTIO IDE view" width="400" />
+  <br/>
+  <em>Screenshot (VS Code): The Workflows row under your connected tenant.</em>
+</p>
+
+### Browse your workflows
+
+In the **RELTIO IDE** view, expand your tenant's **Workflows** folder. It has four subfolders:
+
+- **Process Definitions** — the BPMN workflows currently deployed to your tenant.
+- **Drafts** — your local, undeployed work in progress.
+- **JAR Deployments** — the Java modules registered against your tenant, plus any **Unregistered JARs** Reltio IDE finds but doesn't yet know about.
+- **Custom Workflow Repository** — a connected Git repository tracking your BPMN and Java source, when you have one connected (see [Connect a Custom Workflow Repository](#connect-a-custom-workflow-repository) below).
+
+<p align="center">
+  <img src="docs/images/workflows-folder-tree.png" alt="Workflows folder expanded in the RELTIO IDE view, showing Process Definitions and a BPMN file open in the editor" width="700" />
+  <br/>
+  <em>Screenshot (VS Code): Process Definitions expanded, with a deployed workflow's BPMN open in the editor.</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/workflows-tree-overview.png" alt="Workflows folder showing Process Definitions, JAR Deployments, Drafts, and Custom Workflow Repository together" width="400" />
+  <br/>
+  <em>Screenshot (VS Code): All four Workflows subfolders — Process Definitions, JAR Deployments, Drafts, and Custom Workflow Repository.</em>
+</p>
+
+### Connect the Workflow Adapter
+
+Reltio IDE talks to your tenant's workflow APIs through a Workflow Adapter URL. It's discovered automatically for your tenant — you only need to set it if you want to change it:
+
+1. Right-click the **Workflows** folder and select **Edit Workflow Adapter URL**.
+2. Enter your Workflow Adapter URL and press Enter.
+
+<p align="center">
+  <img src="docs/images/connect-workflow-adapter.png" alt="Edit Workflow Adapter URL prompt in the RELTIO IDE view" width="700" />
+  <br/>
+  <em>Screenshot (VS Code): Edit Workflow Adapter URL — enter your tenant's adapter URL.</em>
+</p>
+
+### Create and author a workflow
+
+#### Add a workflow manually
+
+1. Right-click **Process Definitions** or **Drafts** and select **New Workflow...**, or right-click an existing workflow and select **Duplicate as Draft...**.
+2. **New Workflow...** doesn't start you from an empty file — it pre-fills a starter process (Start event → a Review task → End event) that you edit from there.
+3. Open the draft's `.bpmn20.xml` file and edit it directly.
+4. Right-click the draft and select **Show BPMN Diagram** to preview the process visually before you deploy it.
+
+<p align="center">
+  <img src="docs/images/new-workflow-draft.png" alt="New Workflow and Duplicate as Draft actions in the RELTIO IDE view" width="700" />
+  <br/>
+  <em>Screenshot (VS Code): Creating a new workflow draft.</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/bpmn-diagram-preview.png" alt="BPMN diagram preview of a workflow draft" width="700" />
+  <br/>
+  <em>Screenshot (VS Code): Show BPMN Diagram — previewing a draft before deploying it.</em>
+</p>
+
+#### Create a workflow with the AI agent
+
+1. Open your editor's AI assistant and describe the use case — for example: *"Create an approval workflow for new Organization records that routes to a data steward, and the Java service class that implements the approval step."*
+2. The agent creates the BPMN as a draft. For it to write Java classes, it needs a connected Custom Workflow Repository.
+
+<p align="center">
+  <img src="docs/images/workflow-ai-agent-prompt.png" alt="AI assistant creating a workflow BPMN and Java module from a natural-language description" width="700" />
+  <br/>
+  <em>Screenshot: AI assistant creating a workflow from a described use case.</em>
+</p>
+
+**Result:** The new workflow appears under **Process Definitions** or **Drafts**, and its Java module appears under **Unregistered JARs** until you register it (see [Manage JAR deployments](#manage-jar-deployments) below).
+
+### Review and deploy a workflow
+
+1. Right-click a changed workflow and select **Compare with Last Fetch** to review a diff, or **Discard Local Changes** to revert.
+2. Select **Deploy to Tenant** to deploy a draft or a changed process definition.
+
+<p align="center">
+  <img src="docs/images/deploy-workflow.png" alt="Deploy to Tenant action on a workflow draft in the RELTIO IDE view" width="700" />
+  <br/>
+  <em>Screenshot (VS Code): Deploy to Tenant on a workflow draft.</em>
+</p>
+
+### Manage JAR deployments
+
+New Java modules don't register themselves automatically. To bring one into your tenant:
+
+1. Right-click **JAR Deployments** (or **Unregistered JARs**) and select **Refresh JARs** to check for new modules.
+2. Right-click the new entry under **Unregistered JARs** and select **Register JAR...**.
+
+<p align="center">
+  <img src="docs/images/register-jar.png" alt="Register JAR action on an unregistered JAR in the RELTIO IDE view" width="700" />
+  <br/>
+  <em>Screenshot (VS Code): Refresh JARs to find a new module, then Register JAR.</em>
+</p>
+
+### Connect a Custom Workflow Repository
+
+If your workflow BPMNs and Java modules live in Git instead of only on the tenant, connect a repository the same way you'd connect one for configuration:
+
+1. Right-click **Workflows** and select **Connect Custom Workflow Repository...**.
+2. Enter the remote URL and press Enter. Reltio IDE discovers BPMN and Java files in the repository and lists them in the tree.
+
+<p align="center">
+  <img src="docs/images/connect-workflow-repository.png" alt="Connect Custom Workflow Repository prompt in the RELTIO IDE view" width="700" />
+  <br/>
+  <em>Screenshot (VS Code): Connect Custom Workflow Repository — paste the remote URL.</em>
+</p>
+
+3. Select **Refresh Sync Status** at any time to check the repository against your tenant. Select **Disconnect Custom Workflow Repository** to end the connection.
+
+Once connected, BPMN files and Java source group separately in the tree — BPMN by process, Java under **Java Classes** and **Java Tests** by module:
+
+<p align="center">
+  <img src="docs/images/custom-workflow-repo-connected.png" alt="Connected Custom Workflow Repository showing BPMN and Java Classes groups, with a BPMN file open" width="700" />
+  <br/>
+  <em>Screenshot (VS Code): Connected repository — BPMN and Java Classes grouped, with a tracked BPMN file open.</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/workflow-java-classes.png" alt="Java Classes and Java Tests grouped by module in a connected Custom Workflow Repository" width="400" />
+  <br/>
+  <em>Screenshot (VS Code): Java Classes and Java Tests, grouped by module.</em>
+</p>
 
 ---
 
