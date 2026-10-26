@@ -12,6 +12,12 @@
  *
  * Refusal is atomic. Either the whole adoption proceeds, or nothing moves and the caller gets
  * the full list of clashing paths. A half-adopted repository would be worse than none.
+ *
+ * One clash is not a refusal: a BPMN in `bpmn/` that the repository also tracks. That is the
+ * normal case for a workflow deployed from the repository and downloaded here, and refusing would
+ * block connecting for exactly the users the feature is for. The local copy is kept, the staged
+ * one is dropped, and git then shows the file as modified against the repository, so nothing is
+ * lost and the difference is visible.
  */
 
 export interface AdoptionEntry {
@@ -43,6 +49,8 @@ export type AdoptionPlan =
 			readonly mergeBpmn: readonly string[];
 			/** Local drafts already in `Workflows/bpmn/`; they become part of the repository's working tree. */
 			readonly drafts: readonly string[];
+			/** Staged `bpmn/` files dropped because a local file of the same name was kept. */
+			readonly keptLocal: readonly string[];
 	  }
 	| { readonly ok: false; readonly collisions: readonly string[] };
 
@@ -69,6 +77,7 @@ export function planWorkflowRepoAdoption(input: AdoptionInput): AdoptionPlan {
 	const collisions: string[] = [];
 	const moveTop: string[] = [];
 	const mergeBpmn: string[] = [];
+	const keptLocal: string[] = [];
 
 	for (const entry of input.staged) {
 		const clash = existingTop.get(fold(entry.name));
@@ -78,7 +87,7 @@ export function planWorkflowRepoAdoption(input: AdoptionInput): AdoptionPlan {
 		if (clash && fold(entry.name) === BPMN_DIR && clash.isDirectory && entry.isDirectory) {
 			// The one folder both sides legitimately own: merge, file by file.
 			for (const file of input.stagedBpmn) {
-				if (existingBpmn.has(fold(file))) collisions.push(`${BPMN_DIR}/${file}`);
+				if (existingBpmn.has(fold(file))) keptLocal.push(file);
 				else mergeBpmn.push(file);
 			}
 			continue;
@@ -99,6 +108,7 @@ export function planWorkflowRepoAdoption(input: AdoptionInput): AdoptionPlan {
 		moveTop,
 		mergeBpmn,
 		drafts: draftFileNames(input.existingBpmn),
+		keptLocal: keptLocal.sort((a, b) => a.localeCompare(b)),
 	};
 }
 
@@ -119,7 +129,10 @@ const MAX_LISTED_DRAFTS = 5;
  * Wording for the dialog shown when connecting adopted pre-existing drafts. Says what happened,
  * why nothing moved, and what it means for the next commit.
  */
-export function describeAdoptedDrafts(drafts: readonly string[]): { message: string; detail: string } {
+export function describeAdoptedDrafts(
+	drafts: readonly string[],
+	keptLocal: readonly string[] = [],
+): { message: string; detail: string } {
 	const count = drafts.length;
 	const listed = drafts.slice(0, MAX_LISTED_DRAFTS).join(', ');
 	const more = count > MAX_LISTED_DRAFTS ? ` and ${count - MAX_LISTED_DRAFTS} more` : '';
@@ -129,6 +142,19 @@ export function describeAdoptedDrafts(drafts: readonly string[]): { message: str
 			'Your connected Custom Workflow Repository keeps its own BPMN files in that same folder, so ' +
 			(count === 1 ? "this draft hasn't" : "these haven't") +
 			" moved \u2014 but they're now part of the repository's working tree. " +
-			"They'll be included the next time you commit and push from Workflows/.",
+			"They'll be included the next time you commit and push from Workflows/." +
+			(keptLocal.length > 0
+				? `\n\n${describeKeptLocal(keptLocal)}`
+				: ''),
 	};
+}
+
+function describeKeptLocal(keptLocal: readonly string[]): string {
+	const listed = keptLocal.slice(0, MAX_LISTED_DRAFTS).join(', ');
+	const more = keptLocal.length > MAX_LISTED_DRAFTS ? ` and ${keptLocal.length - MAX_LISTED_DRAFTS} more` : '';
+	const same = keptLocal.length === 1 ? 'has the same name as a file' : 'have the same names as files';
+	return (
+		`${listed}${more} ${same} already in the repository. Your local copy was kept, so git will show it as modified ` +
+		'compared with the repository. Review it with git diff, or restore the repository version with git checkout.'
+	);
 }

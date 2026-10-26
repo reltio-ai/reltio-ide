@@ -76,12 +76,17 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 		const clash = planWorkflowRepoAdoption({
 			...base,
 			existing: [dir('bpmn'), file('pom.xml'), dir('MOD')],
-			existingBpmn: ['b.BPMN20.xml'],
 			existingReadmeIsGenerated: false,
 		});
 		assert.strictEqual(clash.ok, false);
-		assert.deepStrictEqual(clash.collisions, ['bpmn/b.bpmn20.xml', 'mod', 'pom.xml'],
+		assert.deepStrictEqual(clash.collisions, ['mod', 'pom.xml'],
 			'case-insensitive, sorted, and complete');
+
+		// The same BPMN in both places is not a refusal: the local copy is kept, the staged one dropped.
+		const sameBpmn = planWorkflowRepoAdoption({ ...base, existingBpmn: ['B.bpmn20.xml', 'a.bpmn20.xml'] });
+		assert.ok(sameBpmn.ok, 'a BPMN that is both downloaded here and tracked in the repository must not block connecting');
+		assert.deepStrictEqual(sameBpmn.keptLocal, ['b.bpmn20.xml']);
+		assert.deepStrictEqual(sameBpmn.mergeBpmn, [], 'the staged copy is not moved over the local one');
 
 		// No existing README: nothing to discard.
 		const fresh = planWorkflowRepoAdoption({ ...base, existing: [], existingBpmn: [], stagedBpmn: [] });
@@ -321,6 +326,78 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 			assert.ok(/(do not|never) (offer|suggest)/i.test(text), ` must forbid offering to write Java anyway`);
 			assert.ok(!text.includes('Workflows/BPMN') && !text.includes('Workflows/Custom Workflows'), `${name} has stale paths`);
 		}
+	}
+
+	// ── 10. Follow-ups from first manual use ─────────────────────────────────
+	{
+		// The same BPMN downloaded here and tracked in the repository must not block connecting.
+		const WF = vscode.Uri.file('/t2/Workflows');
+		const ST = vscode.Uri.file(`/t2/${WORKFLOW_REPO_STAGING_DIR}`);
+		const mem = installMemoryFs();
+		await mem.writeFile(vscode.Uri.joinPath(WF, 'bpmn/dataChangeRequestReview.bpmn20.xml'), enc('<local/>'));
+		await mem.writeFile(vscode.Uri.joinPath(WF, 'bpmn/dataChangeRequestReview.bpmn20.baseline.xml'), enc('<base/>'));
+		await mem.writeFile(vscode.Uri.joinPath(ST, 'bpmn/dataChangeRequestReview.bpmn20.xml'), enc('<repo/>'));
+		await mem.writeFile(vscode.Uri.joinPath(ST, 'bpmn/other.bpmn20.xml'), enc('<other/>'));
+		await mem.writeFile(vscode.Uri.joinPath(ST, 'pom.xml'), enc('<project/>'));
+		const result = await adoptStagedRepository(WF, ST);
+		assert.deepStrictEqual(result.keptLocal, ['dataChangeRequestReview.bpmn20.xml']);
+		assert.strictEqual(dec(mem._files.get('/t2/Workflows/bpmn/dataChangeRequestReview.bpmn20.xml')), '<local/>',
+			'the local copy is kept, never overwritten');
+		assert.ok(mem._files.has('/t2/Workflows/bpmn/other.bpmn20.xml'), 'the rest of the repository still comes in');
+		assert.ok(mem._files.has('/t2/Workflows/pom.xml'));
+		const text = describeAdoptedDrafts(result.drafts, result.keptLocal);
+		assert.ok(text.detail.includes('Your local copy was kept') && text.detail.includes('git diff'));
+		assert.ok(!describeAdoptedDrafts(['a.bpmn20.xml']).detail.includes('Your local copy was kept'));
+
+		// Baseline snapshots are ignored by the tenant's own git too, not only by the connected clone.
+		const { ensureMarkerGitignored, ensureWorkspaceGitignored } = importDist('workspace/gitSourceMarker');
+		const mem2 = installMemoryFs();
+		await ensureMarkerGitignored(vscode.Uri.file('/tenant'));
+		await ensureWorkspaceGitignored(vscode.Uri.file('/wsroot'));
+		for (const p of ['/tenant/.gitignore', '/wsroot/.gitignore']) {
+			assert.ok(dec(mem2._files.get(p)).split(/\r?\n/).includes(BASELINE_EXCLUDE_PATTERN), `${p} must ignore baseline snapshots`);
+		}
+
+		// The Workflows row offers Connect as a child while no repository is connected.
+		const { MultiTenantTreeProvider } = importDist('tree/multiTenantTreeProvider');
+		const { TokenStore } = importDist('api/tokenStore');
+		const mem3 = installMemoryFs();
+		const mgr = new EnvironmentManager(vscode.Uri.file('/cw'));
+		const provider = new MultiTenantTreeProvider(mgr, new TokenStore(), { get: () => undefined, update: async () => undefined }, null);
+		const unconnected = await provider.getChildren(new WorkflowsFolderNode('e.reltio.com', 'T', 'https://a-workflow.reltio.com'));
+		const row = unconnected.find(n => n.constructor.name === 'WorkflowConnectRepoActionNode');
+		assert.ok(row, 'a not-connected Workflows row lists "Connect Custom Workflow Repository…"');
+		assert.strictEqual(row.command.command, 'reltio.connectWorkflowRepository');
+		assert.deepStrictEqual([row.environmentName, row.tenantId], ['e.reltio.com', 'T'], 'the row carries the tenant the handler needs');
+		const config = { version: 1, repoUrl: 'https://github.com/acme/wf', relativePath: 'Workflows' };
+		await mem3.writeFile(mgr.getWorkflowRepoConfigUri('e.reltio.com', 'T'), enc(JSON.stringify(config)));
+		const connected = await provider.getChildren(new WorkflowsFolderNode('e.reltio.com', 'T', 'https://a-workflow.reltio.com', config));
+		assert.ok(!connected.some(n => n.constructor.name === 'WorkflowConnectRepoActionNode'), 'gone once connected');
+	}
+
+	// ── 11. Diagram preview says why it cannot draw ──────────────────────────
+	{
+		const { findXmlProblem } = importDist('workflow/bpmnWellFormed');
+		const ok = '<?xml version="1.0"?>\n<definitions xmlns="x">\n  <!-- c -->\n  <process id="p" name="a > b">\n    <task id="t"/>\n  </process>\n</definitions>';
+		assert.strictEqual(findXmlProblem(ok), undefined, 'well-formed XML, including ">" inside a quoted value, is accepted');
+
+		const mismatch = findXmlProblem('<definitions>\n<process id="p">\n<task id="t">\n</process>\n</definitions>');
+		assert.ok(mismatch && mismatch.line === 4 && mismatch.message.includes('</process>') && mismatch.message.includes('<task>'),
+			`got ${JSON.stringify(mismatch)}`);
+		assert.ok(findXmlProblem('<definitions><process id="p">').message.includes('never closed'));
+		assert.ok(findXmlProblem('<a><b></a>').message.includes('does not match'));
+		assert.ok(findXmlProblem('<a x="1></a>').message.includes('closing quote'));
+		assert.ok(findXmlProblem('<a><!-- oops </a>').message.includes('comment'));
+		assert.ok(findXmlProblem('<a>1 < 2</a>').message.includes('not the start of a tag'));
+		assert.ok(findXmlProblem('</a>').message.includes('never opened'));
+		assert.ok(findXmlProblem('just text').message.includes('no XML element'));
+		assert.ok(findXmlProblem('<a><![CDATA[ x </a>').message.includes('CDATA'));
+
+		// The webview reports readiness and shows the host's message; the panel re-sends on ready.
+		const view = fs.readFileSync(path.join(root, 'src', 'webview', 'bpmnView.ts'), 'utf8');
+		assert.ok(view.includes("type: 'ready'") && view.includes('message ??'));
+		const panel = fs.readFileSync(path.join(root, 'src', 'workflow', 'bpmnPanel.ts'), 'utf8');
+		assert.ok(panel.includes("msg.type === 'ready'") && panel.includes('findXmlProblem'));
 	}
 
 	console.log('test-workflow-tree-redesign: OK');

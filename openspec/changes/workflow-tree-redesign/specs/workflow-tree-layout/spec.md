@@ -11,6 +11,27 @@ The Workflows row SHALL show Process Definitions and JAR Deployments. There SHAL
 - **WHEN** a repository is connected
 - **THEN** Java Classes and Java Tests appear after the two default folders, even when they hold nothing, and group their files by module even for a single module
 
+### Requirement: Connect is offered as a row while no repository is connected
+The Workflows row SHALL list a "Connect Custom Workflow Repository…" row after the default folders while no repository is connected, and SHALL NOT once one is.
+
+#### Scenario: Not connected
+- **WHEN** the Workflows row is expanded with no repository connected
+- **THEN** its last child is the connect row, and clicking it runs the connect command
+
+### Requirement: Baseline snapshots are never committed
+Baseline snapshots (`*.bpmn20.baseline.xml`) SHALL be ignored by the tenant and workspace `.gitignore` and by the connected repository's `.git/info/exclude`.
+
+#### Scenario: Tenant git
+- **WHEN** a tenant folder is bound to git and a workflow has been downloaded
+- **THEN** its baseline snapshot does not appear in `git status`
+
+### Requirement: The diagram preview says why it cannot draw
+When a BPMN is not well-formed XML the preview SHALL show the first problem and its line number instead of a blank canvas.
+
+#### Scenario: Unclosed element
+- **WHEN** a `<task>` is never closed
+- **THEN** the panel reads "This BPMN is not valid XML, so it cannot be drawn. Line N: …"
+
 ### Requirement: The Workflows row carries the repository's actions
 Connect SHALL be offered on a Workflows row with no repository. Disconnect, refresh status, open folder and open in browser SHALL be offered on one with a repository, and its description SHALL say the repository is connected.
 
@@ -49,8 +70,12 @@ Drafts SHALL be stored in `Workflows/bpmn/`, and a connected repository SHALL be
 - **THEN** the drafts stay where they are, the repository's `bpmn/` files are merged in, the generated README is replaced, and a modal lists the drafts and says they are now part of the working tree
 
 #### Scenario: Clash
-- **WHEN** any adopted path already exists, other than the generated README and the `bpmn/` folder itself
+- **WHEN** any adopted path already exists, other than the generated README and files inside `bpmn/`
 - **THEN** nothing is changed and the message lists every clashing file
+
+#### Scenario: Same BPMN in both places
+- **WHEN** a BPMN in `Workflows/bpmn/` has the same name as one the repository tracks
+- **THEN** connecting proceeds, the local copy is kept, and the modal says git will show it as modified against the repository
 
 ### Requirement: Retired folders are pruned conservatively
 `Workflows/BPMN` and `Workflows/Custom Workflows` SHALL be removed only when they hold nothing but generated READMEs, and the live `Workflows` folder and `Workflows/bpmn` SHALL never be removed, whatever the filesystem's case rules.

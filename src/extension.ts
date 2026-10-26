@@ -2314,7 +2314,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					{ location: vscode.ProgressLocation.Notification, title: 'Cloning Custom Workflow Repository…' },
 					() => cloneRepository(repoUrl.trim(), stagingDir),
 				);
-				const { drafts } = await adoptStagedRepository(repoDir, stagingDir);
+				const { drafts, keptLocal } = await adoptStagedRepository(repoDir, stagingDir);
 				await removeStagingDir(stagingDir);
 				await saveWorkflowRepoConfig(repoConfigUri, { repoUrl: storableRepoUrl(repoUrl.trim()), relativePath });
 
@@ -2338,7 +2338,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				// Drafts that were already in Workflows/bpmn/ did not move, but they now sit inside
 				// the repository's working tree, so say so rather than let a later commit surprise them.
 				if (drafts.length > 0) {
-					const { message, detail } = describeAdoptedDrafts(drafts);
+					const { message, detail } = describeAdoptedDrafts(drafts, keptLocal);
 					void vscode.window.showInformationMessage(message, { modal: true, detail });
 				}
 			} catch (e) {

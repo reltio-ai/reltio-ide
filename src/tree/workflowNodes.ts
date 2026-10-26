@@ -181,6 +181,30 @@ export class WorkflowFetchActionNode extends vscode.TreeItem {
 	}
 }
 
+/**
+ * "Connect Custom Workflow Repository…", shown under the Workflows row while no repository is
+ * connected. The same action is on the row's context menu; this makes it discoverable without a
+ * right-click. It disappears once a repository is connected, when Java Classes and Java Tests
+ * take its place and the Workflows row itself carries the connection status.
+ */
+export class WorkflowConnectRepoActionNode extends vscode.TreeItem {
+	constructor(
+		readonly environmentName: string,
+		readonly tenantId: string,
+	) {
+		super('Connect Custom Workflow Repository…', vscode.TreeItemCollapsibleState.None);
+		this.contextValue = 'reltio.workflows.connectRepoAction';
+		this.iconPath = new vscode.ThemeIcon('repo');
+		this.id = `workflowConnectRepo:${environmentName}/${tenantId}`;
+		this.tooltip = 'Clone your Reltio-provisioned workflow repository into this tenant\'s Workflows folder.';
+		this.command = {
+			command: 'reltio.connectWorkflowRepository',
+			title: 'Connect Custom Workflow Repository',
+			arguments: [this],
+		};
+	}
+}
+
 // ─── Sub-folders ─────────────────────────────────────────────────────────────
 
 /**

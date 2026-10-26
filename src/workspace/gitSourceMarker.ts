@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { BASELINE_EXCLUDE_PATTERN } from './workflowRepoAdoption';
 import { IDE_STATE_DIR } from './tenantFolderStructure';
 
 const MARKER_FILENAME = '.reltio-config-source.json';
@@ -169,6 +170,9 @@ const REQUIRED_GITIGNORE_ENTRIES: ReadonlyArray<readonly [string, readonly strin
 	['.reltio/', ['.reltio']],
 	// Per-tenant IDE working state: drift baseline, ontology layout, history snapshots.
 	[`${IDE_STATE_DIR}/`, [IDE_STATE_DIR]],
+	// A workflow's last-fetch snapshot, kept beside the draft for Compare and Discard. It is a local
+	// working copy of what the tenant had, not something to version; the BPMN itself is tracked.
+	[BASELINE_EXCLUDE_PATTERN, []],
 ];
 
 /**
@@ -198,6 +202,7 @@ const WORKSPACE_GITIGNORE_ENTRIES: ReadonlyArray<readonly [string, readonly stri
 	['.reltio-ide-backup/', ['.reltio-ide-backup']],
 	['.reltio-environment.json', []],
 	[MARKER_FILENAME, []],
+	[BASELINE_EXCLUDE_PATTERN, []],
 ];
 
 /**

@@ -34,6 +34,8 @@ export class WorkflowRepoAdoptionConflictError extends Error {
 export interface AdoptionResult {
 	/** Drafts that were already in `Workflows/bpmn/` and are now part of the repository's working tree. */
 	readonly drafts: readonly string[];
+	/** Repository `bpmn/` files not brought in because a local file of the same name was kept. */
+	readonly keptLocal: readonly string[];
 }
 
 async function listDirectory(dir: vscode.Uri): Promise<AdoptionEntry[]> {
@@ -131,7 +133,7 @@ export async function adoptStagedRepository(
 	}
 
 	await excludeBaselineSnapshots(workflowsDir);
-	return { drafts: plan.drafts };
+	return { drafts: plan.drafts, keptLocal: plan.keptLocal };
 }
 
 /**

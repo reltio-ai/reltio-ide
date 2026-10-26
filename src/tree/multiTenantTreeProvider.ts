@@ -19,6 +19,7 @@ import {
 import {
 	WorkflowsFolderNode,
 	WorkflowFetchActionNode,
+	WorkflowConnectRepoActionNode,
 	ProcessDefinitionsFolderNode,
 	JarDeploymentsFolderNode,
 	ProcessDefinitionNode,
@@ -66,6 +67,7 @@ export type MultiTenantTreeElement =
 	| ConfigTreeItem
 	| WorkflowsFolderNode
 	| WorkflowFetchActionNode
+	| WorkflowConnectRepoActionNode
 	| ProcessDefinitionsFolderNode
 	| JarDeploymentsFolderNode
 	| ProcessDefinitionNode
@@ -848,6 +850,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			element instanceof ProcessDefinitionsFolderNode ||
 			element instanceof JarDeploymentsFolderNode ||
 			element instanceof WorkflowFetchActionNode ||
+			element instanceof WorkflowConnectRepoActionNode ||
 			element instanceof WorkflowRepoGroupNode
 		) {
 			return this.workflowsFolderFor(element.environmentName, element.tenantId);
@@ -1283,6 +1286,10 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 				element.savedAdapterUrl !== undefined
 			) {
 				children.push(new WorkflowFetchActionNode(environmentName, tenantId));
+			}
+			// Not connected: an action row, so connecting is discoverable without a right-click.
+			if (!repoConfig) {
+				children.push(new WorkflowConnectRepoActionNode(environmentName, tenantId));
 			}
 			// The repository's Java, only while one is connected — and then always, even at zero.
 			if (repoConfig) {
