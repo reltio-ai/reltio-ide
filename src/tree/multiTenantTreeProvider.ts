@@ -25,21 +25,22 @@ import {
 	JarDeploymentNode,
 	UnregisteredJarsFolderNode,
 	UnregisteredJarNode,
-	WorkflowDraftsFolderNode,
 	WorkflowDraftNode,
-	WorkflowRepoNode,
-	WorkflowRepoBpmnFileNode,
 	WorkflowRepoGroupNode,
 	WorkflowRepoModuleNode,
 	WorkflowRepoJavaFileNode,
 	type WorkflowRepoGroupKind,
 } from './workflowNodes';
 import { loadWorkflowAdapterUrl } from '../workspace/workflowAdapterConfig';
-import { bpmnFileName, listLocalBpmnFiles } from '../workspace/workflowBpmnFiles';
-import type { WorkflowDraft } from '../workspace/workflowDrafts';
+import { listLocalBpmnFiles } from '../workspace/workflowBpmnFiles';
 import { extractProcessModel } from '../workflow/bpmnModel';
 import type { RepoSyncState } from '../workspace/workflowRepoSync';
-import { inspectWorkflowRepoConfig, loadWorkflowRepoConfig } from '../workspace/workflowRepoConfig';
+import {
+	inspectWorkflowRepoConfig,
+	loadWorkflowRepoConfig,
+	type WorkflowRepoConfig,
+} from '../workspace/workflowRepoConfig';
+import { mergeProcessDefinitionRows, type LocalBpmnSummary, type ProcessRow } from './processDefinitionRows';
 import { reconcileWorkflowRepoGitignore } from '../workspace/workflowRepoGitignore';
 import type { DiscoveredBpmnFile } from '../workspace/workflowRepoDiscovery';
 import type { DiscoveredJavaSource, JavaSourceKind } from '../workspace/workflowRepoJavaDiscovery';
@@ -71,10 +72,7 @@ export type MultiTenantTreeElement =
 	| JarDeploymentNode
 	| UnregisteredJarsFolderNode
 	| UnregisteredJarNode
-	| WorkflowDraftsFolderNode
 	| WorkflowDraftNode
-	| WorkflowRepoNode
-	| WorkflowRepoBpmnFileNode
 	| WorkflowRepoGroupNode
 	| WorkflowRepoModuleNode
 	| WorkflowRepoJavaFileNode;
@@ -650,13 +648,42 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		this.repoDiscoveryHandler(environmentName, tenantId);
 	}
 
-	/** Whether a Custom Workflow Repository is connected for this tenant (sidecar present and valid). */
-	private async hasWorkflowRepo(environmentName: string, tenantId: string): Promise<boolean> {
-		if (!this.environmentManager) return false;
-		const config = await loadWorkflowRepoConfig(
-			this.environmentManager.getWorkflowRepoConfigUri(environmentName, tenantId),
-		);
-		return config !== undefined;
+	/** The connected repository's sidecar, read with no side effects. For building a node, not for expanding one. */
+	private async peekWorkflowRepo(environmentName: string, tenantId: string): Promise<WorkflowRepoConfig | undefined> {
+		if (!this.environmentManager) return undefined;
+		return loadWorkflowRepoConfig(this.environmentManager.getWorkflowRepoConfigUri(environmentName, tenantId));
+	}
+
+	/**
+	 * The tenant's connected Custom Workflow Repository (sidecar present and valid), or `undefined`.
+	 *
+	 * Also where D10's reconciliation re-runs "on tree refresh" (its other trigger, besides the
+	 * activation-time sweep): a tenant bound to Git *after* its repository was connected needs the
+	 * resulting `.gitignore` gap caught on the next render, not only on the next window reload. An
+	 * invalid sidecar is reported once per session, and a connected repository with nothing
+	 * discovered yet asks for a local scan (the state after a window reload).
+	 *
+	 * Reads the sidecar directly (a small, tracked JSON file) rather than caching it, as
+	 * `workflowsFolderFor()` does for the Adapter URL.
+	 */
+	private async connectedWorkflowRepo(
+		environmentName: string,
+		tenantId: string,
+	): Promise<WorkflowRepoConfig | undefined> {
+		if (!this.environmentManager) return undefined;
+		const repoConfigUri = this.environmentManager.getWorkflowRepoConfigUri(environmentName, tenantId);
+		const read = await inspectWorkflowRepoConfig(repoConfigUri);
+		if (read.invalidReason) this.reportInvalidRepoConfigOnce(environmentName, tenantId, read.invalidReason);
+		if (read.config) {
+			await reconcileWorkflowRepoGitignore(
+				this.environmentManager.getTenantRootUri(environmentName, tenantId),
+				repoConfigUri,
+			).catch(() => undefined);
+			this.requestRepoDiscoveryOnce(environmentName, tenantId);
+		} else {
+			this.repoDiscoveryRequested.delete(`${environmentName}/${tenantId}`);
+		}
+		return read.config;
 	}
 
 	/** L3 / history edits: refresh tree labels only (no SecretStorage, no env rescan). */
@@ -820,35 +847,17 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		if (
 			element instanceof ProcessDefinitionsFolderNode ||
 			element instanceof JarDeploymentsFolderNode ||
-			element instanceof WorkflowDraftsFolderNode ||
 			element instanceof WorkflowFetchActionNode ||
-			element instanceof WorkflowRepoNode
+			element instanceof WorkflowRepoGroupNode
 		) {
 			return this.workflowsFolderFor(element.environmentName, element.tenantId);
-		}
-		if (element instanceof WorkflowRepoGroupNode) {
-			return this.workflowRepoNodeFor(element.environmentName, element.tenantId);
 		}
 		// A module node's parent is always its group — the module layer only ever
 		// wraps a group's files, it never nests inside another module.
 		if (element instanceof WorkflowRepoModuleNode) {
 			return this.workflowRepoGroupFor(element.environmentName, element.tenantId, element.kind);
 		}
-		// Files hang off their kind's group, unless that group actually has the module
-		// layer (2+ distinct modules) — in which case they hang off their module node
-		// instead. `workflowRepoFileParent()` re-derives which shape applies from the
-		// same cached lists `getChildren()` used to render it.
-		if (element instanceof WorkflowRepoBpmnFileNode) {
-			const files = this.getCachedWorkflowRepoFiles(element.environmentName, element.tenantId) ?? [];
-			const mine = files.find(f => f.fileUri.toString() === element.fileUri.toString());
-			return this.workflowRepoFileParent(
-				element.environmentName,
-				element.tenantId,
-				'bpmn',
-				files.map(f => f.moduleName),
-				mine?.moduleName,
-			);
-		}
+		// Java files always hang off their Maven module node, which hangs off the group.
 		if (element instanceof WorkflowRepoJavaFileNode) {
 			const kind: WorkflowRepoGroupKind = element.source.kind === 'main' ? 'javaMain' : 'javaTest';
 			const sources = this.getCachedWorkflowRepoJava(element.environmentName, element.tenantId, element.source.kind);
@@ -860,13 +869,8 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 				element.source.moduleName,
 			);
 		}
-		if (element instanceof ProcessDefinitionNode) {
-			const cached = this.workflowCache.get(`${element.environmentName}/${element.tenantId}`);
-			return new ProcessDefinitionsFolderNode(
-				element.environmentName,
-				element.tenantId,
-				cached?.definitions ?? [],
-			);
+		if (element instanceof ProcessDefinitionNode || element instanceof WorkflowDraftNode) {
+			return this.processDefinitionsFolderFor(element.environmentName, element.tenantId);
 		}
 		if (element instanceof JarDeploymentNode) {
 			const cached = this.workflowCache.get(`${element.environmentName}/${element.tenantId}`);
@@ -892,11 +896,6 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 				element.environmentName,
 				element.tenantId,
 				cached?.unregisteredJars ?? [],
-			);
-		}
-		if (element instanceof WorkflowDraftNode) {
-			return this.workflowDraftsFor(element.environmentName, element.tenantId).then(
-				drafts => new WorkflowDraftsFolderNode(element.environmentName, element.tenantId, drafts),
 			);
 		}
 		if (element instanceof BusinessConfigFolderNode) {
@@ -970,117 +969,88 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			)
 			: undefined;
 		return new WorkflowsFolderNode(
-			environmentName, tenantId, savedAdapterUrl, await this.hasWorkflowRepo(environmentName, tenantId),
+			environmentName, tenantId, savedAdapterUrl, await this.peekWorkflowRepo(environmentName, tenantId),
 		);
 	}
 
 	/**
-	 * Local BPMNs for one tenant, split by whether they have a baseline.
+	 * Every local BPMN in the tenant's `Workflows/bpmn/` folder, summarised for the merge.
 	 *
-	 * A baseline means the file came from the tenant, so it belongs to a deployed
-	 * definition and is surfaced there with a local-changes marker. No baseline
-	 * means it was never deployed — that is a draft. One directory scan answers
-	 * both questions, so the two branches cannot disagree.
+	 * A baseline means the file came from the tenant, so it belongs to a deployed definition and is
+	 * surfaced there with a local-changes marker. No baseline means it was never deployed: a draft.
+	 * One directory scan answers both questions, so the two cannot disagree.
 	 */
-	private async localBpmnStateFor(environmentName: string, tenantId: string) {
-		if (!this.environmentManager) {
-			return { drafts: [] as WorkflowDraft[], changed: new Set<string>(), downloaded: new Set<string>() };
-		}
+	private async localBpmnSummariesFor(environmentName: string, tenantId: string): Promise<LocalBpmnSummary<vscode.Uri>[]> {
+		if (!this.environmentManager) return [];
 		const dir = this.environmentManager.getWorkflowDraftsDirectoryUri(environmentName, tenantId);
 		const files = await listLocalBpmnFiles(dir);
-		const drafts = files
-			.filter(f => f.baselineText === undefined)
+		return files.map(f => ({
+			processId: f.processId,
+			fileUri: f.fileUri,
+			fileKey: f.fileUri.toString(),
 			// `localText` is already in hand from `listLocalBpmnFiles()`'s own read, so the name
-			// comes free — no second file read the way `listWorkflowDrafts()` needs one.
-			.map(f => ({
-				processId: f.processId,
-				fileUri: f.fileUri,
-				fileName: bpmnFileName(f.processId),
-				processName: extractProcessModel(f.localText).processName,
-			}));
-		const changed = new Set(files.filter(f => f.hasLocalChanges).map(f => f.processId));
-		const downloaded = new Set(files.filter(f => f.baselineText !== undefined).map(f => f.processId));
-		return { drafts, changed, downloaded };
-	}
-
-	/** Drafts on disk for one tenant; empty when the folder does not exist yet. */
-	private async workflowDraftsFor(environmentName: string, tenantId: string) {
-		return (await this.localBpmnStateFor(environmentName, tenantId)).drafts;
+			// comes free — no second file read.
+			processName: extractProcessModel(f.localText).processName,
+			hasBaseline: f.baselineText !== undefined,
+			hasLocalChanges: f.hasLocalChanges,
+		}));
 	}
 
 	/**
-	 * Rebuild the Custom Workflow Repository row for one tenant.
+	 * The merged Process Definitions rows for one tenant: deployed definitions, local files and
+	 * repository files, one row per process id (`processDefinitionRows.ts`).
 	 *
-	 * Reads the sidecar directly (a small, tracked JSON file — cheap) rather than
-	 * caching it, matching `workflowsFolderFor()`'s treatment of the Workflow
-	 * Adapter URL just above. `trackedBpmnCount` does come from the cache: it is
-	 * D5's network-backed computation (`refreshWorkflowRepoSyncState()` in
-	 * `extension.ts`), not something this method can compute itself.
-	 *
-	 * Also where D10's reconciliation check re-runs "on tree refresh" (its other
-	 * trigger, besides activation — see `extension.ts`'s activation-time sweep):
-	 * a tenant bound to Git *after* its repository was already connected needs
-	 * this to catch the resulting `.gitignore` gap on the next render, not only
-	 * on the next window reload.
+	 * Repository files only count while a repository is connected: a disconnect leaves an empty
+	 * discovered list in the cache, which must not read as "every workflow is untracked".
 	 */
-	private async workflowRepoNodeFor(environmentName: string, tenantId: string): Promise<WorkflowRepoNode> {
-		if (!this.environmentManager) {
-			return new WorkflowRepoNode(environmentName, tenantId, undefined, 0);
-		}
-		const repoConfigUri = this.environmentManager.getWorkflowRepoConfigUri(environmentName, tenantId);
-		const read = await inspectWorkflowRepoConfig(repoConfigUri);
-		const config = read.config;
-		if (read.invalidReason) this.reportInvalidRepoConfigOnce(environmentName, tenantId, read.invalidReason);
-		if (config) {
-			await reconcileWorkflowRepoGitignore(
-				this.environmentManager.getTenantRootUri(environmentName, tenantId),
-				repoConfigUri,
-			).catch(() => undefined);
-			this.requestRepoDiscoveryOnce(environmentName, tenantId);
-		} else {
-			this.repoDiscoveryRequested.delete(`${environmentName}/${tenantId}`);
-		}
-		const trackedCount = this.getCachedWorkflowRepoTrackedCount(environmentName, tenantId) ?? 0;
-		return new WorkflowRepoNode(
+	private async processRowsFor(environmentName: string, tenantId: string): Promise<ProcessRow<vscode.Uri>[]> {
+		const cached = this.workflowCache.get(`${environmentName}/${tenantId}`);
+		const connected = (await this.peekWorkflowRepo(environmentName, tenantId)) !== undefined;
+		return mergeProcessDefinitionRows({
+			definitions: cached?.definitions,
+			local: await this.localBpmnSummariesFor(environmentName, tenantId),
+			repoFiles: connected
+				? cached?.repoFiles?.map(file => ({
+					processId: file.processId,
+					processName: file.processName,
+					fileUri: file.fileUri,
+					fileKey: file.fileUri.toString(),
+				}))
+				: undefined,
+			repoSync: cached?.repoSync ?? new Map<string, RepoSyncState>(),
+		});
+	}
+
+	/** Rebuild the Process Definitions folder for `getParent()`. */
+	private async processDefinitionsFolderFor(environmentName: string, tenantId: string): Promise<ProcessDefinitionsFolderNode> {
+		return new ProcessDefinitionsFolderNode(
 			environmentName,
 			tenantId,
-			config,
-			trackedCount,
-			this.getCachedWorkflowRepoJava(environmentName, tenantId, 'main').length,
-			this.getCachedWorkflowRepoJava(environmentName, tenantId, 'test').length,
+			await this.processRowsFor(environmentName, tenantId),
 		);
 	}
 
-	/** One content group under the repository row, rebuilt for `getParent()`. */
+	/** One Java group under the Workflows row, rebuilt for `getParent()`. */
 	private workflowRepoGroupFor(
 		environmentName: string,
 		tenantId: string,
 		kind: WorkflowRepoGroupKind,
 	): WorkflowRepoGroupNode {
-		const count =
-			kind === 'bpmn'
-				? (this.getCachedWorkflowRepoFiles(environmentName, tenantId) ?? []).length
-				: this.getCachedWorkflowRepoJava(
-						environmentName,
-						tenantId,
-						kind === 'javaMain' ? 'main' : 'test',
-					).length;
+		const count = this.getCachedWorkflowRepoJava(
+			environmentName,
+			tenantId,
+			kind === 'javaMain' ? 'main' : 'test',
+		).length;
 		return new WorkflowRepoGroupNode(environmentName, tenantId, kind, count);
 	}
 
 	/**
-	 * `WorkflowRepoGroupNode`'s children: the plain file rows, byte-for-byte what
-	 * `getChildren()` rendered before module-grouping existed, when `items` spans at most
-	 * one distinct Maven module — `0` (an empty group) or `1`, counting the `(no module)`
-	 * bucket (`undefined`) as one distinct value like any named module. Otherwise, one
-	 * `WorkflowRepoModuleNode` per distinct module, sorted alphabetically by name with the
-	 * `(no module)` bucket forced last — it is a fallback bucket, not a real module, so it
-	 * does not compete alphabetically with ones that are.
+	 * `WorkflowRepoGroupNode`'s children: one `WorkflowRepoModuleNode` per distinct Maven module,
+	 * sorted alphabetically with the `(no module)` bucket forced last — it is a fallback bucket,
+	 * not a real module, so it does not compete alphabetically with ones that are.
 	 *
-	 * This is the one place that decides whether the module layer exists for a group at
-	 * all; `getParent()`'s file-node branches call `workflowRepoFileParent()` below, which
-	 * re-derives the same decision from the same cached lists so a file's parent always
-	 * matches whichever shape this method actually rendered.
+	 * Always grouped, even for a single module, so the layout is the same whether a repository has
+	 * one module or ten. `getParent()` relies on that: a file's parent is always its module node.
 	 */
 	private moduleGroupedChildren<T>(
 		environmentName: string,
@@ -1088,11 +1058,8 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		kind: WorkflowRepoGroupKind,
 		items: readonly T[],
 		moduleNameOf: (item: T) => string | undefined,
-		toFileNode: (item: T) => MultiTenantTreeElement,
 	): MultiTenantTreeElement[] {
 		const distinct = new Set(items.map(moduleNameOf));
-		if (distinct.size <= 1) return items.map(toFileNode);
-
 		const named = [...distinct]
 			.filter((m): m is string => m !== undefined)
 			.sort((a, b) => a.localeCompare(b));
@@ -1108,13 +1075,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		);
 	}
 
-	/**
-	 * A file row's parent: the `WorkflowRepoModuleNode` for its module when the group it
-	 * belongs to actually has the module layer (2+ distinct modules, the same test
-	 * `moduleGroupedChildren()` applies), or the group node directly when it doesn't — so
-	 * `reveal()` always walks back up through whichever shape was actually rendered, not a
-	 * shape that assumes the module layer is always present.
-	 */
+	/** A Java file row's parent: the module node for its module, with that module's file count. */
 	private workflowRepoFileParent(
 		environmentName: string,
 		tenantId: string,
@@ -1122,8 +1083,6 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		allModuleNames: readonly (string | undefined)[],
 		thisFilesModule: string | undefined,
 	): MultiTenantTreeElement {
-		const distinct = new Set(allModuleNames);
-		if (distinct.size <= 1) return this.workflowRepoGroupFor(environmentName, tenantId, kind);
 		const count = allModuleNames.filter(m => m === thisFilesModule).length;
 		return new WorkflowRepoModuleNode(environmentName, tenantId, kind, thisFilesModule, count);
 	}
@@ -1264,7 +1223,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 						element.environmentName,
 						element.tenantId,
 						savedAdapterUrl,
-						await this.hasWorkflowRepo(element.environmentName, element.tenantId),
+						await this.peekWorkflowRepo(element.environmentName, element.tenantId),
 					),
 				);
 			}
@@ -1291,139 +1250,59 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			return items;
 		}
 		if (element instanceof WorkflowsFolderNode) {
-			// The Custom Workflow Repository needs no Workflow Adapter URL and no
-			// fetch — connect/disconnect/discovery all work before Workflows has ever
-			// been loaded this session — so this row is independent of `cached` below.
-			const repoRow = await this.workflowRepoNodeFor(element.environmentName, element.tenantId);
-			const cached = this.workflowCache.get(`${element.environmentName}/${element.tenantId}`);
+			const { environmentName, tenantId } = element;
+			// A connected Custom Workflow Repository needs no Workflow Adapter URL and no fetch —
+			// connect/disconnect/discovery all work before Workflows has ever been loaded this
+			// session — so it is resolved independently of `cached` below.
+			const repoConfig = await this.connectedWorkflowRepo(environmentName, tenantId);
+			const cached = this.workflowCache.get(`${environmentName}/${tenantId}`);
 			// Only a fetch of the tenant's own lists counts as "loaded". A cache entry that exists
 			// solely because the repository sync wrote into it is still "not fetched".
-			if (cached === undefined || (cached.definitions === undefined && cached.jars === undefined)) {
-				// URL saved but not yet loaded this session — show a fetch action row.
-				const children: MultiTenantTreeElement[] = element.savedAdapterUrl !== undefined
-					? [new WorkflowFetchActionNode(element.environmentName, element.tenantId)]
-					: [];
-				// Drafts before the repository row (see the full-children branch below for why),
-				// and — like there — shown only when at least one exists.
-				const drafts = await this.workflowDraftsFor(element.environmentName, element.tenantId);
-				if (drafts.length > 0) {
-					children.push(
-						new WorkflowDraftsFolderNode(element.environmentName, element.tenantId, drafts),
-					);
-				}
-				children.push(repoRow);
-				return children;
-			}
+			const nothingFetched = cached === undefined || (cached.definitions === undefined && cached.jars === undefined);
 			const children: MultiTenantTreeElement[] = [];
-			if (cached.definitions !== undefined) {
-				children.push(
-					new ProcessDefinitionsFolderNode(
-						element.environmentName,
-						element.tenantId,
-						cached.definitions,
-					),
-				);
+
+			// URL saved but nothing loaded yet this session — lead with the fetch action row.
+			if (nothingFetched && element.savedAdapterUrl !== undefined) {
+				children.push(new WorkflowFetchActionNode(environmentName, tenantId));
 			}
-			if (cached.jars !== undefined) {
+			// Process Definitions: once the tenant's list is fetched (an empty result still shows
+			// `(0)`), or before that whenever there are local or repository files to show.
+			const rows = await this.processRowsFor(environmentName, tenantId);
+			if (cached?.definitions !== undefined || rows.length > 0) {
+				children.push(new ProcessDefinitionsFolderNode(environmentName, tenantId, rows));
+			}
+			if (cached?.jars !== undefined) {
 				children.push(
-					new JarDeploymentsFolderNode(
-						element.environmentName,
-						element.tenantId,
-						cached.jars,
-						cached.unregisteredJars,
-					),
+					new JarDeploymentsFolderNode(environmentName, tenantId, cached.jars, cached.unregisteredJars),
 				);
 			}
 			// One half loaded, the other not: say so with the fetch row rather than a fake empty folder.
-			if ((cached.definitions === undefined || cached.jars === undefined) && element.savedAdapterUrl !== undefined) {
-				children.push(new WorkflowFetchActionNode(element.environmentName, element.tenantId));
+			if (
+				!nothingFetched &&
+				(cached?.definitions === undefined || cached.jars === undefined) &&
+				element.savedAdapterUrl !== undefined
+			) {
+				children.push(new WorkflowFetchActionNode(environmentName, tenantId));
 			}
-			// Drafts before the repository row: a Draft is a BPMN the user is still
-			// shaping before it has anywhere permanent to live, so it reads as a smaller,
-			// more provisional thing than a connected repository tracking real commits —
-			// putting it last, below a whole repository, had it reading as the more
-			// significant of the two. Appears only when at least one exists — same rule
-			// as History.
-			const drafts = await this.workflowDraftsFor(element.environmentName, element.tenantId);
-			if (drafts.length > 0) {
-				children.push(
-					new WorkflowDraftsFolderNode(element.environmentName, element.tenantId, drafts),
-				);
+			// The repository's Java, only while one is connected — and then always, even at zero.
+			if (repoConfig) {
+				for (const kind of ['javaMain', 'javaTest'] as const) {
+					children.push(this.workflowRepoGroupFor(environmentName, tenantId, kind));
+				}
 			}
-			children.push(repoRow);
 			return children;
-		}
-		if (element instanceof WorkflowDraftsFolderNode) {
-			return element.drafts.map(
-				d => new WorkflowDraftNode(element.environmentName, element.tenantId, d),
-			);
-		}
-		if (element instanceof WorkflowRepoNode) {
-			// Only reachable once `WorkflowRepoNode` is collapsible, i.e. connected with
-			// at least one discovered file of some kind — see its constructor. An empty
-			// group is omitted rather than shown as "(0)", the same rule Drafts follows:
-			// the repository Reltio provisions has Java and no BPMN, so a permanent
-			// `BPMN (0)` row would be the normal case rather than the exception.
-			const { environmentName, tenantId } = element;
-			const counts: readonly (readonly [WorkflowRepoGroupKind, number])[] = [
-				['bpmn', (this.getCachedWorkflowRepoFiles(environmentName, tenantId) ?? []).length],
-				['javaMain', this.getCachedWorkflowRepoJava(environmentName, tenantId, 'main').length],
-				['javaTest', this.getCachedWorkflowRepoJava(environmentName, tenantId, 'test').length],
-			];
-			return counts
-				.filter(([, count]) => count > 0)
-				.map(([kind, count]) => new WorkflowRepoGroupNode(environmentName, tenantId, kind, count));
 		}
 		if (element instanceof WorkflowRepoGroupNode) {
 			const { environmentName, tenantId, kind } = element;
-			if (kind === 'bpmn') {
-				const files = this.getCachedWorkflowRepoFiles(environmentName, tenantId) ?? [];
-				return this.moduleGroupedChildren(
-					environmentName,
-					tenantId,
-					'bpmn',
-					files,
-					f => f.moduleName,
-					f => new WorkflowRepoBpmnFileNode(
-						environmentName,
-						tenantId,
-						f.fileUri,
-						f.processId,
-						f.processName,
-						this.getCachedRepoSyncState(environmentName, tenantId, f.processId),
-					),
-				);
-			}
 			const sources = this.getCachedWorkflowRepoJava(
 				environmentName,
 				tenantId,
 				kind === 'javaMain' ? 'main' : 'test',
 			);
-			return this.moduleGroupedChildren(
-				environmentName,
-				tenantId,
-				kind,
-				sources,
-				s => s.moduleName,
-				source => new WorkflowRepoJavaFileNode(environmentName, tenantId, source),
-			);
+			return this.moduleGroupedChildren(environmentName, tenantId, kind, sources, s => s.moduleName);
 		}
 		if (element instanceof WorkflowRepoModuleNode) {
 			const { environmentName, tenantId, kind, moduleName } = element;
-			if (kind === 'bpmn') {
-				const files = (this.getCachedWorkflowRepoFiles(environmentName, tenantId) ?? [])
-					.filter(f => f.moduleName === moduleName);
-				return files.map(
-					f => new WorkflowRepoBpmnFileNode(
-						environmentName,
-						tenantId,
-						f.fileUri,
-						f.processId,
-						f.processName,
-						this.getCachedRepoSyncState(environmentName, tenantId, f.processId),
-					),
-				);
-			}
 			const sources = this.getCachedWorkflowRepoJava(
 				environmentName,
 				tenantId,
@@ -1434,29 +1313,32 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			);
 		}
 		if (element instanceof ProcessDefinitionsFolderNode) {
-			const { changed, downloaded } = await this.localBpmnStateFor(
-				element.environmentName,
-				element.tenantId,
-			);
-			return element.definitions.map(d => {
-				// D5: a definition tracked by the connected Custom Workflow Repository
-				// takes its `localState` from that comparison, taking priority over the
-				// downloaded-copy comparison below — the repository, not a manually
-				// fetched local copy, is this definition's source of truth once one exists.
-				const repoState = this.getCachedRepoSyncState(
-					element.environmentName, element.tenantId, d.type,
-				);
-				// Two different questions, two different inputs. `localState` is about the
-				// DOWNLOADED copy and alone decides which actions the row offers (Deploy, Compare and
-				// Discard all act on that copy). `repoState` is only what the badge says. Merging them
-				// made a repo `changed` offer Deploy on a copy that had not changed (or did not exist),
-				// and a repo `clean` hide real edits to a downloaded draft.
+			const { environmentName, tenantId } = element;
+			return element.rows.map(row => {
+				if (row.kind === 'draft') {
+					return new WorkflowDraftNode(
+						environmentName,
+						tenantId,
+						{
+							processId: row.processId,
+							processName: row.processName,
+							fileUri: row.fileUri,
+							fileName: row.fileUri.path.slice(row.fileUri.path.lastIndexOf('/') + 1),
+						},
+						row.source,
+					);
+				}
+				// `localState` is about the DOWNLOADED copy and alone decides which actions Deploy,
+				// Compare and Discard offer; the repository state is only what the badge says (and
+				// whether a repository deploy is offered). Merging them once made a repository
+				// `changed` offer Deploy on a copy that had not changed.
 				return new ProcessDefinitionNode(
-					element.environmentName,
-					element.tenantId,
-					d,
-					changed.has(d.type) ? 'changed' : downloaded.has(d.type) ? 'clean' : 'none',
-					repoState,
+					environmentName,
+					tenantId,
+					row.definition,
+					row.localState,
+					row.repoState,
+					row.repoFileUri,
 				);
 			});
 		}
