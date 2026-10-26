@@ -3,7 +3,7 @@
  *
  * On-disk shape (inside `{tenant}/WorkflowRepo.reltio.json`):
  * ```json
- * { "version": 1, "repoUrl": "https://bitbucket.org/acme/acme-workflows.git", "relativePath": "Workflows/Custom Workflows" }
+ * { "version": 1, "repoUrl": "https://bitbucket.org/acme/acme-workflows.git", "relativePath": "Workflows" }
  * ```
  *
  * Mirrors `workflowAdapterConfig.ts` exactly:
@@ -12,7 +12,7 @@
  *     wrong version, wrong shape) — callers treat `undefined` as "not connected"
  *     and offer to connect.
  *   - `relativePath` is recorded rather than assumed to always be
- *     `Workflows/Custom Workflows` (D1/D3), so that folder can change later
+ *     `Workflows` (D1/D3), so that folder can change later
  *     without a marker-format migration.
  *
  * Tracked and committed, like `WorkflowAdapter.reltio.json` — a repository URL

@@ -3,7 +3,7 @@
  * deployed.
  *
  * On-disk shape:
- *   {tenant}/Workflows/BPMN/{processId}.bpmn20.xml
+ *   {tenant}/Workflows/bpmn/{processId}.bpmn20.xml
  *
  * A draft is a real file, not a scratch buffer: it survives a window reload, is
  * visible in the Explorer, and belongs to the customer rather than to this
@@ -128,8 +128,8 @@ export function resolveDraftContext(
 	const processId = processIdFromDraftFileName(fileName);
 	if (!processId) return undefined;
 
-	// …/{tenant folder}/Workflows/BPMN/{file} — the immediate parent must be the drafts folder.
-	if (parts[parts.length - 2] !== 'BPMN' || parts[parts.length - 3] !== 'Workflows') return undefined;
+	// …/{tenant folder}/Workflows/bpmn/{file} — the immediate parent must be the drafts folder.
+	if (parts[parts.length - 2] !== 'bpmn' || parts[parts.length - 3] !== 'Workflows') return undefined;
 
 	const loc = environmentManager?.locFromPath(fsPath) ?? legacySuffixedDraftLoc(parts);
 	if (!loc) return undefined;
@@ -139,9 +139,9 @@ export function resolveDraftContext(
 
 /**
  * Suffix-based fallback for a pre-rename workspace: `…/{env}.reltio.environment/
- * {tenant}.reltio.tenant/Workflows/BPMN/{file}`. Mirrors `pathTenantLocFromL3Path`.
+ * {tenant}.reltio.tenant/Workflows/bpmn/{file}`. Mirrors `pathTenantLocFromL3Path`.
  * The tenant folder may still be legacy-suffixed even though the drafts location
- * inside it (`Workflows/BPMN/`) never was — the two renames are independent.
+ * inside it (`Workflows/bpmn/`) never was — the two renames are independent.
  */
 function legacySuffixedDraftLoc(
 	parts: readonly string[],
@@ -300,7 +300,7 @@ function retargetDiagramPlane(
 // ─── File system ─────────────────────────────────────────────────────────────
 
 /**
- * Every draft in a tenant's `Workflows/BPMN/` folder, sorted by process id.
+ * Every draft in a tenant's `Workflows/bpmn/` folder, sorted by process id.
  *
  * `processName` costs one extra read per draft, on top of the directory listing this function
  * already does — acceptable because a tenant's draft count is small (these are hand-created,
@@ -334,7 +334,7 @@ export async function listWorkflowDrafts(draftsDir: vscode.Uri): Promise<Workflo
 	return out;
 }
 
-/** Write one draft, creating the `Workflows/BPMN/` folder on first use. */
+/** Write one draft, creating the `Workflows/bpmn/` folder on first use. */
 export async function writeWorkflowDraft(
 	draftsDir: vscode.Uri,
 	fileName: string,

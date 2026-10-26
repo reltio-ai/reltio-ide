@@ -111,6 +111,8 @@ async function walk(
 			continue;
 		}
 		if (type !== vscode.FileType.File || !name.toLowerCase().endsWith('.xml')) continue;
+		// A draft's last-fetch copy lives beside it in `bpmn/`; it is a snapshot, not a process of its own.
+		if (name.toLowerCase().endsWith('.bpmn20.baseline.xml')) continue;
 
 		if (budget.candidates >= MAX_XML_CANDIDATES) {
 			budget.truncated = true;
@@ -136,13 +138,13 @@ async function walk(
 	}
 }
 
-/** The two path segments naming D1's clone folder, in order. Not just the immediate parent — a customer's own subfolder structure lives inside it. */
-const REPO_DIR_SEGMENTS = ['Workflows', 'Custom Workflows'];
+/** The path segment naming the clone folder: the repository is cloned directly into `{tenant}/Workflows`. Not just the immediate parent — a customer's own subfolder structure lives inside it. */
+const REPO_DIR_SEGMENT = 'Workflows';
 
-/** Index of `parts[i] === 'Workflows' && parts[i+1] === 'Custom Workflows'`, searched from the tenant end, or -1. */
+/** Index of the `Workflows` segment, searched from the file end (the file itself never counts), or -1. */
 function repoDirSegmentIndex(parts: readonly string[]): number {
 	for (let i = parts.length - 2; i >= 0; i--) {
-		if (parts[i] === REPO_DIR_SEGMENTS[0] && parts[i + 1] === REPO_DIR_SEGMENTS[1]) return i;
+		if (parts[i] === REPO_DIR_SEGMENT) return i;
 	}
 	return -1;
 }
@@ -165,12 +167,12 @@ export interface RepoBpmnContext {
  *   - *Which tenant?* — the same authority as `resolveDraftContext()`:
  *     `EnvironmentManager.locFromPath()`'s scan-built index first, a suffix-based fallback
  *     for a pre-rename workspace second. Prefix matching on the full path means the file
- *     can sit at any depth inside `Workflows/Custom Workflows/` and still resolve.
+ *     can sit at any depth inside `Workflows/` and still resolve.
  *   - *Which process?* — never the filename (D4): read from the file's own content.
  *
- * The `Workflows/Custom Workflows` segment pair has to appear in the path at all, or this
+ * The `Workflows` segment pair has to appear in the path at all, or this
  * returns `undefined` — a file elsewhere in the tenant folder that happens to parse with a
- * process id (a downloaded deployment in `Workflows/BPMN/`, say) is not this repository's
+ * process id (a downloaded deployment in `Workflows/bpmn/`, say) is not this repository's
  * concern to resolve.
  */
 export async function resolveRepoBpmnContext(

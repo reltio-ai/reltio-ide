@@ -19,6 +19,12 @@ export const BUSINESS_CONFIG_FILE = `${BUSINESS_CONFIG_DIR}/BusinessConfig.json`
 /** Hidden, gitignored home for IDE working state. Never part of the tracked tree. */
 export const IDE_STATE_DIR = '.reltio-ide';
 
+/** Workflow work for a tenant. A connected Custom Workflow Repository is cloned directly into it. */
+export const WORKFLOWS_DIR = 'Workflows';
+
+/** BPMN drafts, and the repository's own `bpmn/` folder: the same directory on disk. */
+export const WORKFLOW_BPMN_DIR = `${WORKFLOWS_DIR}/bpmn`;
+
 /** Remote snapshot at the last successful fetch; drives drift detection before a PUT. */
 export const BASELINE_FILE = `${IDE_STATE_DIR}/BusinessConfig.baseline.json`;
 
@@ -91,18 +97,11 @@ export const COMPONENT_FOLDERS: readonly ComponentFolder[] = [
 		managed: true,
 	},
 	{
-		path: 'Workflows/BPMN',
-		title: 'BPMN',
-		description: 'Business Process Modeling Notation process definitions used by the Workflow Modeler.',
-		expectedFiles: ['*.bpmn20.xml'],
-		docsUrl: 'https://docs.reltio.com/en/applications/console/configuration-applications/workflow-modeler-at-a-glance',
-		managed: false,
-	},
-	{
-		path: 'Workflows/Custom Workflows',
-		title: 'Custom Workflows',
-		description: 'Custom workflow definitions that extend the out-of-the-box processes such as Data Change Requests.',
-		expectedFiles: ['One folder or definition file per custom workflow'],
+		path: WORKFLOWS_DIR,
+		title: 'Workflows',
+		description:
+			'Workflow work for this tenant. BPMN process definitions you author live in bpmn/ (the same folder a connected Custom Workflow Repository uses). Connecting a Custom Workflow Repository clones it directly into this folder, so its Maven modules sit beside bpmn/.',
+		expectedFiles: ['bpmn/*.bpmn20.xml', 'Maven modules (only after a Custom Workflow Repository is connected)'],
 		docsUrl: 'https://docs.reltio.com/en/objectives/manage-workflow-tasks/workflow-management-at-a-glance/workflow-management-set-up/overview-of-workflow-customizations/overview-of-workflow-configuration/configure-custom-workflows',
 		managed: false,
 	},
@@ -126,6 +125,9 @@ export const COMPONENT_FOLDERS: readonly ComponentFolder[] = [
 export const RETIRED_COMPONENT_FOLDERS: readonly string[] = [
 	// Dropped from the tree on request: teams don't keep RDM in the tenant repository.
 	'RDM',
+	// Replaced by the single `Workflows` leaf (drafts in Workflows/bpmn, repository cloned into Workflows).
+	'Workflows/BPMN',
+	'Workflows/Custom Workflows',
 	'Data Validation Functions',
 	'Metadata Permissions',
 	'User Management/Users',
@@ -246,7 +248,12 @@ export async function pruneRetiredComponentFolders(tenantRoot: vscode.Uri): Prom
 		RETIRED_COMPONENT_FOLDERS.filter(p => p.includes('/')).map(p => p.split('/')[0]),
 	);
 
+	// Compared case-insensitively: on Windows and macOS `Workflows/BPMN` and the live
+	// `Workflows/bpmn` are the same directory, and an empty drafts folder must never be pruned.
+	const live = new Set([...allTreeDirectories(), WORKFLOW_BPMN_DIR].map(p => p.toLowerCase()));
+
 	for (const relative of [...ordered, ...containers]) {
+		if (live.has(relative.toLowerCase())) continue;
 		const dir = joinRelative(tenantRoot, relative);
 		if (!(await exists(dir))) continue;
 		if (!(await holdsOnlyGeneratedReadmes(dir))) continue;

@@ -1,0 +1,134 @@
+/**
+ * Pure planning for connecting a Custom Workflow Repository whose working tree lands
+ * directly in `{tenant}/Workflows/`.
+ *
+ * `git clone` refuses a non-empty directory, and `Workflows/` is rarely empty by the time a
+ * repository is connected: it carries a generated `README.md` and usually `bpmn/` drafts. So
+ * the clone goes to a staging folder first and its entries are then *adopted* into
+ * `Workflows/`. This module decides what that adoption does; `workflowRepoConnect.ts` does it.
+ *
+ * Decide/do split, same shape as `planDeploy`: no I/O here, so every collision rule is
+ * unit-testable without a filesystem.
+ *
+ * Refusal is atomic. Either the whole adoption proceeds, or nothing moves and the caller gets
+ * the full list of clashing paths. A half-adopted repository would be worse than none.
+ */
+
+export interface AdoptionEntry {
+	readonly name: string;
+	readonly isDirectory: boolean;
+}
+
+export interface AdoptionInput {
+	/** Top-level entries already in `Workflows/`. */
+	readonly existing: readonly AdoptionEntry[];
+	/** File names inside the existing `Workflows/bpmn/`, when it is a directory. */
+	readonly existingBpmn: readonly string[];
+	/** True when the existing `README.md` is the one this extension generated, so it may be replaced. */
+	readonly existingReadmeIsGenerated: boolean;
+	/** Top-level entries of the staged clone, `.git` included. */
+	readonly staged: readonly AdoptionEntry[];
+	/** File names inside the staged `bpmn/`, when it is a directory. */
+	readonly stagedBpmn: readonly string[];
+}
+
+export type AdoptionPlan =
+	| {
+			readonly ok: true;
+			/** Delete the generated placeholder README before moving anything. */
+			readonly discardExistingReadme: boolean;
+			/** Staged top-level entries moved into `Workflows/` as they are. */
+			readonly moveTop: readonly string[];
+			/** Staged `bpmn/` files moved into the existing `bpmn/`. */
+			readonly mergeBpmn: readonly string[];
+			/** Local drafts already in `Workflows/bpmn/`; they become part of the repository's working tree. */
+			readonly drafts: readonly string[];
+	  }
+	| { readonly ok: false; readonly collisions: readonly string[] };
+
+const BPMN_DIR = 'bpmn';
+const BASELINE_SUFFIX = '.bpmn20.baseline.xml';
+const DRAFT_SUFFIX = '.bpmn20.xml';
+
+/** Compared case-insensitively: Windows and macOS would treat these as the same file. */
+const fold = (name: string): string => name.toLowerCase();
+
+/** Draft files (`*.bpmn20.xml`), not their `*.bpmn20.baseline.xml` snapshots. */
+export function draftFileNames(bpmnFiles: readonly string[]): string[] {
+	return bpmnFiles
+		.filter(name => {
+			const lower = fold(name);
+			return lower.endsWith(DRAFT_SUFFIX) && !lower.endsWith(BASELINE_SUFFIX);
+		})
+		.sort((a, b) => a.localeCompare(b));
+}
+
+export function planWorkflowRepoAdoption(input: AdoptionInput): AdoptionPlan {
+	const existingTop = new Map(input.existing.map(e => [fold(e.name), e]));
+	const existingBpmn = new Set(input.existingBpmn.map(fold));
+	const collisions: string[] = [];
+	const moveTop: string[] = [];
+	const mergeBpmn: string[] = [];
+
+	for (const entry of input.staged) {
+		const clash = existingTop.get(fold(entry.name));
+		const replaceableReadme =
+			clash !== undefined && fold(entry.name) === 'readme.md' && input.existingReadmeIsGenerated;
+
+		if (clash && fold(entry.name) === BPMN_DIR && clash.isDirectory && entry.isDirectory) {
+			// The one folder both sides legitimately own: merge, file by file.
+			for (const file of input.stagedBpmn) {
+				if (existingBpmn.has(fold(file))) collisions.push(`${BPMN_DIR}/${file}`);
+				else mergeBpmn.push(file);
+			}
+			continue;
+		}
+		if (clash && !replaceableReadme) {
+			collisions.push(entry.name);
+			continue;
+		}
+		moveTop.push(entry.name);
+	}
+
+	if (collisions.length > 0) return { ok: false, collisions: collisions.sort((a, b) => a.localeCompare(b)) };
+
+	const existingReadme = input.existing.find(e => fold(e.name) === 'readme.md');
+	return {
+		ok: true,
+		discardExistingReadme: Boolean(existingReadme) && input.existingReadmeIsGenerated,
+		moveTop,
+		mergeBpmn,
+		drafts: draftFileNames(input.existingBpmn),
+	};
+}
+
+/** Lines `Workflows/.git/info/exclude` needs so a draft's last-fetch snapshot never shows as a repository change. */
+export const BASELINE_EXCLUDE_PATTERN = '*.bpmn20.baseline.xml';
+
+/** `exclude` text with the baseline pattern present exactly once; unchanged when it already is. */
+export function withBaselineExclude(current: string): string {
+	const lines = current.split(/\r?\n/);
+	if (lines.some(line => line.trim() === BASELINE_EXCLUDE_PATTERN)) return current;
+	const base = current.length === 0 || current.endsWith('\n') ? current : `${current}\n`;
+	return `${base}${BASELINE_EXCLUDE_PATTERN}\n`;
+}
+
+const MAX_LISTED_DRAFTS = 5;
+
+/**
+ * Wording for the dialog shown when connecting adopted pre-existing drafts. Says what happened,
+ * why nothing moved, and what it means for the next commit.
+ */
+export function describeAdoptedDrafts(drafts: readonly string[]): { message: string; detail: string } {
+	const count = drafts.length;
+	const listed = drafts.slice(0, MAX_LISTED_DRAFTS).join(', ');
+	const more = count > MAX_LISTED_DRAFTS ? ` and ${count - MAX_LISTED_DRAFTS} more` : '';
+	return {
+		message: `Workflows/bpmn/ already had ${count} local draft${count === 1 ? '' : 's'}: ${listed}${more}.`,
+		detail:
+			'Your connected Custom Workflow Repository keeps its own BPMN files in that same folder, so ' +
+			(count === 1 ? "this draft hasn't" : "these haven't") +
+			" moved \u2014 but they're now part of the repository's working tree. " +
+			"They'll be included the next time you commit and push from Workflows/.",
+	};
+}
