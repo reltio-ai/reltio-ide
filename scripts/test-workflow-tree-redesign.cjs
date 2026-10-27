@@ -502,6 +502,15 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 		}
 	}
 
+	// ── 13. Activation safety: no command id is registered twice ──────────────
+	// A duplicate makes activate() throw, which leaves the whole Reltio view empty.
+	{
+		const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+		const ids = [...src.matchAll(/registerCommand\(\s*'([^']+)'/g)].map(m => m[1]);
+		const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+		assert.deepStrictEqual(dupes, [], 'commands registered more than once: ' + dupes.join(', '));
+	}
+
 	console.log('test-workflow-tree-redesign: OK');
 })().catch(err => {
 	console.error(err);
