@@ -5,14 +5,15 @@ When a tenant folder is created, the extension SHALL materialize a fixed tree of
 
 ```
 Business Config/
-RDM/
 Workflows/BPMN/
 Workflows/Custom Workflows/
 LifeCycle Actions/
 ```
 
 The tree covers the components teams version today. `Workflows/` exists as an implied container,
-giving six directories in total. `LifeCycle Actions/` holds generated Life Cycle Action projects at
+giving five directories in total. `RDM/` is not part of the tree; a tenant created
+by an earlier build loses its `RDM/` folder under the retired-folder rule when it holds only a
+generated README. `LifeCycle Actions/` holds generated Life Cycle Action projects at
 `<type>-<hook>-<name>-lca/` and carries a `README.md` like the other unmanaged folders.
 
 #### Scenario: Adding a tenant creates the full tree
@@ -89,7 +90,7 @@ folder and everything in it.
 
 #### Scenario: Surviving components are never pruned
 - **WHEN** retired folders are removed
-- **THEN** `Business Config/`, `RDM/`, `Workflows/BPMN/`, `Workflows/Custom Workflows/` and `LifeCycle Actions/` remain
+- **THEN** `Business Config/`, `Workflows/BPMN/`, `Workflows/Custom Workflows/` and `LifeCycle Actions/` remain
 
 #### Scenario: Pruning is idempotent
 - **WHEN** the prune runs a second time on the same tenant

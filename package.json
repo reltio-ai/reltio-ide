@@ -642,37 +642,37 @@
         },
         {
           "command": "reltio.addEntityType",
-          "when": "view == reltioConfigTree && (viewItem == reltio.folder.entityTypesFolder || viewItem == reltio.tenant.l3)",
+          "when": "view == reltioConfigTree && (viewItem == reltio.folder.entityTypesFolder || viewItem =~ /^reltio\\.tenant\\.l3(\\.gitbound)?$/)",
           "group": "5_insert@01"
         },
         {
           "command": "reltio.addRelationType",
-          "when": "view == reltioConfigTree && (viewItem == reltio.folder.relationTypesFolder || viewItem == reltio.tenant.l3)",
+          "when": "view == reltioConfigTree && (viewItem == reltio.folder.relationTypesFolder || viewItem =~ /^reltio\\.tenant\\.l3(\\.gitbound)?$/)",
           "group": "5_insert@02"
         },
         {
           "command": "reltio.insertInteractionType",
-          "when": "view == reltioConfigTree && (viewItem == reltio.folder.interactionTypesFolder || viewItem == reltio.tenant.l3)",
+          "when": "view == reltioConfigTree && (viewItem == reltio.folder.interactionTypesFolder || viewItem =~ /^reltio\\.tenant\\.l3(\\.gitbound)?$/)",
           "group": "5_insert@03"
         },
         {
           "command": "reltio.insertHierarchyType",
-          "when": "view == reltioConfigTree && (viewItem == reltio.folder.hierarchyTypesFolder || viewItem == reltio.tenant.l3)",
+          "when": "view == reltioConfigTree && (viewItem == reltio.folder.hierarchyTypesFolder || viewItem =~ /^reltio\\.tenant\\.l3(\\.gitbound)?$/)",
           "group": "5_insert@04"
         },
         {
           "command": "reltio.insertGraphType",
-          "when": "view == reltioConfigTree && (viewItem == reltio.folder.graphTypesFolder || viewItem == reltio.tenant.l3)",
+          "when": "view == reltioConfigTree && (viewItem == reltio.folder.graphTypesFolder || viewItem =~ /^reltio\\.tenant\\.l3(\\.gitbound)?$/)",
           "group": "5_insert@05"
         },
         {
           "command": "reltio.insertGroupingType",
-          "when": "view == reltioConfigTree && (viewItem == reltio.folder.groupingTypesFolder || viewItem == reltio.tenant.l3)",
+          "when": "view == reltioConfigTree && (viewItem == reltio.folder.groupingTypesFolder || viewItem =~ /^reltio\\.tenant\\.l3(\\.gitbound)?$/)",
           "group": "5_insert@06"
         },
         {
           "command": "reltio.insertSource",
-          "when": "view == reltioConfigTree && (viewItem == reltio.folder.sourcesFolder || viewItem == reltio.tenant.l3)",
+          "when": "view == reltioConfigTree && (viewItem == reltio.folder.sourcesFolder || viewItem =~ /^reltio\\.tenant\\.l3(\\.gitbound)?$/)",
           "group": "5_insert@07"
         },
         {
@@ -782,17 +782,17 @@
         },
         {
           "command": "reltio.fetchL3",
-          "when": "viewItem == reltio.tenant.l3 && reltio.workspaceSource != 'git'",
+          "when": "viewItem =~ /^reltio\\.tenant\\.l3(\\.gitbound)?$/ && reltio.workspaceSource != 'git'",
           "group": "3_getconfig@01"
         },
         {
           "command": "reltio.fetchConfigurationHistory",
-          "when": "viewItem == reltio.tenant.l3 && reltio.workspaceSource != 'git'",
+          "when": "viewItem =~ /^reltio\\.tenant\\.l3(\\.gitbound)?$/ && reltio.workspaceSource != 'git'",
           "group": "3_getconfig@02"
         },
         {
           "command": "reltio.applyL3Configuration",
-          "when": "viewItem == reltio.tenant.l3 && reltio.workspaceSource != 'git'",
+          "when": "viewItem =~ /^reltio\\.tenant\\.l3(\\.gitbound)?$/ && reltio.workspaceSource != 'git'",
           "group": "4_apply"
         },
         {
@@ -837,12 +837,12 @@
         },
         {
           "command": "reltio.fetchL3",
-          "when": "viewItem == reltio.tenant && reltio.workspaceSource != 'git'",
+          "when": "viewItem =~ /^reltio\\.tenant(\\.gitbound)?$/ && reltio.workspaceSource != 'git'",
           "group": "inline@1"
         },
         {
           "command": "reltio.openL3",
-          "when": "viewItem == reltio.tenant.l3",
+          "when": "viewItem =~ /^reltio\\.tenant\\.l3(\\.gitbound)?$/",
           "group": "inline@1"
         },
         {

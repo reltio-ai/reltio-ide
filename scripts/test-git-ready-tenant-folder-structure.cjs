@@ -82,17 +82,17 @@ const {
 (async () => {
 	// ---------------------------------------------------------------- 9.2 component tree
 
-	// Business Config, RDM, Workflows (with its two sub-folders) and LifeCycle Actions. Six directories, five of them leaves.
+	// Business Config, Workflows (with its two sub-folders) and LifeCycle Actions. Five directories, four of them leaves.
 	assert.deepStrictEqual(
 		COMPONENT_FOLDERS.map(f => f.path),
-		['Business Config', 'RDM', 'Workflows/BPMN', 'Workflows/Custom Workflows', 'LifeCycle Actions'],
-		'exactly the five leaf components',
+		['Business Config', 'Workflows/BPMN', 'Workflows/Custom Workflows', 'LifeCycle Actions'],
+		'exactly the four leaf components',
 	);
 	const dirsDeclared = allTreeDirectories();
 	assert.deepStrictEqual(
 		dirsDeclared,
-		['Business Config', 'RDM', 'Workflows', 'Workflows/BPMN', 'Workflows/Custom Workflows', 'LifeCycle Actions'],
-		'six directories, Workflows implied as a container',
+		['Business Config', 'Workflows', 'Workflows/BPMN', 'Workflows/Custom Workflows', 'LifeCycle Actions'],
+		'five directories, Workflows implied as a container',
 	);
 	// A parent is always listed before anything beneath it, so creation order is safe.
 	for (const d of dirsDeclared) {
@@ -108,7 +108,7 @@ const {
 	const managed = COMPONENT_FOLDERS.filter(f => f.managed);
 	assert.deepStrictEqual(managed.map(f => f.path), [BUSINESS_CONFIG_DIR], 'only Business Config is managed');
 	assert.strictEqual(BUSINESS_CONFIG_FILE, `${BUSINESS_CONFIG_DIR}/BusinessConfig.json`);
-	assert.strictEqual(unmanagedFolders().length, 4, '4 unmanaged folders get a README');
+	assert.strictEqual(unmanagedFolders().length, 3, '3 unmanaged folders get a README');
 
 	// Every unmanaged folder carries a real docs.reltio.com URL, asserted offline: the map is the
 	// contract, and making CI depend on the network would be flaky for no added signal.
@@ -144,7 +144,7 @@ const {
 		);
 	}
 	const readmes = [...mem._files.keys()].filter(p => p.endsWith('/README.md'));
-	assert.strictEqual(readmes.length, 4, 'one README per unmanaged folder');
+	assert.strictEqual(readmes.length, 3, 'one README per unmanaged folder');
 	assert.ok(mem._files.has(`${tenant.fsPath}/LifeCycle Actions/README.md`), 'LifeCycle Actions carries a README');
 	assert.match(text(mem._files.get(`${tenant.fsPath}/LifeCycle Actions/README.md`)), /hcp-beforesave-customerid-lca/);
 	assert.ok(
@@ -154,7 +154,7 @@ const {
 	assert.ok(await isComponentTree(tenant), 'isComponentTree true after materialize');
 
 	// Re-materializing is non-destructive and never overwrites a user-authored README.
-	const userReadme = `${tenant.fsPath}/RDM/README.md`;
+	const userReadme = `${tenant.fsPath}/Workflows/BPMN/README.md`;
 	mem._files.set(userReadme, Buffer.from('# my own notes'));
 	const before = mem._files.size;
 	await materializeTenantTree(tenant);
@@ -170,7 +170,7 @@ const {
 	assert.ok(RETIRED_COMPONENT_FOLDERS.includes('DTSS'), 'DTSS is retired');
 	assert.ok(RETIRED_COMPONENT_FOLDERS.includes('Custom Code/Utilities'), 'nested leaves are retired');
 	assert.ok(
-		!RETIRED_COMPONENT_FOLDERS.some(p => ['Business Config', 'RDM', 'Workflows/BPMN', 'LifeCycle Actions'].includes(p)),
+		!RETIRED_COMPONENT_FOLDERS.some(p => ['Business Config', 'Workflows/BPMN', 'Workflows/Custom Workflows', 'LifeCycle Actions'].includes(p)),
 		'no surviving component is listed as retired',
 	);
 	assert.ok(RETIRED_COMPONENT_FOLDERS.includes('LCA'), 'the short LCA folder name is not the tree folder');
@@ -208,11 +208,36 @@ const {
 	assert.ok(mem._files.has(`${old.fsPath}/Data Loader/README.md`), 'the rewritten README survives');
 
 	// Surviving components are never touched, whatever else is pruned.
-	for (const keep of ['Business Config', 'RDM', 'Workflows/BPMN', 'Workflows/Custom Workflows', 'LifeCycle Actions']) {
+	for (const keep of ['Business Config', 'Workflows/BPMN', 'Workflows/Custom Workflows', 'LifeCycle Actions']) {
 		assert.ok(mem._dirs.has(`${old.fsPath}/${keep}`), `${keep} survives pruning`);
 	}
 	// Idempotent: a second pass finds nothing left to do.
 	assert.deepStrictEqual(await pruneRetiredComponentFolders(old), [], 'second prune is a no-op');
+
+	// RDM was dropped from the tree. A tenant created before that has RDM/ holding the README an
+	// earlier build generated: it is removed. One where the team keeps its own RDM files is not.
+	assert.ok(RETIRED_COMPONENT_FOLDERS.includes('RDM'), 'RDM is retired');
+	assert.ok(!allTreeDirectories().includes('RDM'), 'new tenants get no RDM folder');
+	const rdmReadme = renderReadme({
+		path: 'RDM',
+		title: 'RDM',
+		description: 'Reference Data Management: lookup types, lookup values, source systems and transcoding.',
+		expectedFiles: ['config.json', 'LookupMappings.json'],
+		docsUrl: 'https://docs.reltio.com/en/applications/rdm/rdm-at-a-glance',
+		managed: false,
+	});
+	const withGeneratedRdm = U('/wsP/env/t2');
+	await materializeTenantTree(withGeneratedRdm);
+	assert.ok(!mem._dirs.has(`${withGeneratedRdm.fsPath}/RDM`), 'materialize no longer creates RDM');
+	await vscode.workspace.fs.writeFile(U(`${withGeneratedRdm.fsPath}/RDM/README.md`), Buffer.from(rdmReadme));
+	assert.ok((await pruneRetiredComponentFolders(withGeneratedRdm)).includes('RDM'), 'a generated-only RDM folder is removed');
+	assert.ok(!mem._dirs.has(`${withGeneratedRdm.fsPath}/RDM`), 'RDM is gone from disk');
+	const withOwnRdm = U('/wsP/env/t3');
+	await materializeTenantTree(withOwnRdm);
+	await vscode.workspace.fs.writeFile(U(`${withOwnRdm.fsPath}/RDM/README.md`), Buffer.from(rdmReadme));
+	await vscode.workspace.fs.writeFile(U(`${withOwnRdm.fsPath}/RDM/LookupMappings.json`), Buffer.from('{}'));
+	assert.ok(!(await pruneRetiredComponentFolders(withOwnRdm)).includes('RDM'), 'an RDM folder with team files is kept');
+	assert.ok(mem._files.has(`${withOwnRdm.fsPath}/RDM/LookupMappings.json`), 'the team RDM file survives');
 
 	// ---------------------------------------------------------------- 9.3 EnvironmentManager
 
@@ -557,7 +582,7 @@ const {
 	// A user file dropped into an unmanaged component folder also counts as content.
 	const fresh2 = U('/wsB/env/t2');
 	await materializeTenantTree(fresh2);
-	await vscode.workspace.fs.writeFile(U(`${fresh2.fsPath}/RDM/config.json`), Buffer.from('{}'));
+	await vscode.workspace.fs.writeFile(U(`${fresh2.fsPath}/Workflows/BPMN/process.bpmn20.xml`), Buffer.from('<definitions/>'));
 	assert.strictEqual(
 		await binding.isTenantFolderCloneable(fresh2),
 		false,
@@ -680,6 +705,34 @@ const {
 	assert.strictEqual(titleOf('reltio.connectTenantToGit'), 'Connect to Git');
 	assert.strictEqual(titleOf('reltio.tenantNewBranch'), 'Connect to a New Branch');
 	assert.strictEqual(titleOf('reltio.disconnectTenantFromGit'), 'Disconnect from Git');
+
+	// Regression: connecting a tenant to Git appended `.gitbound` to its contextValue, and every
+	// tenant-row item gated on an exact `viewItem == reltio.tenant[.l3]` disappeared (Get
+	// Configuration, History, Apply, the seven Add items, the inline buttons). A connected tenant
+	// must offer exactly what an unconnected one does, with Connect to Git swapped for the two
+	// branch actions. Evaluates the real `when` clauses for each tenant state.
+	const evalWhen = (when, viewItem) => Function('viewItem', `return ${when
+		.replace(/view == reltioConfigTree/g, 'true')
+		.replace(/reltio\.workspaceSource != 'git'/g, 'true')
+		.replace(/reltio\.workspaceSource == 'git'/g, 'false')
+		.replace(/viewItem =~ (\/(?:\\\/|[^/])+\/)/g, '$1.test(viewItem)')
+		.replace(/viewItem == ([\w.]+)/g, '(viewItem === "$1")')}`)(viewItem);
+	const itemsFor = viewItem => menus
+		.filter(m => m.when && /viewItem/.test(m.when) && evalWhen(m.when, viewItem))
+		.map(m => `${m.command}${String(m.group).startsWith('inline') ? ':inline' : ''}`)
+		.sort();
+	const GIT_ONLY = ['reltio.tenantNewBranch', 'reltio.disconnectTenantFromGit'];
+	for (const base of ['reltio.tenant', 'reltio.tenant.l3']) {
+		const unbound = itemsFor(base);
+		const bound = itemsFor(`${base}.gitbound`);
+		assert.deepStrictEqual(
+			bound.filter(c => !GIT_ONLY.includes(c)),
+			unbound.filter(c => c !== 'reltio.connectTenantToGit'),
+			`${base}: connecting to Git keeps every other tenant menu item`,
+		);
+		for (const c of GIT_ONLY) assert.ok(bound.includes(c) && !unbound.includes(c), `${base}: ${c} only when connected`);
+	}
+	assert.ok(itemsFor('reltio.tenant.l3.gitbound').includes('reltio.applyL3Configuration'), 'Apply stays available when connected');
 
 	// --------------------------------------------- 18.x activation must survive the rename
 

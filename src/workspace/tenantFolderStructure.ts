@@ -91,14 +91,6 @@ export const COMPONENT_FOLDERS: readonly ComponentFolder[] = [
 		managed: true,
 	},
 	{
-		path: 'RDM',
-		title: 'RDM',
-		description: 'Reference Data Management: lookup types, lookup values, source systems and transcoding.',
-		expectedFiles: ['config.json', 'LookupMappings.json'],
-		docsUrl: 'https://docs.reltio.com/en/applications/rdm/rdm-at-a-glance',
-		managed: false,
-	},
-	{
 		path: 'Workflows/BPMN',
 		title: 'BPMN',
 		description: 'Business Process Modeling Notation process definitions used by the Workflow Modeler.',
@@ -132,6 +124,8 @@ export const COMPONENT_FOLDERS: readonly ComponentFolder[] = [
  * they hold nothing but our own generated README.
  */
 export const RETIRED_COMPONENT_FOLDERS: readonly string[] = [
+	// Dropped from the tree on request: teams don't keep RDM in the tenant repository.
+	'RDM',
 	'Data Validation Functions',
 	'Metadata Permissions',
 	'User Management/Users',
