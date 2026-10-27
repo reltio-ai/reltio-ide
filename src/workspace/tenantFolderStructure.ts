@@ -38,6 +38,38 @@ export const HISTORY_DIR = `${IDE_STATE_DIR}/history`;
 export const MIGRATION_BACKUP_DIR = '.reltio-ide-backup';
 
 /**
+ * The RDM folder: one subfolder per RDM tenant of the MDM tenant. Not part of the component tree
+ * (RDM is in RETIRED_COMPONENT_FOLDERS), so it is never generated; the first RDM fetch creates it,
+ * and its `config.json` files keep it from being pruned.
+ */
+export const RDM_DIR = 'RDM';
+
+/** Name of an RDM tenant's configuration file inside its subfolder of `RDM/`. */
+export const RDM_CONFIG_FILENAME = 'config.json';
+
+/**
+ * RDM baselines live under the IDE working-state folder, so the gitignore the layout already
+ * writes for `.reltio-ide/` covers them — a drift baseline never shows up in a pull request.
+ */
+export const RDM_BASELINE_DIR = `${IDE_STATE_DIR}/${RDM_DIR}`;
+
+/**
+ * `RDM/{rdmTenantId}/config.json`.
+ *
+ * The RDM tenant ID is part of this tracked path. That is a deliberate trade-off to keep several
+ * RDM tenants per MDM tenant, at the cost of RDM not diffing across environments the way
+ * `BusinessConfig.json` does: Dev and Prod point at different RDM tenants.
+ */
+export function rdmConfigPath(rdmTenantId: string): string {
+	return `${RDM_DIR}/${rdmTenantId}/${RDM_CONFIG_FILENAME}`;
+}
+
+/** `.reltio-ide/RDM/{rdmTenantId}.baseline.json`. */
+export function rdmBaselinePath(rdmTenantId: string): string {
+	return `${RDM_BASELINE_DIR}/${rdmTenantId}.baseline.json`;
+}
+
+/**
  * Flat-layout names from before the component tree.
  *
  * These are the only place these strings appear. Migration uses them to find what to move, and

@@ -1269,3 +1269,114 @@ export interface MapEntry {
   key?: string;
   value?: unknown;
 }
+
+// ---------------------------------------------------------------------------
+// RDM (Reference Data Management)
+//
+// These shapes are derived from a limited sample of live RDM configurations,
+// which vary per tenant. The recognized property set is therefore a lower
+// bound, not a specification: every interface below carries an index signature
+// so a tenant whose configuration includes keys we have not seen still parses.
+// ---------------------------------------------------------------------------
+
+/** One lookup type defined in an RDM tenant. `uri` is what L3 `lookupCode` values reference. */
+export interface RdmLookupType {
+  uri: string;
+  label?: string;
+  enabled?: boolean;
+  startDate?: number;
+  endDate?: number;
+  [key: string]: unknown;
+}
+
+/** One source defined in an RDM tenant. */
+export interface RdmSource {
+  uri: string;
+  label?: string;
+  abbreviation?: string;
+  canonicalValueProvider?: boolean;
+  [key: string]: unknown;
+}
+
+/** RDM tenant configuration as returned by `GET {serviceUri}/configuration/{rdmTenantId}`. */
+export interface RdmConfiguration {
+  tenantId?: string;
+  label?: string;
+  trackTranscodeErrors?: boolean;
+  lookupTypes?: RdmLookupType[];
+  sources?: RdmSource[];
+  updatedBy?: string;
+  updateDate?: number;
+  version?: number;
+  [key: string]: unknown;
+}
+
+/**
+ * The `rdmConfig` block of a tenant physical configuration.
+ *
+ * `oauthInstance` is deliberately not modelled: the environment bearer token is
+ * accepted by the RDM service, so nothing reads it today, and leaving it out
+ * keeps a future need for it a visible addition rather than stale dead code.
+ */
+export interface RdmConfigBlock {
+  serviceUri?: string;
+  rdmTenants?: { rdmTenantId?: string }[];
+}
+
+/**
+ * Narrow view of `GET /reltio/tenants/{tenantId}`.
+ *
+ * The full response carries infrastructure credentials and internal hostnames.
+ * Only `rdmConfig` is ever read, and the response is never written to disk.
+ */
+export interface TenantPhysicalConfiguration {
+  rdmConfig?: RdmConfigBlock;
+}
+
+/** Service URI and RDM tenant ids extracted from a tenant physical configuration. */
+export interface ExtractedRdmConfig {
+  serviceUri?: string;
+  rdmTenantIds: string[];
+}
+
+/** One source's spelling of a lookup code, from `GET {serviceUri}/lookups/…`. */
+export interface RdmSourceValue {
+  code?: string;
+  value?: string;
+  enabled?: boolean;
+  canonicalValue?: boolean;
+  downStreamDefaultValue?: boolean;
+  [key: string]: unknown;
+}
+
+/**
+ * How one source maps a lookup code. `values` is an array: a source may map a
+ * code to several values, or be mapped with none at all.
+ */
+export interface RdmSourceMapping {
+  source?: string;
+  values?: RdmSourceValue[];
+  [key: string]: unknown;
+}
+
+/** One lookup code and its per-source mappings. */
+export interface RdmLookupValue {
+  tenantId?: string;
+  type?: string;
+  code?: string;
+  enabled?: boolean;
+  sourceMappings?: RdmSourceMapping[];
+  startDate?: number;
+  endDate?: number;
+  updatedBy?: string;
+  updateDate?: number;
+  version?: number;
+  [key: string]: unknown;
+}
+
+/** One table row: the nested lookup response flattened to (code, source, value). */
+export interface RdmLookupValueRow {
+  code: string;
+  source: string;
+  valueAtSource: string;
+}

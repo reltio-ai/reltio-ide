@@ -1,0 +1,429 @@
+[
+  {
+    "tenantId": "RdmSampleTenant",
+    "type": "rdm/lookupTypes/AddressTypes",
+    "code": "Billing",
+    "enabled": true,
+    "sourceMappings": [
+      {
+        "source": "Reltio",
+        "values": [
+          {
+            "code": "Billing",
+            "value": "Billing",
+            "enabled": true,
+            "canonicalValue": true,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "DnB",
+        "values": [
+          {
+            "code": "Billing",
+            "value": "Billing",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "Salesforce",
+        "values": [
+          {
+            "code": "Billing",
+            "value": "Billing",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "ReltioCleanser",
+        "values": [
+          {
+            "code": "Billing",
+            "value": "Billing",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      }
+    ],
+    "startDate": 0,
+    "endDate": 0,
+    "updatedBy": "PLATFORM_CONTROL_CENTER",
+    "updateDate": 1784222396011,
+    "version": 1
+  },
+  {
+    "tenantId": "RdmSampleTenant",
+    "type": "rdm/lookupTypes/AddressTypes",
+    "code": "Business",
+    "enabled": true,
+    "sourceMappings": [
+      {
+        "source": "Reltio",
+        "values": [
+          {
+            "code": "Business",
+            "value": "Business",
+            "enabled": true,
+            "canonicalValue": true,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "DnB",
+        "values": [
+          {
+            "code": "Business",
+            "value": "Business",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "Salesforce",
+        "values": [
+          {
+            "code": "Business",
+            "value": "Business",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "ReltioCleanser",
+        "values": [
+          {
+            "code": "Business",
+            "value": "Business",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      }
+    ],
+    "startDate": 0,
+    "endDate": 0,
+    "updatedBy": "PLATFORM_CONTROL_CENTER",
+    "updateDate": 1784222396011,
+    "version": 1
+  },
+  {
+    "tenantId": "RdmSampleTenant",
+    "type": "rdm/lookupTypes/AddressTypes",
+    "code": "Delivery",
+    "enabled": true,
+    "sourceMappings": [
+      {
+        "source": "Reltio",
+        "values": [
+          {
+            "code": "Delivery",
+            "value": "Delivery",
+            "enabled": true,
+            "canonicalValue": true,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "DnB",
+        "values": [
+          {
+            "code": "Delivery",
+            "value": "Delivery",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "Salesforce",
+        "values": [
+          {
+            "code": "Delivery",
+            "value": "Delivery",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "ReltioCleanser",
+        "values": [
+          {
+            "code": "Delivery",
+            "value": "Delivery",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      }
+    ],
+    "startDate": 0,
+    "endDate": 0,
+    "updatedBy": "PLATFORM_CONTROL_CENTER",
+    "updateDate": 1784222396011,
+    "version": 1
+  },
+  {
+    "tenantId": "RdmSampleTenant",
+    "type": "rdm/lookupTypes/AddressTypes",
+    "code": "Mailing",
+    "enabled": true,
+    "sourceMappings": [
+      {
+        "source": "Reltio",
+        "values": [
+          {
+            "code": "Mailing",
+            "value": "Mailing",
+            "enabled": true,
+            "canonicalValue": true,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "DnB",
+        "values": [
+          {
+            "code": "Mailing",
+            "value": "Mailing",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "Salesforce",
+        "values": [
+          {
+            "code": "Mailing",
+            "value": "Mailing",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "ReltioCleanser",
+        "values": [
+          {
+            "code": "Mailing",
+            "value": "Mailing",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      }
+    ],
+    "startDate": 0,
+    "endDate": 0,
+    "updatedBy": "PLATFORM_CONTROL_CENTER",
+    "updateDate": 1784222396011,
+    "version": 1
+  },
+  {
+    "tenantId": "RdmSampleTenant",
+    "type": "rdm/lookupTypes/AddressTypes",
+    "code": "Primary",
+    "enabled": true,
+    "sourceMappings": [
+      {
+        "source": "Reltio",
+        "values": [
+          {
+            "code": "Primary",
+            "value": "Primary",
+            "enabled": true,
+            "canonicalValue": true,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "DnB",
+        "values": [
+          {
+            "code": "Primary",
+            "value": "Primary",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "Salesforce",
+        "values": [
+          {
+            "code": "Primary",
+            "value": "Primary",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "ReltioCleanser",
+        "values": [
+          {
+            "code": "Primary",
+            "value": "Primary",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      }
+    ],
+    "startDate": 0,
+    "endDate": 0,
+    "updatedBy": "PLATFORM_CONTROL_CENTER",
+    "updateDate": 1784222396011,
+    "version": 1
+  },
+  {
+    "tenantId": "RdmSampleTenant",
+    "type": "rdm/lookupTypes/AddressTypes",
+    "code": "Secondary",
+    "enabled": true,
+    "sourceMappings": [
+      {
+        "source": "Reltio",
+        "values": [
+          {
+            "code": "Secondary",
+            "value": "Secondary",
+            "enabled": true,
+            "canonicalValue": true,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "DnB",
+        "values": [
+          {
+            "code": "Secondary",
+            "value": "Secondary",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "Salesforce",
+        "values": [
+          {
+            "code": "Secondary",
+            "value": "Secondary",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "ReltioCleanser",
+        "values": [
+          {
+            "code": "Secondary",
+            "value": "Secondary",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      }
+    ],
+    "startDate": 0,
+    "endDate": 0,
+    "updatedBy": "PLATFORM_CONTROL_CENTER",
+    "updateDate": 1784222396011,
+    "version": 1
+  },
+  {
+    "tenantId": "RdmSampleTenant",
+    "type": "rdm/lookupTypes/AddressTypes",
+    "code": "Shipping",
+    "enabled": true,
+    "sourceMappings": [
+      {
+        "source": "Reltio",
+        "values": [
+          {
+            "code": "Shipping",
+            "value": "Shipping",
+            "enabled": true,
+            "canonicalValue": true,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "DnB",
+        "values": [
+          {
+            "code": "Shipping",
+            "value": "Shipping",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "Salesforce",
+        "values": [
+          {
+            "code": "Shipping",
+            "value": "Shipping",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      },
+      {
+        "source": "ReltioCleanser",
+        "values": [
+          {
+            "code": "Shipping",
+            "value": "Shipping",
+            "enabled": true,
+            "canonicalValue": false,
+            "downStreamDefaultValue": true
+          }
+        ]
+      }
+    ],
+    "startDate": 0,
+    "endDate": 0,
+    "updatedBy": "PLATFORM_CONTROL_CENTER",
+    "updateDate": 1784222396011,
+    "version": 1
+  }
+]

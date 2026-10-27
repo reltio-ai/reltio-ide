@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://reltio.com/schemas/reltio-rdm.schema.json",
+  "title": "Reltio RDM Tenant Configuration",
+  "description": "Schema for Reltio Reference Data Management tenant configuration files (RDM.*.reltio.json), as returned by GET {serviceUri}/configuration/{rdmTenantId}. RDM configurations vary per tenant and this schema is derived from a limited sample, so the recognized property set is a lower bound: additionalProperties is deliberately left open at every level so that a property absent from the sample but present in a real tenant does not produce a validation error on server-produced content.",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string", "description": "JSON Schema reference for inline validation" },
+    "tenantId": { "type": "string", "description": "RDM tenant identifier" },
+    "label": { "type": "string", "description": "Human-readable label for the RDM tenant" },
+    "trackTranscodeErrors": { "type": "boolean", "description": "Whether transcode errors are tracked for this tenant" },
+    "lookupTypes": {
+      "type": "array",
+      "description": "Lookup type definitions. Each uri is what L3 attribute lookupCode values reference.",
+      "items": { "$ref": "#/$defs/RdmLookupType" }
+    },
+    "sources": {
+      "type": "array",
+      "description": "Source definitions available to this RDM tenant",
+      "items": { "$ref": "#/$defs/RdmSource" }
+    },
+    "updatedBy": { "type": "string", "description": "Last updater identifier" },
+    "updateDate": { "type": "number", "description": "Last update timestamp (epoch millis)" },
+    "version": { "type": "number", "description": "Configuration version" }
+  },
+  "$defs": {
+    "RdmLookupType": {
+      "type": "object",
+      "description": "One RDM lookup type definition",
+      "properties": {
+        "uri": { "type": "string", "description": "Lookup type URI, e.g. rdm/lookupTypes/MaritalStatuses" },
+        "label": { "type": "string", "description": "Human-readable label" },
+        "enabled": { "type": "boolean", "description": "Whether the lookup type is enabled" },
+        "startDate": { "type": "number", "description": "Effective start date (epoch millis, 0 when unset)" },
+        "endDate": { "type": "number", "description": "Effective end date (epoch millis, 0 when unset)" }
+      },
+      "required": ["uri"]
+    },
+    "RdmSource": {
+      "type": "object",
+      "description": "One RDM source definition",
+      "properties": {
+        "uri": { "type": "string", "description": "Source URI, e.g. rdm/sources/SAP" },
+        "label": { "type": "string", "description": "Human-readable label" },
+        "abbreviation": { "type": "string", "description": "Short form used in the UI" },
+        "canonicalValueProvider": { "type": "boolean", "description": "Whether this source provides canonical values" }
+      },
+      "required": ["uri"]
+    }
+  }
+}
