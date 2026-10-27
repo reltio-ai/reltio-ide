@@ -318,8 +318,8 @@ const ADAPTER = 'https://tst-01-workflow.reltio.com';
 					processId: 'd1', fileUri: vscode.Uri.file('/rfws/drafts/d1.bpmn20.xml'),
 					fileName: 'd1.bpmn20.xml', processName: 'Address Validation',
 				}, source);
-				assert.strictEqual(named.resourceUri === undefined, source === 'repo',
-					'a repository row must not carry resourceUri, or VS Code renders a Problems badge next to it');
+				assert.strictEqual(named.resourceUri, undefined,
+					'a draft or repository row must not carry resourceUri, or VS Code renders a Problems badge next to it');
 				assert.ok(named.iconPath, 'the icon must still be set explicitly without resourceUri to drive it');
 				assert.strictEqual(named.label, 'Address Validation');
 				assert.ok(String(named.description).includes('d1') && (source === 'repo' || String(named.description).includes('draft')),

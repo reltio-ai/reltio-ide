@@ -599,10 +599,9 @@ export class WorkflowDraftNode extends vscode.TreeItem {
 		this.iconPath = source === 'repo'
 			? new vscode.ThemeIcon('repo', repoState === 'differs' ? new vscode.ThemeColor('gitDecoration.modifiedResourceForeground') : undefined)
 			: new vscode.ThemeIcon('edit');
-		// A repository file sets no `resourceUri`: that opts the row into VS Code's native
+		// No `resourceUri` on either kind of row: that would opt it into VS Code's native
 		// Problems-count badge, which reads as a deploy blocker on a BPMN mid-edit and is not one.
 		// (The icon is explicit, so nothing relies on `resourceUri` to drive it.)
-		if (source === 'local') this.resourceUri = draft.fileUri;
 		// The id is what Deploy actually keys on, so once the label is showing the friendlier
 		// name instead, the id still needs to be visible without a hover.
 		const repoNote = {

@@ -63,7 +63,7 @@ becomes visible to Reltio. State what you're about to open it with (branch and a
 
 ### If no repository is connected
 
-Connect one before writing any Java: right-click **Workflows** → **Connect Custom Workflow Repository** → paste the git URL. Do not write Java until it is connected, and do not offer to write it anyway. The only exception is a user who, unprompted, tells you to proceed without one; show the Java in chat only and write no file. BPMN-only work never needs a repository.
+Connect one before writing any Java: right-click **Workflows** → **Connect Custom Workflow Repository** → paste the git URL. Do not write Java until it is connected, do not draft the BPMN for that request either (a BPMN whose classes do not exist cannot work), and do not offer to write it anyway. The only exception is a user who, unprompted, tells you to proceed without one; show the Java in chat only and write no file. Work that needs no Java never needs a repository.
 
 ### When you can't invoke commands yourself
 
