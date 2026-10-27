@@ -474,7 +474,7 @@ New Java modules don't register themselves automatically. To bring one into your
 If your workflow BPMNs and Java modules live in Git instead of only on the tenant, connect a repository the same way you'd connect one for configuration:
 
 1. Right-click **Workflows** and select **Connect Custom Workflow Repository...**.
-2. Enter the remote URL and press Enter. The repository is cloned into the tenant's `Workflows/` folder, so its `bpmn/` folder is the same folder as your drafts. If `Workflows/bpmn/` already held drafts, they stay where they are and become part of the repository's working tree; a message lists them and says they'll be included the next time you commit and push from `Workflows/`. If a draft has the same name as a BPMN the repository already tracks, your local copy is kept and git shows it as modified. For any other file with the same name as one in the repository, nothing is changed and the message lists the files — rename them and connect again.
+2. Enter the remote URL and press Enter. The repository is cloned into the tenant's `Workflows/` folder, so its `bpmn/` folder is the same folder as your drafts. If `Workflows/bpmn/` already held drafts, a message tells you they're now in the repository's `bpmn` folder and will be included the next time you commit. If a draft has the same name as a BPMN the repository already tracks, your local copy is kept and git shows it as modified. For any other file with the same name as one in the repository, nothing is changed and the message lists the files — rename them and connect again.
 
 <p align="center">
   <img src="docs/images/connect-workflow-repository.png" alt="Connect Custom Workflow Repository prompt in the RELTIO IDE view" width="700" />

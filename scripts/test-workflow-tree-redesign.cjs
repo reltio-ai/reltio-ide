@@ -103,11 +103,11 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 		assert.strictEqual(withBaselineExclude(once), once, 'idempotent');
 
 		const one = describeAdoptedDrafts(['a.bpmn20.xml']);
-		assert.ok(one.message.includes('Workflows/bpmn/ already had 1 local draft: a.bpmn20.xml.'));
-		assert.ok(one.detail.includes('commit and push from Workflows/'));
-		const many = describeAdoptedDrafts(['1', '2', '3', '4', '5', '6', '7']);
-		assert.ok(many.message.includes('7 local drafts') && many.message.includes('and 2 more'));
-		assert.ok(!many.message.includes('6,'), 'at most five are listed');
+		assert.strictEqual(one.message,
+			'Your local draft BPMN has been moved to the bpmn folder in the repository and will be included the next time you commit.');
+		assert.strictEqual(one.detail, '', 'no extra text unless a draft was kept over a repository file');
+		const many = describeAdoptedDrafts(['1', '2', '3']);
+		assert.ok(many.message.startsWith('Your local draft BPMNs have been moved'));
 	}
 
 	// ── 3. mergeProcessDefinitionRows ────────────────────────────────────────

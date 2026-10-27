@@ -126,26 +126,20 @@ export function withBaselineExclude(current: string): string {
 const MAX_LISTED_DRAFTS = 5;
 
 /**
- * Wording for the dialog shown when connecting adopted pre-existing drafts. Says what happened,
- * why nothing moved, and what it means for the next commit.
+ * Wording for the dialog shown when connecting finds drafts already in `Workflows/bpmn/`: they are
+ * in the repository's BPMN folder, so the next commit includes them. Kept short on purpose; the
+ * only addition is the note for a draft whose name the repository also tracks.
  */
 export function describeAdoptedDrafts(
 	drafts: readonly string[],
 	keptLocal: readonly string[] = [],
 ): { message: string; detail: string } {
 	const count = drafts.length;
-	const listed = drafts.slice(0, MAX_LISTED_DRAFTS).join(', ');
-	const more = count > MAX_LISTED_DRAFTS ? ` and ${count - MAX_LISTED_DRAFTS} more` : '';
 	return {
-		message: `Workflows/bpmn/ already had ${count} local draft${count === 1 ? '' : 's'}: ${listed}${more}.`,
-		detail:
-			'Your connected Custom Workflow Repository keeps its own BPMN files in that same folder, so ' +
-			(count === 1 ? "this draft hasn't" : "these haven't") +
-			" moved \u2014 but they're now part of the repository's working tree. " +
-			"They'll be included the next time you commit and push from Workflows/." +
-			(keptLocal.length > 0
-				? `\n\n${describeKeptLocal(keptLocal)}`
-				: ''),
+		message:
+			(count === 1 ? 'Your local draft BPMN has' : 'Your local draft BPMNs have') +
+			' been moved to the bpmn folder in the repository and will be included the next time you commit.',
+		detail: keptLocal.length > 0 ? describeKeptLocal(keptLocal) : '',
 	};
 }
 
