@@ -142,6 +142,29 @@ export async function adoptStagedRepository(
  * `.gitignore` is added to the customer's repository.
  */
 async function excludeBaselineSnapshots(workflowsDir: vscode.Uri): Promise<void> {
+	await writeBaselineExclude(workflowsDir);
+}
+
+/**
+ * Makes sure an existing clone ignores baseline snapshots, for a clone connected before the
+ * pattern was added or whose `info/exclude` was reset. Idempotent, best effort, and a no-op when
+ * `Workflows/` is not a git repository: creating `.git/info` there would make a plain folder look
+ * like a repository.
+ */
+export async function ensureBaselineExcluded(workflowsDir: vscode.Uri): Promise<void> {
+	try {
+		await vscode.workspace.fs.stat(vscode.Uri.joinPath(workflowsDir, '.git'));
+	} catch {
+		return;
+	}
+	try {
+		await writeBaselineExclude(workflowsDir);
+	} catch {
+		/* a missed ignore line is cosmetic; it must never fail a download */
+	}
+}
+
+async function writeBaselineExclude(workflowsDir: vscode.Uri): Promise<void> {
 	const infoDir = vscode.Uri.joinPath(workflowsDir, '.git', 'info');
 	const excludeUri = vscode.Uri.joinPath(infoDir, 'exclude');
 	let current = '';

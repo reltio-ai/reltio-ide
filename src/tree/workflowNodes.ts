@@ -314,11 +314,11 @@ export class ProcessDefinitionNode extends vscode.TreeItem {
 			? 'reltio.workflows.processDefinition.changed'
 			: 'reltio.workflows.processDefinition';
 
-		// Where a row came from is the icon: a method for Reltio's own (OOTB) workflows, a cloud for
+		// Where a row came from is the icon: a method for Reltio's own (OOTB) workflows, a class for
 		// the customer's workflows deployed on the tenant. Repository files use a repository icon and
 		// local drafts a pencil, so the four origins read apart at a glance.
 		this.iconPath = new vscode.ThemeIcon(
-			definition.generic ? 'symbol-method' : 'cloud',
+			definition.generic ? 'symbol-method' : 'symbol-class',
 			localState === 'changed' ? new vscode.ThemeColor('gitDecoration.modifiedResourceForeground') : undefined,
 		);
 		this.description = localState === 'changed' ? `${definition.type} • local changes` : definition.type;
@@ -327,7 +327,7 @@ export class ProcessDefinitionNode extends vscode.TreeItem {
 		// already live replaces it — so it leads, in bold, rather than trailing
 		// the tooltip in brackets.
 		this.tooltip = buildTooltip(
-			definition.generic ? 'OOTB workflow' : 'Custom workflow (on the tenant)',
+			definition.generic ? 'OOTB workflow' : 'Custom workflow',
 			[
 				['Name', definition.displayName || definition.type],
 				['ID', definition.type],

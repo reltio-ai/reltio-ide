@@ -279,7 +279,7 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 		assert.strictEqual(desc(ootb), 'ootbFlow');
 
 		const clean = new ProcessDefinitionNode(E, 'T', def('c'), 'clean');
-		assert.strictEqual(clean.iconPath.id, 'cloud', 'a workflow deployed on the tenant is a cloud');
+		assert.strictEqual(clean.iconPath.id, 'symbol-class', 'a custom workflow deployed on the tenant is a class');
 		assert.strictEqual(clean.contextValue, 'reltio.workflows.processDefinition');
 
 		const local = new ProcessDefinitionNode(E, 'T', def('c'), 'changed');

@@ -113,6 +113,7 @@ import {
 	saveWorkflowAdapterUrl,
 } from './workspace/workflowAdapterConfig';
 import { BpmnContentProvider, BPMN_SCHEME } from './providers/bpmnContentProvider';
+import { planBulkDownload, runBounded } from './workspace/workflowBulkDownload';
 import {
 	bpmnBaselineFileName,
 	bpmnFileName,
@@ -188,6 +189,7 @@ import {
 	WORKFLOW_REPO_STAGING_DIR,
 	WorkflowRepoAdoptionConflictError,
 	adoptStagedRepository,
+	ensureBaselineExcluded,
 	prepareStagingDir,
 	removeStagingDir,
 } from './workspace/workflowRepoConnect';
@@ -3013,6 +3015,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		if (!result) return false; // withProgress was cancelled (shouldn't happen; cancellable: false)
 		const [definitions, jars] = result;
 		treeProvider.markWorkflowsLoaded(environmentName, tenantId, definitions, jars, unregisteredJars, generation);
+		// Not awaited: the list is already on screen, and the copies arrive in the background.
+		void downloadAllBpmnCopies(environmentName, tenantId, definitions);
 		await refreshWorkflowRepoSyncState(environmentName, tenantId);
 		return true;
 	}
@@ -3055,6 +3059,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 		if (!definitions) return false;
 		treeProvider.markProcessDefinitionsLoaded(environmentName, tenantId, definitions, generation);
+		void downloadAllBpmnCopies(environmentName, tenantId, definitions);
 		await refreshWorkflowRepoSyncState(environmentName, tenantId);
 		return true;
 	}
@@ -3509,9 +3514,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 		/**
 		 * reltio.openWorkflowBpmn
-		 * Opens the BPMN XML for one process type in a read-only virtual document.
-		 * The XML is fetched on demand (not at tree-load time) so large XMLs don't
-		 * slow down the initial Workflows fetch.
+		 * Opens the BPMN for one process type. Every deployed definition is downloaded in the
+		 * background when the list loads (`downloadAllBpmnCopies`), so this normally just opens the
+		 * file; it fetches on demand only when the copy is not on disk yet (still downloading, or
+		 * the download failed).
 		 */
 		vscode.commands.registerCommand(
 			'reltio.openWorkflowBpmn',
@@ -3929,6 +3935,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		if (xml === undefined) return undefined;
 
 		const dir = environmentManager!.getWorkflowDraftsDirectoryUri(environmentName, tenantId);
+		await ensureBaselineExcluded(environmentManager!.getWorkflowRepoDirectoryUri(environmentName, tenantId));
 		const fileUri = await writeBpmnFile(dir, bpmnFileName(processId), xml);
 		await writeBpmnFile(dir, bpmnBaselineFileName(processId), xml);
 		treeProvider.notifyWorkflowDraftsChanged();
@@ -4089,6 +4096,82 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			}
 		}
 		treeProvider.notifyWorkflowDraftsChanged();
+	}
+
+	/** Tenants with a bulk download running, so overlapping refreshes do not start a second one. */
+	const bulkBpmnDownloadsInFlight = new Set<string>();
+
+	/**
+	 * Downloads every deployed definition that has no local copy yet, with its baseline, so the
+	 * whole tenant is browsable without clicking each row.
+	 *
+	 * Never overwrites (see `planBulkDownload`): an existing file is left alone, which is also what
+	 * protects drafts and the connected repository's own files. Best effort by design - one failed
+	 * definition must not hide the rest - with a single summary if anything could not be fetched.
+	 */
+	async function downloadAllBpmnCopies(
+		environmentName: string,
+		tenantId: string,
+		definitions: readonly ProcessDefinition[],
+	): Promise<void> {
+		if (!environmentManager || definitions.length === 0) return;
+		const key = `${environmentName}/${tenantId}`;
+		if (bulkBpmnDownloadsInFlight.has(key)) return;
+		const token = tokenStore.getToken(environmentName);
+		if (!token || token === GIT_SOURCE_TOKEN) return;
+		bulkBpmnDownloadsInFlight.add(key);
+		try {
+			const adapterUrl = await loadWorkflowAdapterUrl(
+				environmentManager.getWorkflowAdapterConfigUri(environmentName, tenantId),
+			);
+			if (!adapterUrl) return;
+			const environmentUrl = toHttpsBase(environmentName);
+			const dir = environmentManager.getWorkflowDraftsDirectoryUri(environmentName, tenantId);
+
+			let existing: string[] = [];
+			try {
+				existing = (await vscode.workspace.fs.readDirectory(dir)).map(([name]) => name);
+			} catch {
+				/* no bpmn/ folder yet: nothing exists */
+			}
+			const plan = planBulkDownload(definitions.map(d => d.type), existing);
+			if (plan.toDownload.length === 0) return;
+
+			await ensureBaselineExcluded(environmentManager.getWorkflowRepoDirectoryUri(environmentName, tenantId));
+
+			const total = plan.toDownload.length;
+			let done = 0;
+			const result = await vscode.window.withProgress(
+				{ location: vscode.ProgressLocation.Window, title: `Downloading BPMNs for ${tenantId}…` },
+				async progress => runBounded(
+					plan.toDownload,
+					4,
+					async processId => {
+						const xml = await getProcessDefinitionXml(adapterUrl, tenantId, environmentUrl, token, processId);
+						// A draft created while this was running must not be replaced.
+						if ((await readTextFile(vscode.Uri.joinPath(dir, bpmnFileName(processId)))) === undefined) {
+							await writeBpmnFile(dir, bpmnFileName(processId), xml);
+							await writeBpmnFile(dir, bpmnBaselineFileName(processId), xml);
+						}
+						done++;
+						progress.report({ message: `${done}/${total}` });
+					},
+					{ abortAfterConsecutiveFailures: 5 },
+				),
+			);
+			treeProvider.notifyWorkflowDraftsChanged();
+			if (result.failed > 0) {
+				void vscode.window.showWarningMessage(
+					result.aborted
+						? `Stopped downloading BPMNs for "${tenantId}" after repeated failures. Check your token and refresh, or open a workflow from the tree.`
+						: `${result.failed} of ${total} BPMNs for "${tenantId}" could not be downloaded. Open one from the tree to retry it.`,
+				);
+			}
+		} catch {
+			/* best effort: the list itself loaded, and every row still opens on demand */
+		} finally {
+			bulkBpmnDownloadsInFlight.delete(key);
+		}
 	}
 
 	/** Restore a local BPMN to its baseline, discarding local edits. */

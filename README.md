@@ -376,9 +376,9 @@ In the **RELTIO IDE** view, expand your tenant's **Workflows** folder. It has tw
 
 - **Process Definitions** — one list of your workflows. The icon says where a row came from:
   - **Method icon** — a workflow Reltio ships (OOTB).
-  - **Cloud icon** — your workflow, deployed on the tenant. It reads **• local changes** when you edited the downloaded copy and haven't deployed it.
+  - **Class icon** — your workflow, deployed on the tenant. Every deployed workflow, Reltio's own included, is downloaded into `Workflows/bpmn/` in the background when the list loads, so you can browse them all without opening each one. Copies you already have are never overwritten. It reads **• local changes** when you edited the downloaded copy and haven't deployed it.
   - **Pencil icon, • draft** — a local draft you haven't deployed.
-  - **Repository icon** — a file from your connected repository. It always has its own row, even when a workflow with the same id is deployed, and says **• not deployed**, **• differs from tenant** or **• same as tenant**.
+  - **Repository icon** — a file from your connected repository. It always has its own row, even when a workflow with the same id is deployed, and says **• not deployed**, **• differs from tenant**, **• same as tenant**, or **• deployed • not compared yet** until you run **Refresh Sync Status**.
 - **JAR Deployments** — the Java modules registered against your tenant, plus any **Unregistered JARs** Reltio IDE finds but doesn't yet know about.
 
 Until a repository is connected, a **Connect Custom Workflow Repository…** row sits after them. Once you connect one, **Java Classes** and **Java Tests** appear beside them (see [Connect a Custom Workflow Repository](#connect-a-custom-workflow-repository) below). The **Workflows** row itself shows whether a repository is connected, and its right-click menu holds the connect, disconnect and refresh actions.

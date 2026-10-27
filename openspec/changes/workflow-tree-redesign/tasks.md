@@ -21,6 +21,9 @@ Each group is covered by `scripts/test-workflow-tree-redesign.cjs` unless noted.
 - [x] 4.2 Repository files get their own rows (repo icon), tagged by git origin; tenant custom rows use a cloud icon.
 - [x] 4.3 Disconnect removes the repository's files (`workflowRepoCleanup.ts`), prunes empty folders, restores the tenant README.
 
+- [x] 4.4 Custom workflows keep the class icon (the cloud icon was reverted).
+- [x] 4.5 All deployed BPMNs are downloaded on list load (`workflowBulkDownload.ts`, `downloadAllBpmnCopies`); `ensureBaselineExcluded` heals existing clones.
+
 ## 5. Skills
 
 - [x] 5.1 Connect-first rule, new paths, bundle version 23 with the pinned hash updated.

@@ -54,6 +54,29 @@ The list SHALL show deployed rows (OOTB with a method icon, custom with a cloud 
 - **WHEN** a BPMN in `Workflows/bpmn/` is not tracked by git
 - **THEN** it is the user's draft; a tracked file, or any file outside `bpmn/`, is the repository's
 
+### Requirement: Every deployed BPMN is downloaded when the list loads
+When the Process Definitions list loads, the extension SHALL download, in the background, every deployed definition that has no local `{id}.bpmn20.xml`, together with its baseline. It SHALL NOT overwrite an existing file, SHALL skip ids that are not valid file names, and SHALL keep baselines out of a connected repository's commits.
+
+#### Scenario: Nothing on disk
+- **WHEN** the list loads for a tenant with 15 definitions and no local copies
+- **THEN** 15 BPMN files and 15 baselines are written and the list is shown without waiting for them
+
+#### Scenario: Existing files are protected
+- **WHEN** `bpmn/` already holds a draft or a repository file named for a deployed id
+- **THEN** it is not replaced
+
+#### Scenario: One failure
+- **WHEN** some downloads fail
+- **THEN** the rest still complete and one warning reports the count; each row still opens on demand
+
+#### Scenario: Dead token
+- **WHEN** five downloads in a row fail
+- **THEN** the run stops and the warning says so
+
+#### Scenario: Baselines are not committed
+- **WHEN** a repository is connected
+- **THEN** `Workflows/.git/info/exclude` ignores `*.bpmn20.baseline.xml`, added to an older clone on the next download, and never creating `.git` in a folder that is not a repository
+
 ### Requirement: Disconnect removes the repository's files
 Disconnecting SHALL delete the repository's tracked files that have no uncommitted change and its ignored build output, remove folders left empty except `bpmn/`, and delete `.git`. Files with uncommitted changes and untracked files that are not ignored SHALL be kept. The confirmation SHALL state the counts and warn about unpushed commits.
 

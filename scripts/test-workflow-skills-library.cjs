@@ -28,8 +28,8 @@ const fs = require('fs');
 const path = require('path');
 
 // Pinned together: change the skills, bump skillsBundleVersion, update both values.
-const PINNED_SKILLS_BUNDLE_VERSION = '24';
-const PINNED_SKILLS_HASH = '056393f0e6153a1d7f52ee5011b32c616e868975fe01458d1ffb7195e5fceb79';
+const PINNED_SKILLS_BUNDLE_VERSION = '25';
+const PINNED_SKILLS_HASH = '8c8742b42f96ca4ecdec94fe9c5edceb3adba96b57b85da380408c739336fde8';
 
 
 const repoRoot = path.join(__dirname, '..');
