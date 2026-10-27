@@ -117,66 +117,75 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 			processId: id, fileUri: `/l/${id}`, fileKey: `/l/${id}`, processName: undefined,
 			hasBaseline: false, hasLocalChanges: false, ...over,
 		});
-		const rep = (id, key = `/r/${id}`) => ({ processId: id, fileUri: key, fileKey: key, processName: undefined });
+		const rep = (id, key = `/r/${id}`, fromRepo = true) => ({ processId: id, fileUri: key, fileKey: key, processName: undefined, fromRepo });
 		const merge = over => mergeProcessDefinitionRows({
 			definitions: [], local: [], repoFiles: undefined, repoSync: new Map(), ...over,
 		});
-		const row = (rows, id) => rows.find(r => (r.definition?.type ?? r.processId) === id);
+		const kinds = rows => rows.map(r => `${r.kind}:${r.definition?.type ?? r.processId}`);
 
-		// State by state.
-		const rows = merge({
-			definitions: [def('ootb', true), def('clean'), def('edited'), def('differs'), def('untracked')],
-			local: [
-				loc('clean', { hasBaseline: true }),
-				loc('edited', { hasBaseline: true, hasLocalChanges: true }),
-				loc('draft'),
-			],
-			repoFiles: [rep('clean'), rep('edited'), rep('differs'), rep('repoOnly', '/r/free-name.xml')],
-			repoSync: new Map([['edited', 'changed'], ['differs', 'changed']]),
+		// Tenant rows carry only the state of the downloaded copy.
+		const tenant = merge({
+			definitions: [def('ootb', true), def('clean'), def('edited'), def('plain')],
+			local: [loc('clean', { hasBaseline: true }), loc('edited', { hasBaseline: true, hasLocalChanges: true })],
 		});
-		assert.strictEqual(row(rows, 'ootb').repoState, undefined, 'OOTB is never "not tracked"');
-		assert.deepStrictEqual([row(rows, 'clean').localState, row(rows, 'clean').repoState], ['clean', undefined]);
-		assert.strictEqual(row(rows, 'edited').localState, 'changed');
-		assert.strictEqual(row(rows, 'edited').repoState, 'changed', 'both facts are carried; the node applies precedence');
-		assert.strictEqual(row(rows, 'differs').repoState, 'changed');
-		assert.strictEqual(row(rows, 'differs').repoFileUri, '/r/differs');
-		assert.strictEqual(row(rows, 'untracked').repoState, 'untracked');
-		assert.strictEqual(row(rows, 'draft').kind, 'draft');
-		assert.strictEqual(row(rows, 'draft').source, 'local');
-		assert.strictEqual(row(rows, 'repoOnly').source, 'repo');
-		assert.deepStrictEqual(rows.map(r => r.kind), ['deployed', 'deployed', 'deployed', 'deployed', 'deployed', 'draft', 'draft'],
-			'deployed rows first, drafts after');
+		assert.deepStrictEqual(tenant.map(r => r.localState), ['none', 'clean', 'changed', 'none']);
 
-		// No repository, or not scanned yet: nothing is judged untracked.
-		const none = merge({ definitions: [def('x')], repoFiles: undefined });
-		assert.strictEqual(none.find(r => r.definition.type === 'x').repoState, undefined);
-		// Scanned and empty: a custom workflow is untracked, an OOTB one still is not.
-		const empty = merge({ definitions: [def('x'), def('o', true)], repoFiles: [] });
-		assert.strictEqual(row(empty, 'x').repoState, 'untracked');
-		assert.strictEqual(row(empty, 'o').repoState, undefined);
-
-		// The same id in several places is one row.
-		const dup = merge({
+		// A repository file is never merged into a tenant row, even with the same process id.
+		const withRepo = merge({
 			definitions: [def('p')],
-			local: [loc('p', { hasBaseline: true })],
-			repoFiles: [rep('p')],
+			repoFiles: [rep('p'), rep('p', '/r/other/p.xml')],
+			repoSync: new Map([['p', 'changed']]),
 		});
-		assert.strictEqual(dup.length, 1);
-		const draftTwice = merge({ local: [loc('d')], repoFiles: [rep('d', '/other/d.xml')] });
-		assert.strictEqual(draftTwice.length, 1, 'a draft seen locally and in the repository is listed once');
-		assert.strictEqual(draftTwice[0].source, 'local');
+		assert.deepStrictEqual(kinds(withRepo), ['deployed:p', 'repo:p', 'repo:p'], 'two repo files, two rows, plus the tenant row');
+		assert.ok(withRepo.filter(r => r.kind === 'repo').every(r => r.state === 'differs'));
+		assert.strictEqual(withRepo[0].repoState, undefined, 'the tenant row knows nothing of the repository');
 
-		// One file seen by both scans: the repository's content id beats the name-derived id.
+		// How a repository row compares to the tenant.
+		const states = merge({
+			definitions: [def('same'), def('differs'), def('nocompare')],
+			repoFiles: [rep('same'), rep('differs'), rep('nocompare'), rep('fresh')],
+			repoSync: new Map([['same', 'clean'], ['differs', 'changed']]),
+		}).filter(r => r.kind === 'repo');
+		assert.deepStrictEqual(states.map(r => [r.processId, r.state]), [
+			['differs', 'differs'], ['fresh', 'notDeployed'], ['nocompare', 'unknown'], ['same', 'same'],
+		]);
+		// Definitions not fetched: not deployed cannot be claimed.
+		assert.strictEqual(merge({ definitions: undefined, repoFiles: [rep('x')] })[0].state, 'unknown');
+
+		// A repository scan also sees untracked files in bpmn/: those are drafts, not repository rows.
+		const mine = merge({
+			local: [loc('mine')],
+			repoFiles: [rep('mine', '/l/mine', false), rep('theirs')],
+		});
+		assert.deepStrictEqual(kinds(mine), ['draft:mine', 'repo:theirs']);
+		const draftOnlyInScan = merge({ repoFiles: [rep('solo', '/x/solo.xml', false)] });
+		assert.deepStrictEqual(kinds(draftOnlyInScan), ['draft:solo']);
+
+		// A local file the repository tracks is the repository's, listed once, as a repository row.
+		const tracked = merge({ local: [loc('t', { fileKey: '/shared/t.xml', fileUri: '/shared/t.xml' })], repoFiles: [rep('t', '/shared/t.xml')] });
+		assert.deepStrictEqual(kinds(tracked), ['repo:t']);
+
+		// A downloaded copy the repository also tracks stays the tenant's: one tenant row, no repo row.
+		const downloadedAndTracked = merge({
+			definitions: [def('d')],
+			local: [loc('d', { hasBaseline: true, fileKey: '/shared/d.xml', fileUri: '/shared/d.xml' })],
+			repoFiles: [rep('d', '/shared/d.xml')],
+		});
+		assert.deepStrictEqual(kinds(downloadedAndTracked), ['deployed:d']);
+
+		// One file seen by both scans: the content id beats the name-derived id.
 		const sameFile = merge({
 			local: [loc('nameId', { fileKey: '/shared/f.xml', fileUri: '/shared/f.xml' })],
 			repoFiles: [rep('contentId', '/shared/f.xml')],
 		});
-		assert.deepStrictEqual(sameFile.map(r => r.processId), ['contentId']);
+		assert.deepStrictEqual(kinds(sameFile), ['repo:contentId']);
 
-		// A downloaded copy of a not-yet-listed definition is not a draft.
+		// Draft ordering and the downloaded-but-not-listed case.
 		assert.strictEqual(merge({ local: [loc('p', { hasBaseline: true })] }).length, 0);
-		// Drafts sort by id.
 		assert.deepStrictEqual(merge({ local: [loc('b'), loc('a')] }).map(r => r.processId), ['a', 'b']);
+		assert.deepStrictEqual(kinds(merge({
+			definitions: [def('z')], local: [loc('d')], repoFiles: [rep('r')],
+		})), ['deployed:z', 'draft:d', 'repo:r'], 'tenant rows, then drafts, then repository rows');
 	}
 
 	// ── 4. adoptStagedRepository over an in-memory filesystem ────────────────
@@ -270,21 +279,21 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 		assert.strictEqual(desc(ootb), 'ootbFlow');
 
 		const clean = new ProcessDefinitionNode(E, 'T', def('c'), 'clean');
-		assert.strictEqual(clean.iconPath.id, 'symbol-class');
+		assert.strictEqual(clean.iconPath.id, 'cloud', 'a workflow deployed on the tenant is a cloud');
 		assert.strictEqual(clean.contextValue, 'reltio.workflows.processDefinition');
 
-		const local = new ProcessDefinitionNode(E, 'T', def('c'), 'changed', 'changed', uri);
-		assert.ok(desc(local).includes('local changes') && !desc(local).includes('differs'), 'local edits win over a repo difference');
+		const local = new ProcessDefinitionNode(E, 'T', def('c'), 'changed');
+		assert.ok(desc(local).includes('local changes'));
 		assert.strictEqual(local.contextValue, 'reltio.workflows.processDefinition.changed');
 
-		const differs = new ProcessDefinitionNode(E, 'T', def('c'), 'none', 'changed', uri);
-		assert.ok(desc(differs).includes('differs from repository'));
-		assert.strictEqual(differs.contextValue, 'reltio.workflows.processDefinition.repoChanged');
-
-		const untracked = new ProcessDefinitionNode(E, 'T', def('c'), 'none', 'untracked');
-		assert.ok(desc(untracked).includes('not tracked in repository'));
-		assert.strictEqual(untracked.contextValue, 'reltio.workflows.processDefinition', 'nothing to deploy from a missing file');
-		assert.ok(untracked.iconPath.color, 'untracked carries the warning colour');
+		const repoNode = (state, source = 'repo') => new WorkflowDraftNode(E, 'T',
+			{ processId: 'r', fileUri: uri, fileName: 'r.bpmn20.xml', processName: undefined }, source, state);
+		assert.strictEqual(repoNode('differs').iconPath.id, 'repo', 'a repository file is a repo icon');
+		assert.ok(desc(repoNode('differs')).includes('repository') && desc(repoNode('differs')).includes('differs from tenant'));
+		assert.ok(desc(repoNode('notDeployed')).includes('not deployed'));
+		assert.ok(desc(repoNode('same')).includes('same as tenant'));
+		assert.strictEqual(repoNode('same').contextValue, 'reltio.workflows.draft.repo');
+		assert.notStrictEqual(repoNode('same').id, repoNode('same', 'local').id, 'a repository row and a draft with one id never share a tree id');
 
 		const draft = new WorkflowDraftNode(E, 'T', { processId: 'd', fileUri: uri, fileName: 'd.bpmn20.xml', processName: undefined });
 		assert.strictEqual(draft.iconPath.id, 'edit');
@@ -312,7 +321,8 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 		assert.ok(menuEntriesFor(menu, 'reltio.workflows.folder.repo', 'reltio.refreshWorkflows').length > 0,
 			'Refresh must stay on a connected Workflows row');
 		assert.ok(onContextMenu(menu, 'reltio.workflows.draft', 'reltio.deployWorkflow'));
-		assert.ok(onContextMenu(menu, 'reltio.workflows.processDefinition.repoChanged', 'reltio.deployWorkflow'));
+		assert.ok(onContextMenu(menu, 'reltio.workflows.draft.repo', 'reltio.deployWorkflow'));
+		assert.strictEqual(JSON.stringify(menu).includes('repoChanged'), false, 'a tenant row never deploys the repository file');
 		assert.strictEqual(menuEntriesFor(menu, 'reltio.workflows.processDefinition', 'reltio.deployWorkflow').length, 0,
 			'a clean deployed row has no local file to deploy');
 	}
@@ -398,6 +408,98 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 		assert.ok(view.includes("type: 'ready'") && view.includes('message ??'));
 		const panel = fs.readFileSync(path.join(root, 'src', 'workflow', 'bpmnPanel.ts'), 'utf8');
 		assert.ok(panel.includes("msg.type === 'ready'") && panel.includes('findXmlProblem'));
+	}
+
+	// ── 12. Disconnect removes the repository's files, and only those ────────
+	{
+		const {
+			planRepoCleanup, isRepoOriginFile, relativeToWorkflows, describeDisconnect,
+		} = importDist('workspace/workflowRepoOrigin');
+		const { removeRepoFiles, inspectRepoForDisconnect, listTrackedFiles } = importDist('workspace/workflowRepoCleanup');
+
+		// Origin: tracked, or outside the drafts folder.
+		const tracked = new Set(['bpmn/from-repo.bpmn20.xml']);
+		assert.strictEqual(isRepoOriginFile('bpmn/from-repo.bpmn20.xml', tracked), true);
+		assert.strictEqual(isRepoOriginFile('bpmn/mine.bpmn20.xml', tracked), false, 'an untracked file in bpmn/ is the user\'s draft');
+		assert.strictEqual(isRepoOriginFile('BPMN/mine.bpmn20.xml', tracked), false, 'case-insensitive');
+		assert.strictEqual(isRepoOriginFile('mod/src/main/resources/p.bpmn20.xml', tracked), true, 'outside bpmn/ can only be the repository\'s');
+		assert.strictEqual(isRepoOriginFile('bpmn/x.bpmn20.xml', undefined), false, 'git unavailable: a file in bpmn/ is never guessed to be the repository\'s');
+		assert.strictEqual(relativeToWorkflows('C:\\t\\Workflows\\bpmn\\a.xml', 'c:/t/Workflows'), 'bpmn/a.xml');
+		assert.strictEqual(relativeToWorkflows('/elsewhere/a.xml', '/t/Workflows'), undefined);
+
+		// The cleanup plan.
+		const plan = planRepoCleanup({
+			tracked: ['pom.xml', 'bpmn/repo.bpmn20.xml', 'bpmn/edited.bpmn20.xml', 'mod/A.java', '../evil', '.git/config'],
+			modified: ['bpmn/edited.bpmn20.xml'],
+			ignored: [
+				'mod/target/A.class',
+				'bpmn/repo.bpmn20.baseline.xml',
+				'bpmn/edited.bpmn20.baseline.xml',
+				'bpmn/mine.bpmn20.baseline.xml',
+			],
+		});
+		assert.deepStrictEqual(plan.remove, ['bpmn/repo.bpmn20.baseline.xml', 'bpmn/repo.bpmn20.xml', 'mod/A.java', 'mod/target/A.class', 'pom.xml']);
+		assert.deepStrictEqual(plan.keptModified, ['bpmn/edited.bpmn20.xml'], 'an edited repository file is kept, with its baseline');
+		assert.ok(!plan.remove.some(p => p.includes('evil') || p.includes('.git/')), 'paths outside the folder or inside .git are never planned');
+
+		const text = describeDisconnect('T1', plan, 2);
+		assert.ok(text.includes('5 files') && text.includes('1 repository file has uncommitted changes') && text.includes('2 commits have not been pushed'));
+		assert.ok(text.includes('Drafts and files you added yourself are kept'));
+		assert.ok(describeDisconnect('T1', undefined, 0).includes('stays as it is'));
+
+		// Removal over the in-memory fs: the repository's files go, drafts stay, empty folders go,
+		// bpmn/ itself stays even when it ends up empty.
+		const mem = installMemoryFs();
+		const WF = vscode.Uri.file('/dc/Workflows');
+		for (const p of ['pom.xml', 'bpmn/repo.bpmn20.xml', 'bpmn/mine.bpmn20.xml', 'mod/src/A.java', 'mod/target/A.class', 'other/keep.txt']) {
+			await mem.writeFile(vscode.Uri.joinPath(WF, p), enc('x'));
+		}
+		await removeRepoFiles(WF, { remove: ['pom.xml', 'bpmn/repo.bpmn20.xml', 'mod/src/A.java', 'mod/target/A.class'], keptModified: [] });
+		const left = [...mem._files.keys()].sort();
+		assert.deepStrictEqual(left, ['/dc/Workflows/bpmn/mine.bpmn20.xml', '/dc/Workflows/other/keep.txt']);
+		assert.ok(![...mem._dirs].some(d => d.includes('/mod')), 'folders left empty are removed');
+		assert.ok(mem._dirs.has('/dc/Workflows'), 'Workflows itself stays');
+
+		const mem2 = installMemoryFs();
+		await mem2.writeFile(vscode.Uri.joinPath(WF, 'bpmn/repo.bpmn20.xml'), enc('x'));
+		await removeRepoFiles(WF, { remove: ['bpmn/repo.bpmn20.xml'], keptModified: [] });
+		assert.ok(mem2._dirs.has('/dc/Workflows/bpmn'), 'an emptied bpmn/ stays: it is the drafts folder');
+
+		// Against a real git repository.
+		const { execFileSync } = require('child_process');
+		const os = require('os');
+		let gitAvailable = true;
+		try { execFileSync('git', ['--version'], { stdio: 'ignore' }); } catch { gitAvailable = false; }
+		if (gitAvailable) {
+			const dirPath = fs.mkdtempSync(path.join(os.tmpdir(), 'reltio-disconnect-'));
+			try {
+				const run = (...args) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: dirPath, stdio: 'ignore' });
+				run('init', '-q');
+				fs.mkdirSync(path.join(dirPath, 'bpmn'));
+				fs.mkdirSync(path.join(dirPath, 'mod', 'sub dir'), { recursive: true });
+				fs.writeFileSync(path.join(dirPath, 'pom.xml'), '<p/>');
+				fs.writeFileSync(path.join(dirPath, 'bpmn', 'repo.bpmn20.xml'), '<r/>');
+				fs.writeFileSync(path.join(dirPath, 'mod', 'sub dir', 'Ünï.java'), 'class A {}');
+				run('add', '.');
+				run('commit', '-q', '-m', 'init');
+				fs.writeFileSync(path.join(dirPath, 'pom.xml'), '<p changed/>');
+				fs.writeFileSync(path.join(dirPath, 'bpmn', 'mine.bpmn20.xml'), '<m/>');
+				fs.writeFileSync(path.join(dirPath, 'bpmn', 'repo.bpmn20.baseline.xml'), '<b/>');
+				fs.writeFileSync(path.join(dirPath, '.git', 'info', 'exclude'), '*.bpmn20.baseline.xml\n');
+
+				const dirUri = vscode.Uri.file(dirPath);
+				const trackedSet = await listTrackedFiles(dirUri);
+				assert.ok(trackedSet.has('bpmn/repo.bpmn20.xml') && trackedSet.has('mod/sub dir/Ünï.java'), 'paths with spaces and non-ASCII arrive raw');
+				assert.ok(!trackedSet.has('bpmn/mine.bpmn20.xml'));
+
+				const inspection = await inspectRepoForDisconnect(dirUri);
+				assert.deepStrictEqual(inspection.plan.keptModified, ['pom.xml'], 'the edited tracked file is kept');
+				assert.deepStrictEqual(inspection.plan.remove, ['bpmn/repo.bpmn20.baseline.xml', 'bpmn/repo.bpmn20.xml', 'mod/sub dir/Ünï.java']);
+				assert.ok(!inspection.plan.remove.includes('bpmn/mine.bpmn20.xml'), 'an untracked draft is never planned for removal');
+			} finally {
+				fs.rmSync(dirPath, { recursive: true, force: true });
+			}
+		}
 	}
 
 	console.log('test-workflow-tree-redesign: OK');

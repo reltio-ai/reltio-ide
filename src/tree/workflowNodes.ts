@@ -28,7 +28,7 @@ import type { ProcessDefinition, JarDeployment, AvailableJar } from '../api/work
 import type { WorkflowDraft } from '../workspace/workflowDrafts';
 import type { WorkflowRepoConfig } from '../workspace/workflowRepoConfig';
 import type { DiscoveredJavaSource } from '../workspace/workflowRepoJavaDiscovery';
-import type { ProcessRow } from './processDefinitionRows';
+import type { ProcessRow, RepoRowState } from './processDefinitionRows';
 import { redactUrl } from '../workspace/gitConfigSource';
 
 // ─── Tooltip helpers ─────────────────────────────────────────────────────────
@@ -194,7 +194,7 @@ export class WorkflowConnectRepoActionNode extends vscode.TreeItem {
 	) {
 		super('Connect Custom Workflow Repository…', vscode.TreeItemCollapsibleState.None);
 		this.contextValue = 'reltio.workflows.connectRepoAction';
-		this.iconPath = new vscode.ThemeIcon('repo');
+		this.iconPath = new vscode.ThemeIcon('plug');
 		this.id = `workflowConnectRepo:${environmentName}/${tenantId}`;
 		this.tooltip = 'Clone your Reltio-provisioned workflow repository into this tenant\'s Workflows folder.';
 		this.command = {
@@ -306,47 +306,28 @@ export class ProcessDefinitionNode extends vscode.TreeItem {
 		 *   'changed' — downloaded and edited, not yet deployed
 		 */
 		readonly localState: 'none' | 'clean' | 'changed' = 'none',
-		/**
-		 * How the connected Custom Workflow Repository relates to this definition (D5), or
-		 * `undefined` when no repository is connected or nothing differs. Display plus one action:
-		 * Deploy, Compare and Discard act on the downloaded copy and follow `localState`, while a
-		 * `changed` repository file is deployed from this same row via `repoFileUri`.
-		 */
-		readonly repoState?: 'changed' | 'untracked',
-		/** The repository's file for this id, when it has one. */
-		readonly repoFileUri?: vscode.Uri,
 	) {
 		super(definition.displayName || definition.type, vscode.TreeItemCollapsibleState.None);
 		// A distinct contextValue per case, so Deploy / Discard / Compare appear only where they
-		// mean something. Local edits win: their actions act on the downloaded copy.
+		// mean something.
 		this.contextValue = localState === 'changed'
 			? 'reltio.workflows.processDefinition.changed'
-			: repoState === 'changed' && repoFileUri
-				? 'reltio.workflows.processDefinition.repoChanged'
-				: 'reltio.workflows.processDefinition';
+			: 'reltio.workflows.processDefinition';
 
-		const modified = localState === 'changed' || repoState === 'changed';
+		// Where a row came from is the icon: a method for Reltio's own (OOTB) workflows, a cloud for
+		// the customer's workflows deployed on the tenant. Repository files use a repository icon and
+		// local drafts a pencil, so the four origins read apart at a glance.
 		this.iconPath = new vscode.ThemeIcon(
-			definition.generic ? 'symbol-method' : 'symbol-class',
-			modified
-				? new vscode.ThemeColor('gitDecoration.modifiedResourceForeground')
-				: repoState === 'untracked'
-					? new vscode.ThemeColor('list.warningForeground')
-					: undefined,
+			definition.generic ? 'symbol-method' : 'cloud',
+			localState === 'changed' ? new vscode.ThemeColor('gitDecoration.modifiedResourceForeground') : undefined,
 		);
-		this.description = localState === 'changed'
-			? `${definition.type} • local changes`
-			: repoState === 'changed'
-				? `${definition.type} • differs from repository`
-				: repoState === 'untracked'
-					? `${definition.type} • not tracked in repository`
-					: definition.type;
+		this.description = localState === 'changed' ? `${definition.type} • local changes` : definition.type;
 		// Whether a definition is Reltio's or the customer's is the first thing
 		// that changes what you may safely do to it — redeploying an id that is
 		// already live replaces it — so it leads, in bold, rather than trailing
 		// the tooltip in brackets.
 		this.tooltip = buildTooltip(
-			definition.generic ? 'OOTB workflow' : 'Custom workflow',
+			definition.generic ? 'OOTB workflow' : 'Custom workflow (on the tenant)',
 			[
 				['Name', definition.displayName || definition.type],
 				['ID', definition.type],
@@ -355,13 +336,9 @@ export class ProcessDefinitionNode extends vscode.TreeItem {
 			],
 			localState === 'changed'
 				? 'You have local changes that have not been deployed.'
-				: repoState === 'changed'
-					? 'The connected Custom Workflow Repository has a different version of this workflow. Use Deploy from Repository to publish it.'
-					: repoState === 'untracked'
-						? 'Deployed on this tenant, but the connected Custom Workflow Repository has no file for it.'
-						: localState === 'clean'
-							? 'Downloaded locally; matches the tenant.'
-							: undefined,
+				: localState === 'clean'
+					? 'Downloaded locally; matches the tenant.'
+					: undefined,
 		);
 		this.id = `workflowDef:${environmentName}/${tenantId}/${definition.type}`;
 		this.command = {
@@ -596,14 +573,13 @@ export class WorkflowRepoJavaFileNode extends vscode.TreeItem {
 // ─── Not-deployed rows ───────────────────────────────────────────────────────
 
 /**
- * A process that is not deployed: a local file in `Workflows/bpmn/`, or a file in the connected
- * repository with no deployed counterpart. Shown in the Process Definitions list with a pencil.
+ * A workflow that is not a deployed row: a local draft in `Workflows/bpmn/`, or a file that came
+ * from the connected repository (kept as its own row even when its id is deployed).
  *
- * Backed by a real file on disk, so it sets `resourceUri` and opens through `vscode.open` like a
- * history snapshot rather than through a bespoke command.
+ * Backed by a real file on disk and opens through `vscode.open`.
  *
  * `source` decides the menu: a `local` draft is the extension's own file and can be duplicated or
- * deleted; a `repo` draft is the customer's file under their own conventions, so only Deploy and
+ * deleted; a `repo` row is the customer's file under their own conventions, so only Deploy and
  * Preview apply to it.
  */
 export class WorkflowDraftNode extends vscode.TreeItem {
@@ -612,29 +588,45 @@ export class WorkflowDraftNode extends vscode.TreeItem {
 		readonly tenantId: string,
 		readonly draft: WorkflowDraft,
 		readonly source: 'local' | 'repo' = 'local',
+		/** How a `repo` row compares to the tenant. Ignored for a local draft. */
+		readonly repoState: RepoRowState = 'unknown',
 	) {
 		// Matches `ProcessDefinitionNode`'s own label rule (name when present, id otherwise), so
 		// the same workflow does not read as two different things depending on which row of the
 		// tree is showing it.
 		super(draft.processName || draft.processId, vscode.TreeItemCollapsibleState.None);
 		this.contextValue = source === 'repo' ? 'reltio.workflows.draft.repo' : 'reltio.workflows.draft';
-		this.iconPath = new vscode.ThemeIcon('edit');
+		this.iconPath = source === 'repo'
+			? new vscode.ThemeIcon('repo', repoState === 'differs' ? new vscode.ThemeColor('gitDecoration.modifiedResourceForeground') : undefined)
+			: new vscode.ThemeIcon('edit');
 		// A repository file sets no `resourceUri`: that opts the row into VS Code's native
 		// Problems-count badge, which reads as a deploy blocker on a BPMN mid-edit and is not one.
 		// (The icon is explicit, so nothing relies on `resourceUri` to drive it.)
 		if (source === 'local') this.resourceUri = draft.fileUri;
 		// The id is what Deploy actually keys on, so once the label is showing the friendlier
 		// name instead, the id still needs to be visible without a hover.
-		this.description = draft.processName ? `${draft.processId} • draft` : '• draft';
+		const repoNote = {
+			notDeployed: 'not deployed',
+			differs: 'differs from tenant',
+			same: 'same as tenant',
+			unknown: undefined,
+		}[repoState];
+		this.description = source === 'repo'
+			? [draft.processId, 'repository', repoNote].filter(Boolean).join(' • ')
+			: draft.processName ? `${draft.processId} • draft` : '• draft';
 		this.tooltip = [
 			draft.processName ? `Name: ${draft.processName}` : undefined,
 			`ID: ${draft.processId}`,
 			`File: ${draft.fileName}`,
 			source === 'repo'
-				? 'In the connected Custom Workflow Repository; not deployed to this tenant yet.'
+				? `From the connected Custom Workflow Repository${repoNote ? ` (${repoNote})` : ''}. It is its own row even when the tenant has a workflow with this id.`
 				: 'Not yet deployed to this tenant.',
 		].filter((line): line is string => line !== undefined).join('\n');
-		this.id = `workflowDraft:${environmentName}/${tenantId}/${draft.processId}`;
+		// A repository row is keyed by its file: the same process id can appear on a tenant row, a
+		// local draft and several repository files, and tree ids must be unique.
+		this.id = source === 'repo'
+			? `workflowRepoFile:${environmentName}/${tenantId}/${draft.fileUri.toString()}`
+			: `workflowDraft:${environmentName}/${tenantId}/${draft.processId}`;
 		this.command = {
 			command: 'vscode.open',
 			title: 'Open Draft',

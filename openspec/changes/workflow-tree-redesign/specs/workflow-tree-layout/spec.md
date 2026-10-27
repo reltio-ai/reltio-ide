@@ -40,27 +40,30 @@ Connect SHALL be offered on a Workflows row with no repository. Disconnect, refr
 - **THEN** the row is expandable and its description reads "Adapter URL not set • repository connected"
 
 ### Requirement: Process Definitions is one merged list
-The list SHALL contain one row per process id, deduplicated across deployed definitions, local files and repository files, in one of six states.
+The list SHALL show deployed rows (OOTB with a method icon, custom with a cloud icon), draft rows (pencil) and repository rows (repo icon). A repository file SHALL always have its own row and SHALL NOT be merged into a deployed or draft row, even with the same process id. A downloaded copy of a tenant workflow (one with a baseline) SHALL belong to its tenant row.
 
-#### Scenario: Precedence
-- **WHEN** a deployed custom workflow has local edits and its repository file also differs
-- **THEN** the row shows "local changes", and Deploy ships the local file
+#### Scenario: Same id on tenant and repository
+- **WHEN** a tenant workflow and a repository file share a process id
+- **THEN** the list shows two rows, and the repository row says "same as tenant" or "differs from tenant"
 
-#### Scenario: Not tracked
-- **WHEN** a repository is connected and holds no file for a deployed custom workflow
-- **THEN** the row shows "not tracked in repository" in the warning colour
+#### Scenario: Not yet fetched
+- **WHEN** the tenant's definitions could not be fetched
+- **THEN** repository rows show no comparison
 
-#### Scenario: OOTB is never untracked
-- **WHEN** a deployed workflow is OOTB
-- **THEN** it is never marked "not tracked in repository"
+#### Scenario: Origin comes from git
+- **WHEN** a BPMN in `Workflows/bpmn/` is not tracked by git
+- **THEN** it is the user's draft; a tracked file, or any file outside `bpmn/`, is the repository's
 
-#### Scenario: Not yet scanned
-- **WHEN** the repository has not been scanned
-- **THEN** no row is marked "not tracked in repository"
+### Requirement: Disconnect removes the repository's files
+Disconnecting SHALL delete the repository's tracked files that have no uncommitted change and its ignored build output, remove folders left empty except `bpmn/`, and delete `.git`. Files with uncommitted changes and untracked files that are not ignored SHALL be kept. The confirmation SHALL state the counts and warn about unpushed commits.
 
-#### Scenario: Content id wins
-- **WHEN** one file is seen by both scans with different ids
-- **THEN** the repository's content id is the one listed
+#### Scenario: Reconnect after disconnect
+- **WHEN** a repository is disconnected and another is connected
+- **THEN** adoption finds no clashing repository files and succeeds
+
+#### Scenario: Work in progress survives
+- **WHEN** a draft, a new Java file or an edited tracked file exists at disconnect
+- **THEN** it is kept
 
 ### Requirement: Drafts live in the repository's own bpmn folder
 Drafts SHALL be stored in `Workflows/bpmn/`, and a connected repository SHALL be cloned directly into `Workflows/`.

@@ -35,6 +35,9 @@ async function git(cwd: vscode.Uri, args: string[]): Promise<string> {
 	}
 }
 
+/** The same shell-out, for callers outside this module that need git's raw output. */
+export const runGit = git;
+
 /**
  * Branch names on a remote, without cloning it.
  *

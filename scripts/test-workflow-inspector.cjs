@@ -517,7 +517,7 @@ function textResponse(status, text) {
 		const custom = new ProcessDefinitionNode(
 			'env', 'tenant', { ...definition, generic: false }, 'none',
 		);
-		assert.ok(custom.tooltip.value.startsWith('**Custom workflow**'));
+		assert.ok(custom.tooltip.value.startsWith('**Custom workflow (on the tenant)**'));
 
 		// Only `type` is guaranteed by the row guard, so every other field is
 		// genuinely optional at runtime and must be omitted, not rendered empty.

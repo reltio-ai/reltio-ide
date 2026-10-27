@@ -406,7 +406,6 @@ function bpmnXml(processId) {
 			'reltio.workflows.folder.repo',
 			'reltio.workflows.folder.noUrl.repo',
 			'reltio.workflows.draft.repo',
-			'reltio.workflows.processDefinition.repoChanged',
 		]) {
 			const entries = menu.filter(m => menuEntryAppliesTo(m, cv));
 			assert.ok(entries.length > 0, `no menu entries apply to contextValue "${cv}"`);
@@ -454,13 +453,6 @@ function bpmnXml(processId) {
 		assert.strictEqual(menuEntriesFor(menu, 'reltio.workflows.draft.repo', 'reltio.deleteWorkflowDraft').length, 0);
 		assert.ok(onContextMenu(menu, 'reltio.workflows.draft', 'reltio.deleteWorkflowDraft'), 'a local draft keeps Delete');
 
-		// A deployed row whose repository file differs deploys that file from its own row.
-		for (const command of ['reltio.deployWorkflow', 'reltio.previewWorkflowDiagram', 'reltio.duplicateWorkflowDraft']) {
-			assert.ok(
-				onContextMenu(menu, 'reltio.workflows.processDefinition.repoChanged', command),
-				`"${command}" must be reachable on a row that differs from the repository`,
-			);
-		}
 	}
 
 	// ── Tree wiring: Java groups under the Workflows row, one merged Process Definitions list ─

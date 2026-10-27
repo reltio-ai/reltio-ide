@@ -1018,6 +1018,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 					processName: file.processName,
 					fileUri: file.fileUri,
 					fileKey: file.fileUri.toString(),
+					fromRepo: file.fromRepo === true,
 				}))
 				: undefined,
 			repoSync: cached?.repoSync ?? new Map<string, RepoSyncState>(),
@@ -1322,30 +1323,22 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		if (element instanceof ProcessDefinitionsFolderNode) {
 			const { environmentName, tenantId } = element;
 			return element.rows.map(row => {
-				if (row.kind === 'draft') {
-					return new WorkflowDraftNode(
-						environmentName,
-						tenantId,
-						{
-							processId: row.processId,
-							processName: row.processName,
-							fileUri: row.fileUri,
-							fileName: row.fileUri.path.slice(row.fileUri.path.lastIndexOf('/') + 1),
-						},
-						row.source,
-					);
+				if (row.kind === 'deployed') {
+					// `localState` is about the DOWNLOADED copy and alone decides which actions Deploy,
+					// Compare and Discard offer.
+					return new ProcessDefinitionNode(environmentName, tenantId, row.definition, row.localState);
 				}
-				// `localState` is about the DOWNLOADED copy and alone decides which actions Deploy,
-				// Compare and Discard offer; the repository state is only what the badge says (and
-				// whether a repository deploy is offered). Merging them once made a repository
-				// `changed` offer Deploy on a copy that had not changed.
-				return new ProcessDefinitionNode(
+				return new WorkflowDraftNode(
 					environmentName,
 					tenantId,
-					row.definition,
-					row.localState,
-					row.repoState,
-					row.repoFileUri,
+					{
+						processId: row.processId,
+						processName: row.processName,
+						fileUri: row.fileUri,
+						fileName: row.fileUri.path.slice(row.fileUri.path.lastIndexOf('/') + 1),
+					},
+					row.kind === 'repo' ? 'repo' : 'local',
+					row.kind === 'repo' ? row.state : 'unknown',
 				);
 			});
 		}

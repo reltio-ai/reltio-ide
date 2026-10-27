@@ -158,7 +158,7 @@ import {
 	writeMultiGitSourceMarker,
 	type MultiGitSourceMarker,
 } from './workspace/gitSourceMarker';
-import { WORKFLOWS_DIR, isTenantConfigPath, tenantPath } from './workspace/tenantFolderStructure';
+import { WORKFLOWS_DIR, isTenantConfigPath, materializeTenantTree, tenantPath } from './workspace/tenantFolderStructure';
 import {
 	bindTenantToGit,
 	createAndPublishBranch,
@@ -192,6 +192,9 @@ import {
 	removeStagingDir,
 } from './workspace/workflowRepoConnect';
 import { describeAdoptedDrafts } from './workspace/workflowRepoAdoption';
+import { describeDisconnect, isRepoOriginFile, relativeToWorkflows } from './workspace/workflowRepoOrigin';
+import { inspectRepoForDisconnect, listTrackedFiles, removeRepoFiles } from './workspace/workflowRepoCleanup';
+import type { DiscoveredBpmnFile } from './workspace/workflowRepoDiscovery';
 import { describeDeploy, planDeploy, type DeployPlan } from './workspace/workflowDeployPlan';
 import { KeyedDebouncer } from './util/keyedDebouncer';
 import { extractProcessModel } from './workflow/bpmnModel';
@@ -2376,6 +2379,272 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			const repoDir = environmentManager.getWorkflowRepoDirectoryUri(environmentName, tenantId);
 			const repoConfigUri = environmentManager.getWorkflowRepoConfigUri(environmentName, tenantId);
 
+			// Removing the repository's files is what lets another repository be connected: a
+			// clone refuses to land on files that are already there. Only files git says came from
+			// the repository go; drafts and anything the user added or changed stay.
+			const inspection = await inspectRepoForDisconnect(repoDir);
+			const warning = describeDisconnect(tenantId, inspection?.plan, inspection?.unpushedCommits ?? 0);
+			const pick = await vscode.window.showWarningMessage(warning, { modal: true }, 'Disconnect');
+			if (pick !== 'Disconnect') return;
+
+			try {
+				if (inspection) await removeRepoFiles(repoDir, inspection.plan);
+				await disconnectFromGit(repoDir);
+				await deleteWorkflowRepoConfig(repoConfigUri);
+				// The folder's generated README comes back, so the tenant tree is whole again.
+				await materializeTenantTree(environmentManager.getTenantRootUri(environmentName, tenantId));
+				await refreshWorkflowRepoSyncState(environmentName, tenantId);
+				treeProvider.notifyWorkflowDraftsChanged();
+				treeProvider.refresh();
+				uxBus.fire();
+				void vscode.window.showInformationMessage(
+					inspection
+						? `Tenant "${tenantId}" is no longer connected to a Custom Workflow Repository, and its files were removed from Workflows/.`
+						: `Tenant "${tenantId}" is no longer connected to a Custom Workflow Repository. Its files were left in place.`,
+				);
+			} catch (e) {
+				void vscode.window.showErrorMessage(`Failed to disconnect: ${(e as Error).message}`);
+			}
+		}),
+		vscode.commands.registerCommand('reltio.connectTenantToGit', async (node?: TenantNode) => {
+			if (!node || !environmentManager) return;
+			const tenantRoot = environmentManager.getTenantRootUri(node.environmentName, node.tenantId);
+
+			if (await isGitRepo(tenantRoot)) {
+				void vscode.window.showInformationMessage(
+					`Tenant "${node.tenantId}" is already connected to Git.`,
+				);
+				return;
+			}
+
+			// Binding inside another repository produces a nested one: the outer repo then stores
+			// this tenant as a gitlink and cloning it yields an empty folder. Say so up front.
+			const enclosingRepo = await findEnclosingGitRepository(
+				vscode.Uri.joinPath(tenantRoot, '..'),
+			);
+			if (enclosingRepo) {
+				const proceed = await vscode.window.showWarningMessage(
+					`A Git repository already exists at ${enclosingRepo.fsPath}. Connecting this tenant creates a repository inside it, and the outer one will store the tenant as a pointer rather than its files.`,
+					{ modal: true },
+					'Connect Anyway',
+				);
+				if (proceed !== 'Connect Anyway') return;
+			}
+
+			// Every tenant in a promotion flow shares one remote, so remember it per workspace.
+			const lastRemote = context.workspaceState.get<string>(LAST_GIT_REMOTE_KEY, '');
+			const remoteUrl = await vscode.window.showInputBox({
+				title: 'Connect to Git',
+				prompt: 'Git remote URL holding this tenant\'s configuration',
+				placeHolder: 'https://github.com/org/reltio-config.git',
+				value: lastRemote,
+				ignoreFocusOut: true,
+			});
+			if (!remoteUrl?.trim()) return;
+
+			// Offer the remote's existing branches rather than making the user recall them. Listing
+			// needs no clone, so nothing is written to disk if they back out here.
+			let remoteBranches: string[] = [];
+			let listFailed = false;
+			try {
+				remoteBranches = await vscode.window.withProgress(
+					{ location: vscode.ProgressLocation.Notification, title: 'Reading branches…' },
+					() => listRemoteBranches(tenantRoot, remoteUrl.trim()),
+				);
+			} catch {
+				// Unreachable remote, or credentials the helper could not supply. Fall back to
+				// free text rather than blocking: the bind itself will report the real failure.
+				listFailed = true;
+			}
+
+			const branch = await pickBranch(node.tenantId, remoteBranches, listFailed);
+			if (!branch) return;
+
+			try {
+				const outcome = await vscode.window.withProgress(
+					{ location: vscode.ProgressLocation.Notification, title: 'Connecting tenant to Git…' },
+					() =>
+						bindTenantToGit({
+							tenantRoot,
+							remoteUrl: remoteUrl.trim(),
+							branch: branch.trim(),
+							environmentName: node.environmentName,
+							tenantId: node.tenantId,
+							confirmCreateBranch: async (b, url) =>
+								(await vscode.window.showWarningMessage(
+									`Branch "${b}" does not exist on ${url}. Create it from the default branch and push it?`,
+									{ modal: true },
+									'Create Branch',
+								)) === 'Create Branch',
+						}),
+				);
+
+				if (outcome.kind === 'declined') {
+					void vscode.window.showInformationMessage(
+						`Branch "${outcome.branch}" was not created. Tenant is not connected to Git.`,
+					);
+					return;
+				}
+
+				await context.workspaceState.update(LAST_GIT_REMOTE_KEY, remoteUrl.trim());
+				treeProvider.refresh();
+				uxBus.fire();
+
+				if (outcome.kind === 'branch-created-not-pushed') {
+					void vscode.window.showWarningMessage(
+						`Branch "${outcome.branch}" was created locally but could not be pushed: ${outcome.reason}`,
+					);
+				} else if (outcome.kind === 'initialized-empty-remote') {
+					// Not a failure: an unborn branch cannot be pushed, so the first commit is the
+					// user's to make. Phrase it as the next step rather than as something going wrong.
+					void vscode.window.showInformationMessage(
+						`Tenant "${node.tenantId}" is connected to Git on branch "${outcome.branch}". The remote is empty, so your configuration will be its first commit: commit and push from Source Control.`,
+					);
+				} else if (outcome.kind === 'branch-created') {
+					void vscode.window.showInformationMessage(
+						`Created and pushed branch "${outcome.branch}" for tenant "${node.tenantId}".`,
+					);
+				} else if (outcome.kind === 'adopted') {
+					// The config was already on disk, so it is now an uncommitted change against the
+					// branch. Say so, otherwise a full-looking diff in Source Control is a surprise.
+					void vscode.window.showInformationMessage(
+						`Tenant "${node.tenantId}" is connected to Git on branch "${outcome.branch}". Its existing configuration is staged as changes against that branch. Review and commit them in Source Control.`,
+					);
+				} else {
+					void vscode.window.showInformationMessage(
+						`Tenant "${node.tenantId}" is connected to Git on branch "${outcome.branch}".`,
+					);
+				}
+			} catch (e) {
+				void vscode.window.showErrorMessage(
+					`Failed to connect tenant to Git: ${(e as Error).message}`,
+				);
+			}
+		}),
+		/**
+		 * reltio.connectWorkflowRepository
+		 * Clones the customer's Reltio-provisioned Custom Workflow Repository into
+		 * `Workflows/` (D1, via a staging clone) and records the binding in
+		 * `WorkflowRepo.reltio.json` (D3). A second, distinct remote from whatever
+		 * the tenant itself may be bound to via `reltio.connectTenantToGit` — see
+		 * `workflowRepoGitignore.ts` for how the two stay safely nested.
+		 *
+		 * Takes a tree node or a `WorkflowCommandArgs` object, so an agent can call it
+		 * without one. The modal confirmation below is unchanged either way: cloning
+		 * into the tenant folder is the irreversible half of this command.
+		 */
+		vscode.commands.registerCommand(
+			'reltio.connectWorkflowRepository',
+			async (arg?: WorkflowsFolderNode | WorkflowCommandArgs) => {
+			const args = workflowCommandArgs(arg);
+			if (!args || !environmentManager) return;
+			const loc = await resolveWorkflowTenant(args);
+			if (!loc) return;
+			const { environmentName, tenantId } = loc;
+
+			const repoConfigUri = environmentManager.getWorkflowRepoConfigUri(environmentName, tenantId);
+			if (await loadWorkflowRepoConfig(repoConfigUri)) {
+				void vscode.window.showInformationMessage(
+					`Tenant "${tenantId}" already has a Custom Workflow Repository connected.`,
+				);
+				return;
+			}
+
+			const repoUrl = await vscode.window.showInputBox({
+				title: 'Connect Custom Workflow Repository',
+				prompt: 'Git URL Reltio gave you for this tenant\u2019s custom workflow code',
+				placeHolder: 'https://bitbucket.org/acme/acme-workflows.git',
+				ignoreFocusOut: true,
+				// Credentials in the URL are refused up front, with the supported alternatives in the message.
+				validateInput: value => (value.trim() ? cloneUrlProblem(value.trim()) : undefined),
+			});
+			if (!repoUrl?.trim()) return;
+
+			const repoDir = environmentManager.getWorkflowRepoDirectoryUri(environmentName, tenantId);
+			const relativePath = WORKFLOWS_DIR;
+			// `Workflows/` is never empty (generated README, `bpmn/` drafts) and `git clone` refuses a
+			// non-empty folder, so clone aside and adopt the result into `Workflows/`.
+			const stagingDir = tenantPath(
+				environmentManager.getTenantRootUri(environmentName, tenantId),
+				WORKFLOW_REPO_STAGING_DIR,
+			);
+
+			try {
+				await vscode.workspace.fs.createDirectory(repoDir);
+				if (await isGitRepoWithRemote(repoDir)) {
+					void vscode.window.showInformationMessage(
+						`Tenant "${tenantId}" already has a Custom Workflow Repository connected.`,
+					);
+					return;
+				}
+
+				await prepareStagingDir(stagingDir);
+				await vscode.window.withProgress(
+					{ location: vscode.ProgressLocation.Notification, title: 'Cloning Custom Workflow Repository…' },
+					() => cloneRepository(repoUrl.trim(), stagingDir),
+				);
+				const { drafts, keptLocal } = await adoptStagedRepository(repoDir, stagingDir);
+				await removeStagingDir(stagingDir);
+				await saveWorkflowRepoConfig(repoConfigUri, { repoUrl: storableRepoUrl(repoUrl.trim()), relativePath });
+
+				// D10, Order 2 (tenant already bound, repo connected second): we control this
+				// moment, so fix the outer .gitignore immediately rather than waiting for the
+				// next activation/refresh sweep.
+				await reconcileWorkflowRepoGitignore(
+					environmentManager.getTenantRootUri(environmentName, tenantId),
+					repoConfigUri,
+				);
+
+				await refreshWorkflowRepoSyncState(environmentName, tenantId);
+				treeProvider.refresh();
+				uxBus.fire();
+
+				// D8: no code changes to JAR registration, just a one-time nudge toward it.
+				void vscode.window.showInformationMessage(
+					`Connected the Custom Workflow Repository for "${tenantId}". If it built a new JAR, use Refresh JARs to pick it up.`,
+				);
+
+				// Drafts that were already in Workflows/bpmn/ did not move, but they now sit inside
+				// the repository's working tree, so say so rather than let a later commit surprise them.
+				if (drafts.length > 0) {
+					const { message, detail } = describeAdoptedDrafts(drafts, keptLocal);
+					void vscode.window.showInformationMessage(message, { modal: true, detail });
+				}
+			} catch (e) {
+				await removeStagingDir(stagingDir);
+				if (e instanceof WorkflowRepoAdoptionConflictError) {
+					void vscode.window.showErrorMessage(e.message);
+					return;
+				}
+				if (e instanceof GitNotFoundError) {
+					void vscode.window.showErrorMessage(e.message);
+					return;
+				}
+				void vscode.window.showErrorMessage(
+					`Failed to connect Custom Workflow Repository: ${(e as Error).message}`,
+				);
+			}
+		}),
+		/**
+		 * reltio.disconnectWorkflowRepository
+		 * Removes only `.git` and the sidecar (D2.2) — the cloned files stay
+		 * exactly where they are, same contract as `reltio.disconnectTenantFromGit`.
+		 *
+		 * Agent-callable, and the modal warning stays: discarding local history is not
+		 * recoverable from inside the IDE.
+		 */
+		vscode.commands.registerCommand(
+			'reltio.disconnectWorkflowRepository',
+			async (arg?: WorkflowsFolderNode | WorkflowCommandArgs) => {
+			const args = workflowCommandArgs(arg);
+			if (!args || !environmentManager) return;
+			const loc = await resolveWorkflowTenant(args);
+			if (!loc) return;
+			const { environmentName, tenantId } = loc;
+
+			const repoDir = environmentManager.getWorkflowRepoDirectoryUri(environmentName, tenantId);
+			const repoConfigUri = environmentManager.getWorkflowRepoConfigUri(environmentName, tenantId);
+
 			const dirty = await hasUncommittedChanges(repoDir);
 			const warning = dirty
 				? `Disconnect the Custom Workflow Repository for "${tenantId}"? It has uncommitted changes. Your files stay exactly as they are, but the repository and its local history are removed and unpushed commits are lost.`
@@ -3623,6 +3892,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	 * missing token/Adapter URL that would otherwise fire on every fetch for every
 	 * tenant that has never connected one.
 	 */
+	/**
+	 * Marks each discovered BPMN as from the repository or not. The repository scan walks all of
+	 * `Workflows/`, including the drafts folder, so it also sees the user's own drafts; git's tracked
+	 * list is what tells them apart (see `isRepoOriginFile`).
+	 */
+	async function tagRepoOrigin(repoDir: vscode.Uri, files: readonly DiscoveredBpmnFile[]): Promise<DiscoveredBpmnFile[]> {
+		const tracked = await listTrackedFiles(repoDir);
+		return files.map(file => {
+			const relative = relativeToWorkflows(file.fileUri.fsPath, repoDir.fsPath);
+			return { ...file, fromRepo: relative !== undefined && isRepoOriginFile(relative, tracked) };
+		});
+	}
+
 	async function refreshWorkflowRepoSyncState(environmentName: string, tenantId: string): Promise<void> {
 		if (!environmentManager) return;
 		// Claimed up front, before any of the awaits below, so a disconnect (or another sync
@@ -3646,7 +3928,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			discoverBpmnFilesDetailed(repoDir),
 			discoverJavaSources(repoDir),
 		]);
-		const discovered = discovery.files;
+		const discovered = await tagRepoOrigin(repoDir, discovery.files);
 		noteTruncatedDiscovery(environmentName, tenantId, discovery.truncated);
 
 		const ctx = await workflowCallContext(environmentName, tenantId);
@@ -3657,7 +3939,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		const sync = new Map<string, RepoSyncState>();
 		if (ctx) {
 			for (const file of discovered) {
-				if (!definitionTypes.has(file.processId)) continue;
+				if (!file.fromRepo || !definitionTypes.has(file.processId)) continue;
 				try {
 					const [repoText, deployedXml] = await Promise.all([
 						readTextFile(file.fileUri),
@@ -3716,7 +3998,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			discoverJavaSources(repoDir),
 		]);
 		noteTruncatedDiscovery(environmentName, tenantId, discovery.truncated);
-		treeProvider.markWorkflowRepoFilesDiscovered(environmentName, tenantId, discovery.files, javaSources, generation);
+		treeProvider.markWorkflowRepoFilesDiscovered(
+			environmentName,
+			tenantId,
+			await tagRepoOrigin(repoDir, discovery.files),
+			javaSources,
+			generation,
+		);
 	}
 	treeProvider.setInvalidRepoConfigHandler((_environmentName, tenantId, reason) => {
 		void vscode.window.showWarningMessage(
@@ -4632,14 +4920,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 				// A deployed definition carries its own identity; a draft and an editor
 				// tab do not, so those resolve from the file's own path.
-				// "Deploy from Repository": a row whose repository file differs and which has no local edits of
-				// its own deploys that file, through the repository path below, instead of the downloaded copy.
-				const deploysRepoFile =
-					arg instanceof ProcessDefinitionNode &&
-					arg.repoState === 'changed' &&
-					arg.repoFileUri !== undefined &&
-					arg.localState !== 'changed';
-				if (arg instanceof ProcessDefinitionNode && !deploysRepoFile) {
+				if (arg instanceof ProcessDefinitionNode) {
 					const fileUri = environmentManager.getWorkflowBpmnUri(
 						arg.environmentName, arg.tenantId, arg.definition.type,
 					);
@@ -4683,11 +4964,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				} else {
 					fileUri = arg instanceof WorkflowDraftNode
 						? arg.draft.fileUri
-						: arg instanceof ProcessDefinitionNode
-							? arg.repoFileUri
-							: arg instanceof vscode.Uri
-								? arg
-								: vscode.window.activeTextEditor?.document.uri;
+						: arg instanceof vscode.Uri
+							? arg
+							: vscode.window.activeTextEditor?.document.uri;
 				}
 
 				if (!fileUri) {

@@ -897,12 +897,12 @@
         },
         {
           "command": "reltio.duplicateWorkflowDraft",
-          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.processDefinition(\\.changed|\\.repoChanged)?$/",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.processDefinition(\\.changed)?$/",
           "group": "5_insert@01"
         },
         {
           "command": "reltio.duplicateWorkflowDraft",
-          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.processDefinition(\\.changed|\\.repoChanged)?$/",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.processDefinition(\\.changed)?$/",
           "group": "inline@2"
         },
         {
@@ -996,18 +996,8 @@
           "group": "navigation@1"
         },
         {
-          "command": "reltio.deployWorkflow",
-          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.processDefinition\\.repoChanged$/",
-          "group": "4_deploy@01"
-        },
-        {
-          "command": "reltio.deployWorkflow",
-          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.processDefinition\\.repoChanged$/",
-          "group": "inline@1"
-        },
-        {
           "command": "reltio.previewWorkflowDiagram",
-          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.processDefinition(\\.changed|\\.repoChanged)?$/",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.processDefinition(\\.changed)?$/",
           "group": "navigation@1"
         },
         {

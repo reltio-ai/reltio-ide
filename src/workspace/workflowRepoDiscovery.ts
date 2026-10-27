@@ -40,6 +40,11 @@ export interface DiscoveredBpmnFile {
 	 * repository folder's own name — see `nearestModuleFor()`'s doc comment.
 	 */
 	readonly moduleName: string | undefined;
+	/**
+	 * True when the file came from the connected repository: tracked by it, or outside the drafts
+	 * folder. Set by the caller after discovery (it needs git); unset means not yet classified.
+	 */
+	readonly fromRepo?: boolean;
 }
 
 /**

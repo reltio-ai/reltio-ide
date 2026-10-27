@@ -374,15 +374,14 @@ Reltio IDE also manages your tenant's BPMN workflows and the Java modules that i
 
 In the **RELTIO IDE** view, expand your tenant's **Workflows** folder. It has two folders by default:
 
-- **Process Definitions** — one list of your workflows. Each row is one process, wherever it lives: deployed to your tenant, a local draft, or a file in your repository. A row can read:
-  - *(no note)* — deployed and unchanged. A workflow Reltio ships is shown with a method icon and its type; yours has a class icon.
-  - **• local changes** — you edited the downloaded copy and haven't deployed it.
-  - **• differs from repository** — the repository's file isn't what's deployed.
-  - **• not tracked in repository** — a repository is connected but has no file for this workflow.
-  - **• draft** — not deployed yet.
+- **Process Definitions** — one list of your workflows. The icon says where a row came from:
+  - **Method icon** — a workflow Reltio ships (OOTB).
+  - **Cloud icon** — your workflow, deployed on the tenant. It reads **• local changes** when you edited the downloaded copy and haven't deployed it.
+  - **Pencil icon, • draft** — a local draft you haven't deployed.
+  - **Repository icon** — a file from your connected repository. It always has its own row, even when a workflow with the same id is deployed, and says **• not deployed**, **• differs from tenant** or **• same as tenant**.
 - **JAR Deployments** — the Java modules registered against your tenant, plus any **Unregistered JARs** Reltio IDE finds but doesn't yet know about.
 
-Once you connect a repository, **Java Classes** and **Java Tests** appear beside them (see [Connect a Custom Workflow Repository](#connect-a-custom-workflow-repository) below). The **Workflows** row itself shows whether a repository is connected, and its right-click menu holds the connect, disconnect and refresh actions.
+Until a repository is connected, a **Connect Custom Workflow Repository…** row sits after them. Once you connect one, **Java Classes** and **Java Tests** appear beside them (see [Connect a Custom Workflow Repository](#connect-a-custom-workflow-repository) below). The **Workflows** row itself shows whether a repository is connected, and its right-click menu holds the connect, disconnect and refresh actions.
 
 On disk, your drafts are in `Workflows/bpmn/` inside the tenant folder.
 
@@ -482,9 +481,9 @@ If your workflow BPMNs and Java modules live in Git instead of only on the tenan
   <em>Screenshot (VS Code): Connect Custom Workflow Repository — paste the remote URL.</em>
 </p>
 
-3. Select **Refresh Sync Status** at any time to check the repository against your tenant. Select **Disconnect Custom Workflow Repository** to end the connection.
+3. Select **Refresh Sync Status** at any time to check the repository against your tenant. Select **Disconnect Custom Workflow Repository** to end the connection: the repository's files (BPMN, Java and the rest) are removed from `Workflows/`, so another repository can be connected. Your own drafts and anything you added or changed but haven't committed are kept, and the dialog tells you how many files go and how many stay. Push first if you have unpushed commits — they are lost.
 
-Once connected, the repository's BPMN joins **Process Definitions**, and its Java appears under **Java Classes** and **Java Tests**, always grouped by module:
+Once connected, the repository's BPMN files appear in **Process Definitions** on their own rows, and its Java appears under **Java Classes** and **Java Tests**, always grouped by module:
 
 <p align="center">
   <img src="docs/images/custom-workflow-repo-connected.png" alt="Connected Custom Workflow Repository showing Process Definitions and Java Classes, with a BPMN file open" width="700" />

@@ -18,7 +18,8 @@ Each group is covered by `scripts/test-workflow-tree-redesign.cjs` unless noted.
 ## 4. Menus and handlers
 
 - [x] 4.1 `package.json` menus for the Workflows row, drafts, and differs-from-repository rows.
-- [x] 4.2 Deploy deploys the repository file for a differing row; content-id guard for repository files in `bpmn/`.
+- [x] 4.2 Repository files get their own rows (repo icon), tagged by git origin; tenant custom rows use a cloud icon.
+- [x] 4.3 Disconnect removes the repository's files (`workflowRepoCleanup.ts`), prunes empty folders, restores the tenant README.
 
 ## 5. Skills
 

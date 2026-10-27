@@ -235,7 +235,7 @@ const ADAPTER = 'https://tst-01-workflow.reltio.com';
 			assert.ok(reports[0][2].length > 0);
 		}
 
-		// 6f. repo state decorates a definition row; the action follows the file that exists
+		// 6f. a repository file keeps its own row, even when its process id is deployed
 		{
 			const mem = installMemoryFs();
 			const { mgr, provider } = makeProvider();
@@ -243,27 +243,29 @@ const ADAPTER = 'https://tst-01-workflow.reltio.com';
 				version: 1, repoUrl: 'https://github.com/acme/wf', relativePath: 'Workflows',
 			})));
 			const repoFile = {
-				processId: 'p1', processName: undefined, moduleName: undefined,
+				processId: 'p1', processName: undefined, moduleName: undefined, fromRepo: true,
 				fileUri: vscode.Uri.file('/rfws/repo/p1.bpmn20.xml'),
 			};
+			const repoOnly = { ...repoFile, processId: 'p3', fileUri: vscode.Uri.file('/rfws/repo/p3.bpmn20.xml') };
 			provider.markProcessDefinitionsLoaded(ENV, TENANT, [def('p1'), def('p2'), def('dataChangeRequestReview', true)]);
-			provider.markWorkflowRepoSync(ENV, TENANT, 1, new Map([['p1', 'changed']]), [repoFile], []);
+			provider.markWorkflowRepoSync(ENV, TENANT, 2, new Map([['p1', 'changed']]), [repoFile, repoOnly], []);
 			const folderKids = await provider.getChildren(new WorkflowsFolderNode(ENV, TENANT, ADAPTER));
 			const pdFolder = folderKids.find(k => k instanceof ProcessDefinitionsFolderNode);
 			const rows = await provider.getChildren(pdFolder);
-			const byId = id => rows.find(r => r.definition?.type === id);
 
-			assert.strictEqual(byId('p1').contextValue, 'reltio.workflows.processDefinition.repoChanged',
-				'a row whose repository file differs deploys that file from its own row');
-			assert.ok(String(byId('p1').description).includes('differs from repository'));
-			assert.strictEqual(byId('p2').contextValue, 'reltio.workflows.processDefinition');
-			assert.ok(String(byId('p2').description).includes('not tracked in repository'),
-				'a custom workflow with no repository file is flagged');
-			assert.ok(!String(byId('dataChangeRequestReview').description).includes('not tracked'),
-				'an OOTB workflow is never "not tracked": it is Reltio\'s, not the customer\'s');
+			const tenantRows = rows.filter(r => r instanceof ProcessDefinitionNode);
+			assert.deepStrictEqual(tenantRows.map(r => r.definition.type), ['p1', 'p2', 'dataChangeRequestReview'],
+				'tenant rows are exactly what is deployed');
+			assert.ok(tenantRows.every(r => r.contextValue === 'reltio.workflows.processDefinition'),
+				'a repository file never changes what a tenant row offers');
+			const repoRows = rows.filter(r => r instanceof WorkflowDraftNode && r.source === 'repo');
+			assert.deepStrictEqual(repoRows.map(r => r.draft.processId), ['p1', 'p3'],
+				'p1 is deployed and still gets its own repository row, next to the tenant row');
+			assert.ok(String(repoRows[0].description).includes('differs from tenant'));
+			assert.ok(String(repoRows[1].description).includes('not deployed'));
+			assert.strictEqual(new Set(rows.map(r => r.id)).size, rows.length, 'every row has a unique tree id');
 
-			// Local edits outrank a repository difference: Deploy must ship what the user just edited.
-			const both = new ProcessDefinitionNode(ENV, TENANT, def('p1'), 'changed', 'changed', repoFile.fileUri);
+			const both = new ProcessDefinitionNode(ENV, TENANT, def('p1'), 'changed');
 			assert.strictEqual(both.contextValue, 'reltio.workflows.processDefinition.changed');
 			assert.ok(String(both.description).includes('local changes'));
 		}
@@ -320,7 +322,7 @@ const ADAPTER = 'https://tst-01-workflow.reltio.com';
 					'a repository row must not carry resourceUri, or VS Code renders a Problems badge next to it');
 				assert.ok(named.iconPath, 'the icon must still be set explicitly without resourceUri to drive it');
 				assert.strictEqual(named.label, 'Address Validation');
-				assert.ok(String(named.description).includes('d1') && String(named.description).includes('draft'),
+				assert.ok(String(named.description).includes('d1') && (source === 'repo' || String(named.description).includes('draft')),
 					'the id stays visible once the label shows the friendlier name');
 				assert.deepStrictEqual(named.command.arguments, [named.fileUri ?? named.command.arguments[0]],
 					'a click must still open the file');
