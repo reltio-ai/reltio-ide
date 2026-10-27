@@ -1,7 +1,15 @@
 import * as vscode from 'vscode';
 import { findNodeAtPath } from '../parser/configParser';
-import type { ConfigTreeItem } from '../tree/treeNodes';
 import type { Node } from 'jsonc-parser';
+
+/**
+ * Everything `revealInEditor` needs from a tree node. Kept structural rather
+ * than tied to `ConfigTreeItem` so RDM nodes, which deliberately sit outside
+ * that class, reuse this without duplicating the reveal logic.
+ */
+export interface RevealTarget {
+	jsonPath: (string | number)[];
+}
 
 const HIGHLIGHT_DURATION_MS = 1500;
 
@@ -11,7 +19,7 @@ const highlightDecoration = vscode.window.createTextEditorDecorationType({
 });
 
 export async function revealInEditor(
-	item: ConfigTreeItem,
+	item: RevealTarget,
 	ast: Node | undefined,
 	documentUri: vscode.Uri,
 ): Promise<void> {

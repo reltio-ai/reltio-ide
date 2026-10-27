@@ -87,6 +87,11 @@ export class TenantNode extends vscode.TreeItem {
 		 * Disconnect exactly when someone most needs it.
 		 */
 		readonly isGitBound: boolean = false,
+		/**
+		 * RDM configurations are on disk for this tenant. Informational: every tenant row is
+		 * already collapsible (it always has the Workflows sub-folder), so RDM needs no special case.
+		 */
+		readonly hasRdm = false,
 	) {
 		const label = displayLabel ?? tenantId;
 		// Every tenant now has at least the Workflows sub-folder, so it is
@@ -210,5 +215,124 @@ export class HistorySnapshotNode extends vscode.TreeItem {
 		this.iconPath = new vscode.ThemeIcon('file');
 		this.resourceUri = fileUri;
 		this.id = `historysnap:${fileUri.toString()}`;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// RDM sub-tree
+//
+// These deliberately sit outside `ConfigTreeItem`. That class derives its
+// contextValue through `contextValueFor()`, which mints `reltio.item.*` for
+// every non-folder node — and `reltio.deleteNode` / `reltio.renameNode` attach
+// to `/^reltio\.item\./` by regex. RDM data is read-only (nothing is ever PUT
+// back to the RDM service), so those commands must not be reachable here. A
+// separate `reltio.rdm.*` namespace makes that structural rather than a matter
+// of keeping two regexes in sync.
+// ---------------------------------------------------------------------------
+
+/**
+ * The single `RDM` grouping row under a tenant. Purely structural: it gathers
+ * the tenant's RDM configurations so they read as one section alongside the L3
+ * sections, rather than as loose siblings of them.
+ */
+export class RdmGroupNode extends vscode.TreeItem {
+	constructor(
+		readonly environmentName: string,
+		readonly tenantId: string,
+	) {
+		super('RDM', vscode.TreeItemCollapsibleState.Collapsed);
+		this.contextValue = 'reltio.rdm.group';
+		this.iconPath = new vscode.ThemeIcon('symbol-enum');
+		this.id = `rdmgroup:${environmentName}/${tenantId}`;
+		this.tooltip = 'Reference Data Management';
+	}
+}
+
+/**
+ * One RDM tenant's configuration file, shown under the `RDM` group and
+ * labelled with the RDM tenant id alone — the group above supplies the context
+ * that the old `RDM_` prefix used to carry.
+ */
+export class RdmRootNode extends vscode.TreeItem {
+	constructor(
+		readonly environmentName: string,
+		readonly tenantId: string,
+		readonly rdmTenantId: string,
+		readonly fileUri: vscode.Uri,
+		/** Set when the file could not be parsed — the root still shows, but expands to nothing. */
+		readonly unreadable = false,
+	) {
+		super(
+			rdmTenantId,
+			unreadable
+				? vscode.TreeItemCollapsibleState.None
+				: vscode.TreeItemCollapsibleState.Collapsed,
+		);
+		this.contextValue = 'reltio.rdm.root';
+		this.iconPath = new vscode.ThemeIcon('symbol-enum');
+		this.resourceUri = fileUri;
+		this.id = `rdmroot:${fileUri.toString()}`;
+		if (unreadable) {
+			this.description = 'could not be read';
+			this.tooltip = `${fileUri.fsPath}\nThis RDM configuration is not valid JSON. Use Show in Editor to inspect it.`;
+		} else {
+			this.tooltip = fileUri.fsPath;
+		}
+	}
+}
+
+/** A counted section under an RDM root, e.g. `Lookup Types (59)`. */
+export class RdmFolderNode extends vscode.TreeItem {
+	/** Location of this section in the RDM document, for Show in Editor. */
+	readonly jsonPath: (string | number)[];
+
+	constructor(
+		readonly environmentName: string,
+		readonly tenantId: string,
+		readonly rdmTenantId: string,
+		readonly fileUri: vscode.Uri,
+		readonly sectionKey: string,
+		label: string,
+		count: number,
+		iconId: string,
+	) {
+		super(`${label} (${count})`, vscode.TreeItemCollapsibleState.Collapsed);
+		this.contextValue = `reltio.rdm.folder.${sectionKey}`;
+		this.iconPath = new vscode.ThemeIcon(iconId);
+		this.id = `rdmfolder:${fileUri.toString()}|${sectionKey}`;
+		this.jsonPath = [sectionKey];
+		this.tooltip = sectionKey;
+	}
+}
+
+/** A single lookup type or source. Always a leaf — every field on them is scalar. */
+export class RdmItemNode extends vscode.TreeItem {
+	constructor(
+		readonly environmentName: string,
+		readonly tenantId: string,
+		readonly rdmTenantId: string,
+		readonly fileUri: vscode.Uri,
+		readonly sectionKey: string,
+		readonly jsonPath: (string | number)[],
+		label: string,
+		uri: string | undefined,
+		iconId: string,
+		/**
+		 * Trailing segment of `uri`, e.g. `AddressTypes`. Carried here so the
+		 * Get Lookup Values command has the name the lookups endpoint is keyed
+		 * by without re-parsing the URI at invocation time.
+		 */
+		readonly typeName = '',
+	) {
+		super(label, vscode.TreeItemCollapsibleState.None);
+		this.contextValue = `reltio.rdm.item.${sectionKey}`;
+		this.iconPath = new vscode.ThemeIcon(iconId);
+		this.id = `rdmitem:${fileUri.toString()}|${jsonPath.join('/')}`;
+		if (uri) {
+			// The uri is what an L3 `lookupCode` actually references, so it is the
+			// value a reader is most likely to want visible.
+			this.description = uri;
+		}
+		this.tooltip = uri ?? label;
 	}
 }

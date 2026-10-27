@@ -21,7 +21,7 @@ import {
 	deleteNode,
 	renameNode,
 } from './commands/editCommands';
-import { parseDocument } from './parser/configParser';
+import { parseDocument, parseRdmDocument } from './parser/configParser';
 import { UriIndex } from './navigation/uriIndex';
 import { ReltioDocumentLinkProvider } from './navigation/documentLinkProvider';
 import { ReltioDefinitionProvider } from './navigation/definitionProvider';
@@ -33,7 +33,8 @@ import {
 } from './workflow/bpmnDiagnosticsManager';
 import { ReltioUriCompletionProvider } from './navigation/uriCompletionProvider';
 import { OntologyPanelManager } from './ontology/ontologyPanel';
-import { EnvironmentManager, type GitSource } from './workspace/environmentManager';
+import { EnvironmentManager, rdmFileName, type GitSource } from './workspace/environmentManager';
+import { relocateLegacyRdmFiles } from './workspace/rdmRelocation';
 import {
 	applyDefaultEnvironments,
 	indexTokenFilesByCanonicalPath,
@@ -73,15 +74,32 @@ import {
 	ReltioApiError,
 	toHttpsBase,
 	setTrustedHostSuffixes,
+	fetchTenantPhysicalConfiguration,
+	extractRdmConfig,
+	fetchRdmConfiguration,
+	fetchRdmLookupValues,
+	flattenRdmLookupValues,
+	putRdmConfiguration,
 } from './api/reltioClient';
 import { prettyPrintJsonIfPossible } from './api/formatJson';
+import { recallRdmServiceUri, rememberRdmServiceUri } from './rdm/rdmServiceCache';
+import { showLookupValuesPanel } from './rdm/lookupValuesPanel';
+import { addRdmLookupType, addRdmSource } from './rdm/rdmEditCommands';
 import { tenantIdFromTreeContext } from './util/tenantIdFromTreeContext';
 import {
 	hasUnpublishedLocalChangesFromText,
 	remoteMatchesBaseline,
 	tryParseJson,
 } from './util/fetchConfigurationGuard';
-import { EnvironmentNode, TenantNode, HistoryFolderNode, HistorySnapshotNode } from './tree/multiTenantNodes';
+import {
+	EnvironmentNode,
+	TenantNode,
+	HistoryFolderNode,
+	HistorySnapshotNode,
+	RdmRootNode,
+	RdmFolderNode,
+	RdmItemNode,
+} from './tree/multiTenantNodes';
 import {
 	WorkflowsFolderNode,
 	WorkflowFetchActionNode,
@@ -599,6 +617,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	 * side. The safety comes from the migration itself: a backup before the first move, a stamp
 	 * written only on full success, and a refusal on a dirty worktree.
 	 */
+	/**
+	 * Move root-level RDM files into `RDM/` and `.reltio-ide/RDM/`. Quiet when there is nothing
+	 * to do; refreshes the tree when files moved; reports anything left in place, because a
+	 * conflict means a file the user may want is not where the tree now looks.
+	 */
+	async function relocateRdmIntoComponentTree(em: EnvironmentManager): Promise<void> {
+		const { moved, conflicts, failed } = await relocateLegacyRdmFiles(em);
+		if (moved.length > 0) {
+			treeProvider.refresh();
+		}
+		const leftBehind = [...conflicts, ...failed];
+		if (leftBehind.length > 0) {
+			void vscode.window.showWarningMessage(
+				`Some RDM files were left at the tenant folder root because their new location is already occupied or could not be written: ${leftBehind.join('; ')}. Nothing was overwritten.`,
+			);
+		}
+	}
+
 	async function runLayoutMigration(em: EnvironmentManager, workspaceRoot: vscode.Uri): Promise<void> {
 		let report;
 		try {
@@ -719,6 +755,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				// to Git in a session (or by a teammate) after its Custom Workflow Repository was
 				// already connected. Also re-run per-tenant on tree refresh; see `getChildren()`.
 				await reconcileAllWorkflowRepoGitignores(environmentManager).catch(() => undefined);
+				// After the layout migration, so tenant folders already carry their new names.
+				// Independent of its per-tenant stamp: already-migrated tenants are reached too.
+				await relocateRdmIntoComponentTree(environmentManager).catch(() => undefined);
 			});
 		} else if (await tryRestoreGitSource(environmentManager, tokenStore, folder.uri)) {
 			setWorkspaceSource('git');
@@ -919,7 +958,86 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('reltio.revealInEditor', async (item?: ConfigTreeItem) => {
+		vscode.commands.registerCommand('reltio.addRdmLookupType', async (node?: unknown) => {
+			const fileUri = rdmFileUriFromNode(node);
+			if (fileUri) await addRdmLookupType(fileUri);
+		}),
+		vscode.commands.registerCommand('reltio.addRdmSource', async (node?: unknown) => {
+			const fileUri = rdmFileUriFromNode(node);
+			if (fileUri) await addRdmSource(fileUri);
+		}),
+		vscode.commands.registerCommand('reltio.applyRdmConfiguration', async (node?: unknown) => {
+			if (!(node instanceof RdmRootNode)) return;
+			await applyRdmConfigurationForNode(node);
+		}),
+		vscode.commands.registerCommand('reltio.getRdmLookupValues', async (node?: unknown) => {
+			if (!(node instanceof RdmItemNode) || node.sectionKey !== 'lookupTypes') return;
+			const lookupTypeName = node.typeName;
+			if (!lookupTypeName) {
+				void vscode.window.showErrorMessage('This lookup type has no URI to resolve a name from.');
+				return;
+			}
+			const token = tokenStore.getToken(node.environmentName);
+			if (!token) {
+				void vscode.window.showErrorMessage('Provide a token for this environment first.');
+				return;
+			}
+
+			const serviceUri = await resolveRdmServiceUri(node.environmentName, node.tenantId, token);
+			if (serviceUri === '401') {
+				await handle401(node.environmentName);
+				return;
+			}
+			if (!serviceUri) {
+				void vscode.window.showInformationMessage(
+					`Lookup values are unavailable: no RDM service is configured for "${node.tenantId}".`,
+				);
+				return;
+			}
+
+			let response: unknown;
+			try {
+				response = await vscode.window.withProgress(
+					{
+						location: vscode.ProgressLocation.Notification,
+						title: `Fetching lookup values (${lookupTypeName})…`,
+					},
+					() => fetchRdmLookupValues(serviceUri, node.rdmTenantId, lookupTypeName, token),
+				);
+			} catch (e) {
+				if (e instanceof ReltioApiError && e.statusCode === 401) {
+					await handle401(node.environmentName);
+					return;
+				}
+				// Deliberately no panel here: an empty table would assert that this
+				// lookup type has no values, which a failed request cannot establish.
+				void vscode.window.showErrorMessage(
+					`Could not fetch lookup values for "${lookupTypeName}": ${(e as Error).message}`,
+				);
+				return;
+			}
+
+			showLookupValuesPanel(flattenRdmLookupValues(response), response, {
+				environmentName: node.environmentName,
+				tenantId: node.tenantId,
+				rdmTenantId: node.rdmTenantId,
+				lookupTypeName,
+			});
+		}),
+		vscode.commands.registerCommand('reltio.revealInEditor', async (item?: unknown) => {
+			// RDM nodes carry their own file, so they resolve before the L3 path below.
+			if (item instanceof RdmFolderNode || item instanceof RdmItemNode) {
+				const rdmDoc = await vscode.workspace.openTextDocument(item.fileUri);
+				const { ast } = parseRdmDocument(rdmDoc.getText());
+				await revealInEditor(item, ast, item.fileUri);
+				return;
+			}
+			if (item instanceof RdmRootNode) {
+				await vscode.window.showTextDocument(
+					await vscode.workspace.openTextDocument(item.fileUri),
+				);
+				return;
+			}
 			if (!item || !(item instanceof ConfigTreeItem)) return;
 			let doc: vscode.TextDocument;
 			if (item.tenantL3Uri) {
@@ -1283,6 +1401,365 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 	}
 
+	/** `'none'` means the tenant has no RDM configured — a normal outcome, reported silently. */
+	type RdmWriteResult = 'written' | 'none' | '401' | 'error';
+
+	/**
+	 * Two-step RDM chain, run as a continuation of Get Configuration:
+	 * discover the RDM service and tenant ids from the tenant physical
+	 * configuration, then fetch and write each RDM configuration plus its
+	 * baseline.
+	 *
+	 * The physical configuration also carries messaging credentials, storage
+	 * service accounts and internal hostnames, so only `rdmConfig` is read from
+	 * it and none of that response is ever written to disk.
+	 *
+	 * Deliberately NOT called from `writeL3FromApi`: that helper also serves the
+	 * post-SSO tenant auto-add and the apply-defaults flow, which must keep
+	 * fetching L3 alone.
+	 */
+	async function writeRdmFromApi(
+		environmentName: string,
+		tenantId: string,
+		token: string,
+	): Promise<RdmWriteResult> {
+		if (!environmentManager) return 'error';
+
+		let physical: unknown;
+		try {
+			physical = await fetchTenantPhysicalConfiguration(environmentName, tenantId, token);
+		} catch (e) {
+			if (e instanceof ReltioApiError && e.statusCode === 401) {
+				return '401';
+			}
+			void vscode.window.showErrorMessage(
+				`RDM configuration was not fetched: ${(e as Error).message}`,
+			);
+			return 'error';
+		}
+
+		const { serviceUri, rdmTenantIds } = extractRdmConfig(physical);
+		if (!serviceUri || rdmTenantIds.length === 0) {
+			// No RDM for this tenant. Silent by design — this runs on every fetch.
+			return 'none';
+		}
+		// Keep just the service URI so Get Lookup Values need not rediscover it.
+		// Nothing else from the physical configuration outlives this call.
+		rememberRdmServiceUri(environmentName, tenantId, serviceUri);
+
+		let unauthorized = false;
+		let written = 0;
+		const failures: string[] = [];
+
+		for (const rdmTenantId of rdmTenantIds) {
+			try {
+				const body = await fetchRdmConfiguration(serviceUri, rdmTenantId, token);
+				const formatted = prettyPrintJsonIfPossible(body);
+				const uri = await environmentManager.writeRdm(
+					environmentName,
+					tenantId,
+					rdmTenantId,
+					formatted,
+				);
+				await environmentManager.writeRdmBaseline(
+					environmentName,
+					tenantId,
+					rdmTenantId,
+					formatted,
+				);
+				const open = vscode.workspace.textDocuments.find(
+					d => d.uri.toString() === uri.toString(),
+				);
+				if (open && !open.isClosed) {
+					await vscode.commands.executeCommand('workbench.action.files.revert', uri);
+				}
+				written++;
+			} catch (e) {
+				if (e instanceof ReltioApiError && e.statusCode === 401) {
+					unauthorized = true;
+					break;
+				}
+				// One RDM tenant failing must not abandon the others. An
+				// `UntrustedHostError` from `toHttpsBase()` also lands here, which is
+				// the intended outcome for a service URI outside the allowlist.
+				failures.push(`${rdmTenantId} (${(e as Error).message})`);
+			}
+		}
+
+		if (written > 0) {
+			treeProvider.refresh();
+			uxBus.fire();
+		}
+		if (unauthorized) {
+			return '401';
+		}
+		if (failures.length > 0) {
+			void vscode.window.showErrorMessage(
+				`RDM configuration was not fetched for ${failures.length} of ${rdmTenantIds.length} RDM tenant(s): ${failures.join('; ')}`,
+			);
+			return written > 0 ? 'written' : 'error';
+		}
+		return 'written';
+	}
+
+	/**
+	 * Fetch a tenant's RDM configuration after its Business Config was written.
+	 *
+	 * Shared by every path that writes a Business Config — Get Configuration, sign-in
+	 * auto-add and Add Tenant — so RDM follows a tenant the same way everywhere it is
+	 * connected. Callers invoke it only after `writeL3FromApi` returned `'written'`: an
+	 * L3 failure skips RDM, and an RDM failure is reported on its own without undoing
+	 * the L3 result. A tenant without RDM stays silent.
+	 */
+	async function fetchRdmForTenant(
+		environmentName: string,
+		tenantId: string,
+		token: string,
+	): Promise<void> {
+		const rdmResult = await vscode.window.withProgress(
+			{ location: vscode.ProgressLocation.Notification, title: 'Fetching RDM configuration…' },
+			() => writeRdmFromApi(environmentName, tenantId, token),
+		);
+		if (rdmResult === '401') {
+			await handle401(environmentName);
+		}
+	}
+
+	/**
+	 * Write a tenant's Business Config and, once written, continue into its RDM.
+	 *
+	 * This is what every *connect* flow uses — sign-in auto-add, Add Tenant, the Setup
+	 * Wizard and Apply default environments — so a newly connected tenant arrives with
+	 * its RDM just as it arrives with its Business Config. Hand this, never the bare
+	 * `writeL3FromApi`, to any module that connects a tenant: passing the bare function
+	 * is how the wizard once connected tenants without RDM.
+	 *
+	 * Returns the Business Config result unchanged, so callers keep reporting L3
+	 * outcomes exactly as before. RDM is started but not awaited: the user lands in
+	 * their Business Config without waiting on two further requests, and
+	 * `fetchRdmForTenant` reports its own outcome.
+	 *
+	 * Get Configuration does not use this — its drift guard sits between the two steps.
+	 */
+	async function connectTenantConfiguration(
+		environmentName: string,
+		tenantId: string,
+		token: string,
+	): Promise<L3WriteResult> {
+		const result = await writeL3FromApi(environmentName, tenantId, token);
+		if (result === 'written') {
+			void fetchRdmForTenant(environmentName, tenantId, token).catch(() => undefined);
+		}
+		return result;
+	}
+
+	/**
+	 * The tenant's RDM service URI: remembered from a fetch if one happened this
+	 * session, otherwise rediscovered from the tenant physical configuration.
+	 *
+	 * Returns `'401'` so the caller can route to the existing re-login flow, and
+	 * `undefined` when the tenant has no usable RDM service.
+	 */
+	async function resolveRdmServiceUri(
+		environmentName: string,
+		tenantId: string,
+		token: string,
+	): Promise<string | undefined | '401'> {
+		const remembered = recallRdmServiceUri(environmentName, tenantId);
+		if (remembered) {
+			return remembered;
+		}
+		let physical: unknown;
+		try {
+			physical = await fetchTenantPhysicalConfiguration(environmentName, tenantId, token);
+		} catch (e) {
+			if (e instanceof ReltioApiError && e.statusCode === 401) {
+				return '401';
+			}
+			void vscode.window.showErrorMessage(
+				`Could not resolve the RDM service for "${tenantId}": ${(e as Error).message}`,
+			);
+			return undefined;
+		}
+		const { serviceUri } = extractRdmConfig(physical);
+		if (!serviceUri) {
+			return undefined;
+		}
+		rememberRdmServiceUri(environmentName, tenantId, serviceUri);
+		return serviceUri;
+	}
+
+	/**
+	 * The RDM document behind an Add invocation. Both commands are offered on
+	 * the `{rdmTenantId}` row and on a section folder, so either node type can
+	 * arrive here; both carry the file they came from.
+	 */
+	function rdmFileUriFromNode(node: unknown): vscode.Uri | undefined {
+		if (node instanceof RdmRootNode || node instanceof RdmFolderNode) {
+			return node.fileUri;
+		}
+		return undefined;
+	}
+
+	/**
+	 * Push one RDM configuration back to the RDM service.
+	 *
+	 * Mirrors the L3 apply pre-flight rather than pushing directly: the endpoint
+	 * replaces the whole configuration, so without comparing the server against
+	 * the baseline a concurrent change by someone else would be overwritten
+	 * with no warning. The baseline needed for that comparison is already
+	 * written on every fetch.
+	 */
+	async function applyRdmConfigurationForNode(node: RdmRootNode): Promise<void> {
+		if (!environmentManager) return;
+		const token = tokenStore.getToken(node.environmentName);
+		if (!token) {
+			void vscode.window.showErrorMessage('Provide a token for this environment first.');
+			return;
+		}
+
+		const baselineUri = environmentManager.getRdmBaselineUri(
+			node.environmentName,
+			node.tenantId,
+			node.rdmTenantId,
+		);
+		let baselineText: string;
+		try {
+			baselineText = new TextDecoder().decode(await vscode.workspace.fs.readFile(baselineUri));
+		} catch {
+			// No baseline means no evidence of what the server held, so there is no
+			// safe way to tell an intended overwrite from an accidental one.
+			void vscode.window.showErrorMessage(
+				`No baseline on disk for RDM tenant "${node.rdmTenantId}". Run Get Configuration once to record the server copy, then edit and apply.`,
+			);
+			return;
+		}
+
+		const saved = await ensureDocumentSaved(node.fileUri);
+		if (!saved) {
+			void vscode.window.showErrorMessage(`Save ${rdmFileName(node.rdmTenantId)} before applying.`);
+			return;
+		}
+
+		const serviceUri = await resolveRdmServiceUri(node.environmentName, node.tenantId, token);
+		if (serviceUri === '401') {
+			await handle401(node.environmentName);
+			return;
+		}
+		if (!serviceUri) {
+			void vscode.window.showErrorMessage(
+				`Cannot apply: no RDM service is configured for "${node.tenantId}".`,
+			);
+			return;
+		}
+
+		let remoteText: string;
+		try {
+			remoteText = await vscode.window.withProgress(
+				{ location: vscode.ProgressLocation.Notification, title: 'Checking remote RDM configuration…' },
+				() => fetchRdmConfiguration(serviceUri, node.rdmTenantId, token),
+			);
+		} catch (e) {
+			if (e instanceof ReltioApiError && e.statusCode === 401) {
+				await handle401(node.environmentName);
+				return;
+			}
+			void vscode.window.showErrorMessage((e as Error).message);
+			return;
+		}
+
+		const localText = new TextDecoder().decode(await vscode.workspace.fs.readFile(node.fileUri));
+		if (!tryParseJson(baselineText) || !tryParseJson(remoteText)) {
+			void vscode.window.showErrorMessage(
+				'Could not parse the baseline or the remote RDM configuration as JSON.',
+			);
+			return;
+		}
+
+		const diffTitle = `Remote (server) ↔ Local RDM (${node.rdmTenantId})`;
+		if (remoteMatchesBaseline(baselineText, remoteText)) {
+			const pick = await vscode.window.showWarningMessage(
+				`Remote RDM configuration matches your last fetch (baseline). Apply your local changes to "${node.rdmTenantId}"?`,
+				{ modal: true },
+				'Yes',
+				'View changes',
+				"Don't apply",
+			);
+			if (pick === undefined || pick === "Don't apply") return;
+			if (pick === 'View changes') {
+				await openRemoteVsLocalDiff(remoteText, node.fileUri, diffTitle);
+				const ok = await confirmAfterReview(
+					'Review the diff tab (remote vs local). When ready, apply your local RDM configuration or cancel.',
+					'Apply to RDM',
+				);
+				if (!ok) return;
+			}
+		} else {
+			const pick = await vscode.window.showWarningMessage(
+				`The RDM configuration on the server changed since your last fetch. Review before applying.`,
+				{ modal: true },
+				'Review changes',
+				'Skip',
+			);
+			if (pick !== 'Review changes') return;
+			await openRemoteVsLocalDiff(remoteText, node.fileUri, diffTitle);
+			const ok = await confirmAfterReview(
+				'Review the diff tab (remote vs local). The server changed since your last fetch. Apply only if you accept overwriting those changes.',
+				'Apply to RDM',
+			);
+			if (!ok) return;
+		}
+
+		try {
+			await vscode.window.withProgress(
+				{
+					location: vscode.ProgressLocation.Notification,
+					title: `Applying RDM configuration (${node.rdmTenantId})…`,
+				},
+				() => putRdmConfiguration(serviceUri, node.rdmTenantId, localText, token),
+			);
+		} catch (e) {
+			if (e instanceof ReltioApiError && e.statusCode === 401) {
+				await handle401(node.environmentName);
+				return;
+			}
+			void vscode.window.showErrorMessage((e as Error).message);
+			return;
+		}
+
+		// What was pushed is now what the server holds, so it becomes the baseline.
+		await environmentManager.writeRdmBaseline(
+			node.environmentName,
+			node.tenantId,
+			node.rdmTenantId,
+			localText,
+		);
+		treeProvider.refresh();
+		uxBus.fire();
+		void vscode.window.showInformationMessage(
+			`RDM configuration applied to "${node.rdmTenantId}".`,
+		);
+	}
+
+	/**
+	 * File names of RDM configurations whose content no longer matches their
+	 * baseline. A missing baseline counts as drifted — we have no evidence the
+	 * local file is safe to discard.
+	 */
+	async function driftedRdmFileNames(environmentName: string, tenantId: string): Promise<string[]> {
+		if (!environmentManager) return [];
+		const ids = await environmentManager.listRdmTenantIds(environmentName, tenantId);
+		const drifted: string[] = [];
+		for (const id of ids) {
+			const uri = environmentManager.getRdmUri(environmentName, tenantId, id);
+			const baselineUri = environmentManager.getRdmBaselineUri(environmentName, tenantId, id);
+			if (await hasUnpublishedLocalChanges(uri, baselineUri)) {
+				drifted.push(rdmFileName(id));
+			}
+		}
+		return drifted;
+	}
+
 	async function browseEntitiesFromTree(item?: ConfigTreeItem): Promise<void> {
 		if (!environmentManager) return;
 		if (!item && treeView.selection.length > 0 && treeView.selection[0] instanceof ConfigTreeItem) {
@@ -1441,7 +1918,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			onTenantCreated: (host, tenantId) => {
 				treeProvider.addTenant(host, tenantId);
 			},
-			writeL3FromApi: fetchL3 ? writeL3FromApi : undefined,
+			writeL3FromApi: fetchL3 ? connectTenantConfiguration : undefined,
 			fetchL3,
 		});
 		treeProvider.refresh();
@@ -1508,7 +1985,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		try {
 			await environmentManager.createTenant(environmentName, ssoTenantId);
 			treeProvider.addTenant(environmentName, ssoTenantId);
-			await writeL3FromApi(environmentName, ssoTenantId, accessToken);
+			await connectTenantConfiguration(environmentName, ssoTenantId, accessToken);
 			// Open the L3 file in the editor so the user lands directly in their work.
 			// Idempotent — if it's already open, VS Code focuses the existing tab.
 			try {
@@ -2007,7 +2484,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			}
 			const fetchResult = await vscode.window.withProgress(
 				{ location: vscode.ProgressLocation.Notification, title: `Fetching L3 for ${pick}…` },
-				() => writeL3FromApi(resolvedEnvName, pick, token),
+				() => connectTenantConfiguration(resolvedEnvName, pick, token),
 			);
 			if (fetchResult === '401') {
 				await handle401(resolvedEnvName);
@@ -2489,52 +2966,64 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				return;
 			}
 
+			const l3Uri = environmentManager.getL3Uri(node.environmentName, node.tenantId);
+			const baselineUri = environmentManager.getRemoteBaselineUri(node.environmentName, node.tenantId);
 			if (node.hasL3) {
-				const l3Uri = environmentManager.getL3Uri(node.environmentName, node.tenantId);
 				await ensureDocumentSaved(l3Uri);
-				const baselineUri = environmentManager.getRemoteBaselineUri(node.environmentName, node.tenantId);
-				if (await hasUnpublishedLocalChanges(l3Uri, baselineUri)) {
-					const pick = await vscode.window.showWarningMessage(
-						`Local L3 configuration for "${node.tenantId}" has changes that haven't been applied to the tenant. Fetching will overwrite them with the server's configuration.`,
-						{ modal: true },
-						'Review changes',
-						'Fetch anyway',
-					);
-					if (pick === undefined) {
+			}
+
+			// One combined warning for everything this fetch would overwrite —
+			// L3 and any RDM configurations — rather than a modal per file.
+			const l3Drifted = node.hasL3 && (await hasUnpublishedLocalChanges(l3Uri, baselineUri));
+			const driftedRdm = await driftedRdmFileNames(node.environmentName, node.tenantId);
+			if (l3Drifted || driftedRdm.length > 0) {
+				// Name the config file from its actual URI: the layout moved it to
+				// `Business Config/BusinessConfig.json`, and a Git-sourced tenant's
+				// file can be named anything, so no literal is right in every mode.
+				const names = [...(l3Drifted ? [path.basename(l3Uri.path)] : []), ...driftedRdm];
+				// Reviewing only makes sense when L3 itself drifted — the diff is L3-vs-remote.
+				const choices = l3Drifted ? ['Review changes', 'Fetch anyway'] : ['Fetch anyway'];
+				const pick = await vscode.window.showWarningMessage(
+					`These files for "${node.tenantId}" have changes that haven't been applied to the tenant. Fetching will overwrite them with the server's configuration:\n\n${names
+						.map(n => `• ${n}`)
+						.join('\n')}`,
+					{ modal: true },
+					...choices,
+				);
+				if (pick === undefined) {
+					return;
+				}
+				if (pick === 'Review changes') {
+					let remoteText: string;
+					try {
+						remoteText = await vscode.window.withProgress(
+							{ location: vscode.ProgressLocation.Notification, title: 'Checking remote configuration…' },
+							() => fetchL3Configuration(node.environmentName, node.tenantId, token),
+						);
+					} catch (e) {
+						if (e instanceof ReltioApiError && e.statusCode === 401) {
+							await handle401(node.environmentName);
+							return;
+						}
+						void vscode.window.showErrorMessage((e as Error).message);
 						return;
 					}
-					if (pick === 'Review changes') {
-						let remoteText: string;
-						try {
-							remoteText = await vscode.window.withProgress(
-								{ location: vscode.ProgressLocation.Notification, title: 'Checking remote configuration…' },
-								() => fetchL3Configuration(node.environmentName, node.tenantId, token),
-							);
-						} catch (e) {
-							if (e instanceof ReltioApiError && e.statusCode === 401) {
-								await handle401(node.environmentName);
-								return;
-							}
-							void vscode.window.showErrorMessage((e as Error).message);
-							return;
-						}
-						await openRemoteVsLocalDiff(remoteText, l3Uri, `Remote (server) ↔ Local L3 (${node.tenantId})`);
-						const choice = await vscode.window.showInformationMessage(
-							'Review the diff tab (remote vs local). "Fetch and overwrite" replaces your local file with the remote (left) version. "Apply my changes instead" pushes your local edits to the tenant.',
-							{ modal: false },
-							'Fetch and overwrite',
-							'Apply my changes instead',
-							'Cancel',
-						);
-						if (choice === 'Apply my changes instead') {
-							const localBytes = await vscode.workspace.fs.readFile(l3Uri);
-							const localText = new TextDecoder().decode(localBytes);
-							await pushLocalToTenant(node, token, localText);
-							return;
-						}
-						if (choice !== 'Fetch and overwrite') {
-							return;
-						}
+					await openRemoteVsLocalDiff(remoteText, l3Uri, `Remote (server) ↔ Local L3 (${node.tenantId})`);
+					const choice = await vscode.window.showInformationMessage(
+						'Review the diff tab (remote vs local). "Fetch and overwrite" replaces your local file with the remote (left) version. "Apply my changes instead" pushes your local edits to the tenant.',
+						{ modal: false },
+						'Fetch and overwrite',
+						'Apply my changes instead',
+						'Cancel',
+					);
+					if (choice === 'Apply my changes instead') {
+						const localBytes = await vscode.workspace.fs.readFile(l3Uri);
+						const localText = new TextDecoder().decode(localBytes);
+						await pushLocalToTenant(node, token, localText);
+						return;
+					}
+					if (choice !== 'Fetch and overwrite') {
+						return;
 					}
 				}
 			}
@@ -2545,7 +3034,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			);
 			if (result === '401') {
 				await handle401(node.environmentName);
+				return;
 			}
+			// RDM rides on this command, but never at L3's expense: only continue
+			// once L3 is safely written, and let an RDM failure report on its own.
+			if (result !== 'written') {
+				return;
+			}
+			await fetchRdmForTenant(node.environmentName, node.tenantId, token);
 		}),
 		vscode.commands.registerCommand('reltio.applyL3Configuration', async (node?: TenantNode) => {
 			if (!node) return;
@@ -2811,7 +3307,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				oauthCredentialsStore,
 				uxBus,
 				normalizeEnvironmentName,
-				writeL3FromApi,
+				writeL3FromApi: connectTenantConfiguration,
 				autoAddSsoTenant,
 			});
 		}),

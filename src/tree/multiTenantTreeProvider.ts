@@ -1,5 +1,10 @@
 import * as vscode from 'vscode';
-import { parseDocument, type ParsedDocument } from '../parser/configParser';
+import {
+	parseDocument,
+	parseRdmDocument,
+	type ParsedDocument,
+	type ParsedRdmDocument,
+} from '../parser/configParser';
 import { EnvironmentManager, type TenantInfo } from '../workspace/environmentManager';
 import { getCurrentBranch } from '../workspace/tenantGitBinding';
 import { isGitRepo } from '../workspace/gitConfigSource';
@@ -15,7 +20,17 @@ import {
 	HistoryFolderNode,
 	HistorySnapshotNode,
 	BusinessConfigFolderNode,
+	RdmGroupNode,
+	RdmRootNode,
+	RdmFolderNode,
+	RdmItemNode,
 } from './multiTenantNodes';
+import {
+	getRdmRootChildren,
+	getRdmFolderChildren,
+	getRdmItemParent,
+	getRdmFolderParent,
+} from './rdmSubtree';
 import {
 	WorkflowsFolderNode,
 	WorkflowFetchActionNode,
@@ -77,7 +92,11 @@ export type MultiTenantTreeElement =
 	| WorkflowRepoBpmnFileNode
 	| WorkflowRepoGroupNode
 	| WorkflowRepoModuleNode
-	| WorkflowRepoJavaFileNode;
+	| WorkflowRepoJavaFileNode
+	| RdmGroupNode
+	| RdmRootNode
+	| RdmFolderNode
+	| RdmItemNode;
 
 /** Shared by the key builder and the by-environment sweep in `removeEnvironment`. */
 const HISTORY_EXPOSED_PREFIX = 'reltio.history.exposed::';
@@ -767,7 +786,44 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 				arguments: [element.fileUri],
 			};
 		}
+		// Leaf RDM entries get the same primary-click reveal that L3 nodes have.
+		// Roots and folders keep their expand/collapse gesture instead.
+		if (element instanceof RdmItemNode && item.command === undefined) {
+			item.command = {
+				command: 'reltio.revealInEditor',
+				title: 'Show in Editor',
+				arguments: [element],
+			};
+		}
 		return item;
+	}
+
+	/**
+	 * Rebuild a tenant node from the last scan. Centralised so every parent
+	 * lookup agrees on the same flags — in particular `hasRdm`, which decides
+	 * whether the node is expandable at all.
+	 */
+	private tenantNodeFor(environmentName: string, tenantId: string): TenantNode {
+		const ti = this.findTenantInfo(environmentName, tenantId);
+		const hasL3 = ti?.hasL3 ?? false;
+		const authorized = this.tokenStore.hasToken(environmentName);
+		return new TenantNode(
+			environmentName,
+			tenantId,
+			hasL3,
+			hasL3 && !authorized,
+			authorized,
+			this.uxState?.perTenant.get(`${environmentName}/${tenantId}`) ?? 'T_NO_L3',
+			false,
+			this.gitLabelFor(environmentName, tenantId),
+			// Branch and Git binding are left unset, matching the getParent sites
+			// this helper replaced: a parent node only locates an item for reveal
+			// (by `id`); the row that is actually drawn comes from getChildren,
+			// which reads real Git state.
+			undefined,
+			false,
+			ti?.hasRdm ?? false,
+		);
 	}
 
 	getParent(element: MultiTenantTreeElement): vscode.ProviderResult<MultiTenantTreeElement> {
@@ -911,6 +967,18 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 				false,
 				this.gitLabelFor(element.environmentName, element.tenantId),
 			);
+		}
+		if (element instanceof RdmGroupNode) {
+			return this.tenantNodeFor(element.environmentName, element.tenantId);
+		}
+		if (element instanceof RdmRootNode) {
+			return new RdmGroupNode(element.environmentName, element.tenantId);
+		}
+		if (element instanceof RdmFolderNode) {
+			return getRdmFolderParent(element);
+		}
+		if (element instanceof RdmItemNode) {
+			return this.getParentForRdmItem(element);
 		}
 		if (element instanceof HistorySnapshotNode) {
 			return this.getParentForHistorySnapshot(element);
@@ -1233,6 +1301,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 					(await this.identityFor(element.environmentName, t.tenantId))?.tenantId,
 					(await this.gitStateFor(element.environmentName, t.tenantId)).branch,
 					(await this.gitStateFor(element.environmentName, t.tenantId)).bound,
+					t.hasRdm,
 				)),
 			);
 		}
@@ -1245,6 +1314,14 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 			// Business Config folder — only shown when an L3 file is present.
 			if (element.hasL3) {
 				children.push(new BusinessConfigFolderNode(element.environmentName, element.tenantId));
+			}
+
+			// RDM folder — a sibling of Business Config, as `RDM/` is beside `Business Config/`
+			// on disk. Gated on its own files rather than on L3, so a tenant with RDM but no
+			// Business Config still shows it, and placed between the two the way the component
+			// tree orders them.
+			if ((await this.environmentManager.listRdmTenantIds(element.environmentName, element.tenantId)).length > 0) {
+				children.push(new RdmGroupNode(element.environmentName, element.tenantId));
 			}
 
 			// Workflows folder — shown regardless of L3 presence, but never in git mode.
@@ -1480,6 +1557,23 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 				j => new UnregisteredJarNode(element.environmentName, element.tenantId, j),
 			);
 		}
+		if (element instanceof RdmGroupNode) {
+			return this.rdmRootsFor(element.environmentName, element.tenantId);
+		}
+		if (element instanceof RdmRootNode) {
+			if (element.unreadable) return [];
+			const parsed = await this.loadParsedRdm(element.fileUri);
+			if (!parsed) return [];
+			return getRdmRootChildren(parsed.model, element);
+		}
+		if (element instanceof RdmFolderNode) {
+			const parsed = await this.loadParsedRdm(element.fileUri);
+			if (!parsed) return [];
+			return getRdmFolderChildren(parsed.model, element);
+		}
+		if (element instanceof RdmItemNode) {
+			return [];
+		}
 		if (element instanceof HistoryFolderNode) {
 			const dir = this.environmentManager.getHistoryDirectoryUri(element.environmentName, element.tenantId);
 			const snaps = await listLocalHistorySnapshots(dir);
@@ -1589,6 +1683,47 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		} catch {
 			return undefined;
 		}
+	}
+
+	/** Returns undefined when the file is unreadable or not parseable as JSON. */
+	private async loadParsedRdm(uri: vscode.Uri): Promise<ParsedRdmDocument | undefined> {
+		let text: string | undefined;
+		const open = vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString());
+		if (open) {
+			text = open.getText();
+		} else {
+			try {
+				text = new TextDecoder().decode(await vscode.workspace.fs.readFile(uri));
+			} catch {
+				return undefined;
+			}
+		}
+		const parsed = parseRdmDocument(text);
+		return parsed.errors.length > 0 ? undefined : parsed;
+	}
+
+	/**
+	 * One root per RDM configuration on disk, sorted by RDM tenant id so the
+	 * tree is stable across fetches. A file that will not parse still gets a
+	 * root, marked unreadable — omitting it would leave a user who just fetched
+	 * successfully with no sign of why the data is missing.
+	 */
+	private async rdmRootsFor(environmentName: string, tenantId: string): Promise<RdmRootNode[]> {
+		if (!this.environmentManager) return [];
+		const ids = await this.environmentManager.listRdmTenantIds(environmentName, tenantId);
+		const roots: RdmRootNode[] = [];
+		for (const rdmTenantId of ids) {
+			const fileUri = this.environmentManager.getRdmUri(environmentName, tenantId, rdmTenantId);
+			const parsed = await this.loadParsedRdm(fileUri);
+			roots.push(new RdmRootNode(environmentName, tenantId, rdmTenantId, fileUri, parsed === undefined));
+		}
+		return roots;
+	}
+
+	private async getParentForRdmItem(element: RdmItemNode): Promise<RdmFolderNode | undefined> {
+		const parsed = await this.loadParsedRdm(element.fileUri);
+		if (!parsed) return undefined;
+		return getRdmItemParent(parsed.model, element);
 	}
 
 	async findEntityTypeItem(shortName: string): Promise<ConfigTreeItem | undefined> {

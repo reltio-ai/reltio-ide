@@ -40,8 +40,18 @@
   "contributes": {
     "jsonValidation": [
       {
-        "fileMatch": "*.reltio.json",
+        "fileMatch": [
+          "*.reltio.json",
+          "!RDM.*.reltio.json"
+        ],
         "url": "./schemas/reltio-metadata.schema.json"
+      },
+      {
+        "fileMatch": [
+          "**/RDM/*/config.json",
+          "RDM.*.reltio.json"
+        ],
+        "url": "./schemas/reltio-rdm.schema.json"
       }
     ],
     "viewsContainers": {
@@ -83,6 +93,24 @@
         "command": "reltio.showOntologyFromTree",
         "title": "Show in Ontology",
         "icon": "$(open-preview)"
+      },
+      {
+        "command": "reltio.getRdmLookupValues",
+        "title": "Get Lookup Values",
+        "icon": "$(list-unordered)"
+      },
+      {
+        "command": "reltio.addRdmLookupType",
+        "title": "Add a new Lookup Type"
+      },
+      {
+        "command": "reltio.addRdmSource",
+        "title": "Add a new Source"
+      },
+      {
+        "command": "reltio.applyRdmConfiguration",
+        "title": "Apply RDM Configuration",
+        "icon": "$(cloud-upload)"
       },
       {
         "command": "reltio.addEntityType",
@@ -630,6 +658,31 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "reltio.getRdmLookupValues",
+          "when": "view == reltioConfigTree && viewItem == reltio.rdm.item.lookupTypes",
+          "group": "navigation@0"
+        },
+        {
+          "command": "reltio.addRdmLookupType",
+          "when": "view == reltioConfigTree && (viewItem == reltio.rdm.folder.lookupTypes || viewItem == reltio.rdm.root)",
+          "group": "2_rdmadd@01"
+        },
+        {
+          "command": "reltio.addRdmSource",
+          "when": "view == reltioConfigTree && (viewItem == reltio.rdm.folder.sources || viewItem == reltio.rdm.root)",
+          "group": "2_rdmadd@02"
+        },
+        {
+          "command": "reltio.applyRdmConfiguration",
+          "when": "view == reltioConfigTree && viewItem == reltio.rdm.root",
+          "group": "3_rdmapply"
+        },
+        {
+          "command": "reltio.revealInEditor",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.rdm\\./",
+          "group": "navigation@1"
+        },
         {
           "command": "reltio.revealInEditor",
           "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.(item|folder)\\./",

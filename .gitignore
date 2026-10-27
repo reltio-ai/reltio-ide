@@ -14,6 +14,13 @@ samples/.reltio/
 # Local developer reference docs — not source
 code_understanding/
 
+# Raw API responses pulled from live tenants for local reference.
+# These carry real tenant identifiers and infrastructure credentials —
+# sanitized fixtures live in samples/ instead.
+/GetTenantPhysicalConfig.json
+/RDM_Config.json
+/getLookupResponse.json
+
 # Claude Code local files
 CLAUDE.md
 .claude/

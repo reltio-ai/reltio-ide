@@ -5,7 +5,11 @@ import {
 	BUSINESS_CONFIG_FILE,
 	HISTORY_DIR,
 	LAYOUT_FILE,
+	RDM_CONFIG_FILENAME,
+	RDM_DIR,
 	materializeTenantTree,
+	rdmBaselinePath,
+	rdmConfigPath,
 	tenantPath,
 } from './tenantFolderStructure';
 import {
@@ -23,9 +27,57 @@ const TENANT_SUFFIX = '.reltio.tenant';
 /** Legacy home for env/tenant dirs. Still scanned, but new environments go to the workspace root. */
 export const RELTIO_WORKSPACE_DOTDIR = '.reltio';
 
+const RDM_PREFIX = 'RDM.';
+const RDM_SUFFIX = '.reltio.json';
+const RDM_BASELINE_SUFFIX = '.remote-baseline.reltio.json';
+
+/** Where an RDM tenant's configuration lives, as shown to the user: `RDM/{rdmTenantId}/config.json`. */
+export function rdmFileName(rdmTenantId: string): string {
+	return rdmConfigPath(rdmTenantId);
+}
+
+// Root-level names from before the component tree. Only relocation reads these; nothing
+// writes them any more.
+
+/** Legacy `RDM.{rdmTenantId}.reltio.json` at the tenant folder root. */
+export function legacyRdmFileName(rdmTenantId: string): string {
+	return `${RDM_PREFIX}${rdmTenantId}${RDM_SUFFIX}`;
+}
+
+/** Legacy `RDM.{rdmTenantId}.remote-baseline.reltio.json` at the tenant folder root. */
+export function legacyRdmBaselineFileName(rdmTenantId: string): string {
+	return `${RDM_PREFIX}${rdmTenantId}${RDM_BASELINE_SUFFIX}`;
+}
+
+/**
+ * True for a legacy root-level RDM configuration file, false for its baseline twin.
+ * Both share the `RDM.` prefix and `.reltio.json` suffix, so the baseline
+ * must be excluded explicitly or it would be treated as a second config.
+ */
+export function isRdmConfigurationFileName(name: string): boolean {
+	return (
+		name.startsWith(RDM_PREFIX) &&
+		name.endsWith(RDM_SUFFIX) &&
+		!name.endsWith(RDM_BASELINE_SUFFIX) &&
+		// The prefix and suffix would otherwise overlap in a bare `RDM.reltio.json`,
+		// yielding an empty tenant id.
+		name.length > RDM_PREFIX.length + RDM_SUFFIX.length
+	);
+}
+
+/** Recover the RDM tenant id from a legacy root-level RDM configuration file name. */
+export function rdmTenantIdFromFileName(name: string): string | undefined {
+	if (!isRdmConfigurationFileName(name)) {
+		return undefined;
+	}
+	const id = name.slice(RDM_PREFIX.length, name.length - RDM_SUFFIX.length);
+	return id || undefined;
+}
+
 export interface TenantInfo {
 	tenantId: string;
 	hasL3: boolean;
+	hasRdm: boolean;
 }
 
 export interface EnvironmentInfo {
@@ -179,6 +231,78 @@ export class EnvironmentManager {
 		return tenantPath(this.tenantUri(environment, tenantId), BASELINE_FILE);
 	}
 
+	// RDM configurations are fetched from the RDM service and land in the tenant's
+	// `RDM/` component folder — deliberately not routed through `findGitSource()` the
+	// way `getL3Uri` is, since a Git-backed L3 has no RDM counterpart in the repo.
+	getRdmUri(environment: string, tenantId: string, rdmTenantId: string): vscode.Uri {
+		return tenantPath(this.tenantUri(environment, tenantId), rdmConfigPath(rdmTenantId));
+	}
+
+	/** Under `.reltio-ide/`, so the layout's generated gitignore keeps it out of the tracked tree. */
+	getRdmBaselineUri(environment: string, tenantId: string, rdmTenantId: string): vscode.Uri {
+		return tenantPath(this.tenantUri(environment, tenantId), rdmBaselinePath(rdmTenantId));
+	}
+
+	/** Legacy root-level locations, read only by relocation. */
+	getLegacyRdmUri(environment: string, tenantId: string, rdmTenantId: string): vscode.Uri {
+		return vscode.Uri.joinPath(this.tenantUri(environment, tenantId), legacyRdmFileName(rdmTenantId));
+	}
+
+	getLegacyRdmBaselineUri(environment: string, tenantId: string, rdmTenantId: string): vscode.Uri {
+		return vscode.Uri.joinPath(
+			this.tenantUri(environment, tenantId),
+			legacyRdmBaselineFileName(rdmTenantId),
+		);
+	}
+
+	/**
+	 * RDM tenant ids with a configuration on disk: each subfolder of `RDM/` that holds a
+	 * `config.json`, named by the subfolder. Files directly under `RDM/` — the layout's
+	 * generated README among them — are never RDM tenants, and neither is a subfolder
+	 * without a `config.json`. Used by the tree, the fetch drift guard and `scanTenants`.
+	 */
+	async listRdmTenantIds(environment: string, tenantId: string): Promise<string[]> {
+		const rdmDir = tenantPath(this.tenantUri(environment, tenantId), RDM_DIR);
+		let entries: [string, vscode.FileType][];
+		try {
+			entries = await vscode.workspace.fs.readDirectory(rdmDir);
+		} catch {
+			return [];
+		}
+		const out: string[] = [];
+		for (const [name, type] of entries) {
+			if (type !== vscode.FileType.Directory) continue;
+			try {
+				const stat = await vscode.workspace.fs.stat(
+					vscode.Uri.joinPath(rdmDir, name, RDM_CONFIG_FILENAME),
+				);
+				if (stat.type === vscode.FileType.File) out.push(name);
+			} catch {
+				// No config.json — not an RDM tenant.
+			}
+		}
+		out.sort((a, b) => a.localeCompare(b));
+		return out;
+	}
+
+	/** RDM tenant ids that still have a root-level configuration file awaiting relocation. */
+	async listLegacyRdmTenantIds(environment: string, tenantId: string): Promise<string[]> {
+		let entries: [string, vscode.FileType][];
+		try {
+			entries = await vscode.workspace.fs.readDirectory(this.tenantUri(environment, tenantId));
+		} catch {
+			return [];
+		}
+		const out: string[] = [];
+		for (const [name, type] of entries) {
+			if (type !== vscode.FileType.File) continue;
+			const id = rdmTenantIdFromFileName(name);
+			if (id) out.push(id);
+		}
+		out.sort((a, b) => a.localeCompare(b));
+		return out;
+	}
+
 	getLayoutUri(environment: string, tenantId: string): vscode.Uri {
 		const source = this.findGitSource(environment, tenantId);
 		if (source) {
@@ -307,7 +431,13 @@ export class EnvironmentManager {
 		if (this.gitSources.length > 0) {
 			// Group all tenants under a single environment (repo name)
 			const environmentName = this.gitSources[0]?.environmentName ?? 'git-config';
-			const tenants = this.gitSources.map(s => ({ tenantId: s.tenantId, hasL3: true }));
+			// Git-sourced configs live in a repository checkout, not a
+			// `*.reltio.tenant` folder, so they never carry fetched RDM files.
+			const tenants = this.gitSources.map(s => ({
+				tenantId: s.tenantId,
+				hasL3: true,
+				hasRdm: false,
+			}));
 			return [{ name: environmentName, tenants }];
 		}
 		this.envLocations.clear();
@@ -386,7 +516,8 @@ export class EnvironmentManager {
 			} catch {
 				hasL3 = false;
 			}
-			out.push({ tenantId, hasL3 });
+			const hasRdm = (await this.listRdmTenantIds(environment, tenantId)).length > 0;
+			out.push({ tenantId, hasL3, hasRdm });
 		}
 		out.sort((a, b) => a.tenantId.localeCompare(b.tenantId));
 		return out;
@@ -448,6 +579,32 @@ export class EnvironmentManager {
 
 	async writeL3(environment: string, tenantId: string, content: string): Promise<vscode.Uri> {
 		const uri = this.getL3Uri(environment, tenantId);
+		await this.ensureParentDirectory(uri);
+		const enc = new TextEncoder();
+		await vscode.workspace.fs.writeFile(uri, enc.encode(content));
+		return uri;
+	}
+
+	async writeRdm(
+		environment: string,
+		tenantId: string,
+		rdmTenantId: string,
+		content: string,
+	): Promise<vscode.Uri> {
+		const uri = this.getRdmUri(environment, tenantId, rdmTenantId);
+		await this.ensureParentDirectory(uri);
+		const enc = new TextEncoder();
+		await vscode.workspace.fs.writeFile(uri, enc.encode(content));
+		return uri;
+	}
+
+	async writeRdmBaseline(
+		environment: string,
+		tenantId: string,
+		rdmTenantId: string,
+		content: string,
+	): Promise<vscode.Uri> {
+		const uri = this.getRdmBaselineUri(environment, tenantId, rdmTenantId);
 		await this.ensureParentDirectory(uri);
 		const enc = new TextEncoder();
 		await vscode.workspace.fs.writeFile(uri, enc.encode(content));
