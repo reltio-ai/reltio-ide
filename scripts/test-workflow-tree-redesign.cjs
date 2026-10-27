@@ -147,7 +147,7 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 			repoSync: new Map([['same', 'clean'], ['differs', 'changed']]),
 		}).filter(r => r.kind === 'repo');
 		assert.deepStrictEqual(states.map(r => [r.processId, r.state]), [
-			['differs', 'differs'], ['fresh', 'notDeployed'], ['nocompare', 'unknown'], ['same', 'same'],
+			['differs', 'differs'], ['fresh', 'notDeployed'], ['nocompare', 'deployed'], ['same', 'same'],
 		]);
 		// Definitions not fetched: not deployed cannot be claimed.
 		assert.strictEqual(merge({ definitions: undefined, repoFiles: [rep('x')] })[0].state, 'unknown');

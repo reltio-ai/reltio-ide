@@ -608,6 +608,7 @@ export class WorkflowDraftNode extends vscode.TreeItem {
 			notDeployed: 'not deployed',
 			differs: 'differs from tenant',
 			same: 'same as tenant',
+			deployed: 'deployed • not compared yet',
 			unknown: undefined,
 		}[repoState];
 		this.description = source === 'repo'

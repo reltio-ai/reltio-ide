@@ -64,7 +64,7 @@ export interface DraftRow<U> {
  *   `same`        — deployed, and identical
  *   `unknown`     — not compared (definitions not fetched, or no token to fetch the deployed XML)
  */
-export type RepoRowState = 'notDeployed' | 'differs' | 'same' | 'unknown';
+export type RepoRowState = 'notDeployed' | 'differs' | 'same' | 'deployed' | 'unknown';
 
 export interface RepoRow<U> {
 	readonly kind: 'repo';
@@ -144,7 +144,7 @@ export function mergeProcessDefinitionRows<U>(inputs: ProcessRowInputs<U>): Proc
 				if (!deployedIds.has(file.processId)) state = 'notDeployed';
 				else {
 					const sync = repoSync.get(file.processId);
-					state = sync === 'changed' ? 'differs' : sync === 'clean' ? 'same' : 'unknown';
+					state = sync === 'changed' ? 'differs' : sync === 'clean' ? 'same' : 'deployed';
 				}
 			}
 			return {
