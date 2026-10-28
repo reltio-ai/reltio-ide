@@ -38,6 +38,8 @@ const SCRIPTS = [
 	'test-rdm-component-folder.cjs',
 	'test-rdm-configuration-authoring.cjs',
 	'test-rdm-configuration-fetch.cjs',
+	'test-rdm-lookup-csv-load.cjs',
+	'test-rdm-lookup-value-authoring.cjs',
 	'test-rdm-lookup-values.cjs',
 	'test-rdm-tree-view.cjs',
 	'test-replace-tenants-with-enhanced-tenants.cjs',

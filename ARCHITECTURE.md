@@ -111,7 +111,7 @@ graph TD
 | `src/workspace/` | `EnvironmentManager` — creates `*.reltio.environment` at the **workspace root** (still scans legacy `.reltio/` dirs and never relocates one), manages tenant folders and resolves every tenant-local path through **`tenantFolderStructure.ts`** via `vscode.workspace.fs`; **`tenantFolderStructure.ts`** — the component-tree definition, docs-URL map, `materializeTenantTree`, and the only place legacy path literals are named; **`tenantGitBinding.ts`** — clone a chosen branch into a tenant folder, create an absent branch from the remote default, read `HEAD`, dirty-worktree check; **`layoutMigration.ts`** — detect/plan/back up/migrate/undo the legacy flat layout; `configurationHistory.ts` — snapshot file naming, read/write/clear under `history/`; **`reltioAgentSync.ts`** — materialize bundled skills, Velocity Packs, and the LCA knowledge base under `.reltio/reltio-agent/` (see D3b / `lca-assistant`), then run agent discovery and return a report of anything it could not install; **`agentSkillDiscovery.ts`** — install each bundled skill at `.claude/skills/<name>/` and the three missing-skill guides, tracking ownership in `.sync-state.json` (see *Agent skills in the user workspace*); **`matchVerification.ts`** — file bridge that answers an agent's `match-verification/request.json` by calling `_verifyMatches` with the user's session (see *Match verification bridge*); **`reltioAutoSave.ts`** — save dirty `*.reltio.json` on editor switch (and optionally on window blur) so disk matches agents and parse/index passes; **`gitConfigSource.ts`** — system-`git` shell-out helpers (detect existing repo/remote, clone, empty-folder check, path containment with a Windows case-insensitive drive fix) via `child_process.execFile`; **`l3Discovery.ts`** — depth-10 search for `BusinessConfig.json` (case-insensitive) plus conflict-aware environment/tenant naming; **`gitSourceMarker.ts`** — persists discovered L3 locations and tenant identity in `.reltio-config-source.json` (multi-source format, backward compatible, auto-gitignored along with `.reltio/`) |
 | `src/navigation/` | Language feature providers: `UriIndex` (central URI → AST mapping), Go-to-Definition, Find References, Document Links, Diagnostics for unresolved URIs, **`uriCompletionProvider`** (Ctrl+Space URI + same-property value hints), **`uriPropertyScopes`** / **`samePropertyValues`** |
 | `src/commands/` | `editCommands` (insert/delete/rename via `WorkspaceEdit`), `elementSkeletons` (default-name builders), `revealInsertion` (select inserted JSON), `revealCommand` |
-| `src/rdm/` | RDM-specific runtime pieces outside the tree: **`lookupValuesPanel`** (nonce-CSP webview rendering the Code / Source / Value at Source table) and **`rdmServiceCache`** (in-memory service-URI memory, never persisted) |
+| `src/rdm/` | RDM-specific runtime pieces outside the tree: **`lookupValuesPanel`** (nonce-CSP webview rendering the Code / Source / Value at Source table and the Add Value form), **`lookupValueDraft`** (pure validation, create body and code reconciliation for Add Value), **`lookupCsv`** (pure CSV parsing, checks and per-code outcomes for the CSV load), **`lookupLoadBridge`** (the agent file bridge for the CSV load) and **`rdmServiceCache`** (in-memory service-URI memory, never persisted) |
 | `src/ontology/` | Ontology preview: transforms model to graph, runs ELK layout, manages the webview panel lifecycle, persists layout positions. Also holds `inspectorHtml.ts` (pure, escaped HTML builders for the inspector popup) and `webviewMessageSafety.ts` (`message`-origin check, prototype-safe dynamic-key map) — kept outside `src/webview/` so `tsc`/`importDist` can test them directly, but imported by both the host and the webview bundle |
 | `src/workflow/` | BPMN and Workflow Adapter logic, split by what each part needs so the testable majority needs nothing: **`workflowAdapterRegistry.ts`** — bundled environment → Adapter host table, consulted before probing or prompting (all lookups via `Map`, since the key is a workspace directory name); **`bpmnModel.ts`** — structural read of BPMN via bounded regexes (no XML parser anywhere in this repo, deliberately), blanking comments and the DI block with same-length space runs so reported character offsets still index the original text; **`bpmnDiagram.ts`** — pure, synchronous DI serializer, reader, and fixed-chain layout; **`bpmnLayout.ts`** — the `elkjs` half, async, so the draft-creation path never loads the layout engine; **`bpmnLabels.ts`** — pure label geometry and text, imported by both the layout and the webview bundle so the space reserved for a caption is the space it is drawn in; **`bpmnDiagnostics.ts`** — the `bpmn-rules.md` §10 checks as pure functions of the document text, returning offset-based findings; **`bpmnDiagnosticsManager.ts`** — the thin `vscode` adapter that turns those into squiggles in its own `reltio-bpmn` collection; **`bpmnPanel.ts`** — diagram webview panel lifecycle |
 | `src/webview/` | Browser-side code for the two preview panels — `ontologyView.ts` (ontology graph) and `bpmnView.ts` (BPMN diagram): SVG rendering, pan/zoom/drag, inspectors, context menus. Bundled separately as IIFE, one bundle each. Both validate the origin of every incoming `postMessage` before trusting it (`window.origin`, captured at bootstrap, vs. `e.origin`). `bpmnView.css` is built on VS Code theme variables; `ontologyView.css` predates the light-theme work and renders dark regardless of theme |
@@ -145,7 +145,8 @@ Layout under the **workspace root** after sync:
 ├── skills/default/                      # copies of skills/reltio-default — refreshed on skills bundle bump
 ├── velocity-packs/                      # mirror of packaged resources/velocity-packs — refreshed on pack bundle bump
 ├── lca-knowledge-base/                  # mirror of resources/lca-knowledge-base — refreshed on LCA KB bundle bump
-└── match-verification/                  # request.json (agent) / result.json (extension) — see Match verification bridge
+├── match-verification/                  # request.json (agent) / result.json (extension) — see Match verification bridge
+└── rdm-lookup-load/                     # request.json (agent) / result.json (extension) — see RDM lookup load bridge
 
 .claude/skills/reltio-<playbook>/        # discoverable skill copies, every editor (Claude Code reads only .claude/) — managed
 .claude/rules/reltio-skills.md           # missing-skill guide, Claude Code — managed
@@ -189,6 +190,52 @@ OpenSpec: **`match-rule-generation-skill`** (D1–D3). Lets an agent test a cand
 | `failed` | it ran and failed; the agent must not insert the rule | `invalid-request`, `api-error` (with `httpStatus`, `responseBody`), `untrusted-host`, `network` |
 
 `no-shared-token` means `matchedByDocuments` without `matched`: the rule logic holds but the records share no match token, so Reltio would never compare them. The "Reltio Match Verification" output channel logs each request and pair outcome, never the token. Full diagram and rules: [`openspec/changes/skills-and-enablement-packs-library/design.md`](openspec/changes/skills-and-enablement-packs-library/design.md) (§D3b, **§D4b**).
+
+### RDM lookup load bridge
+
+OpenSpec: **`rdm-lookup-csv-load`**. Lets an agent load lookup values from a CSV into a tenant's RDM. Unlike the read-only match verification bridge, this one **writes** to the tenant, so every write is approved by the user in a modal the agent cannot answer. The bundled skill `reltio-rdm-lookup-values-from-csv` (`skills/reltio-default/rdm-lookup-values-from-csv/`) drives it, and no command or menu exists for it. The agent writes `.reltio/reltio-agent/rdm-lookup-load/request.json`:
+
+```json
+{ "requestId": "…", "mode": "plan" | "load",
+  "csvFile": "data/MaritalStatuses.csv", "rdmConfigFile": "dev/T1/RDM/RdmT/config.json" }
+```
+
+`registerLookupLoadBridge` (`src/rdm/lookupLoadBridge.ts`) has the same watcher, debounce, retry and one-at-a-time queue as the match bridge.
+
+**Identity comes from the two files only; any other request field is ignored:**
+
+- `rdmConfigFile` must be the tenant's own `RDM/<rdmTenantId>/config.json`. It is checked against `EnvironmentManager.getRdmUri` after `locFromPath` resolves environment and tenant.
+- The CSV's base name must equal a lookup type in that configuration exactly. A match that only differs in case fails with the name it resembles.
+- Paths outside the workspace are refused.
+
+The CSV logic is pure (`src/rdm/lookupCsv.ts`):
+
+- **Parsing:** RFC 4180, with a header matched by name.
+- **Columns:** `Code`, `Source` and `Value at Source` are required; `Code at Source`, `Canonical` and `Downstream Default` are optional.
+- **Value at Source:** sets the mapping's code **and** value, so source data transcodes.
+- **Checks:** every error and warning carries its CSV line.
+- **Limits:** 2 MB and 10,000 rows per file.
+
+**`plan`** is read-only. It fetches the lookup type and classifies each code as new or existing.
+
+**`load`**:
+
+1. Re-plans against a fresh fetch.
+2. Refuses on CSV errors.
+3. Skips existing codes, because posting one would replace it.
+4. Asks for approval via `approvalText`, a modal whose only proceed action is **Load**.
+5. Posts the new codes with Add Value's `buildLookupValuesCreateBody` / `postRdmLookupValues`, in chunks of ≤ 100. A 401 gets one refresh and retry, and the first chunk that still fails stops the load.
+6. Re-fetches the lookup type and reports one outcome per code: `added`, `not-stored`, `not-sent`, `skipped-existing` or `unconfirmed`.
+
+| `status` | Meaning |
+|---|---|
+| `planned` | Codes with `classification`, `counts`, `errors`, `warnings` |
+| `loaded` | Per-code `outcome`, `counts`, and the failing chunk's `error` if any |
+| `cancelled` | The user did not click **Load**; nothing was sent |
+| `not-run` | `disabled` (`reltio.enableRdmLookupLoad`), `repository-mode`, `no-tenant`, `signed-out`, `no-rdm-service` |
+| `failed` | `invalid-request`, `invalid-csv` (with `errors`), `unknown-lookup-type`, `api-error`, `untrusted-host`, `network` — nothing was posted |
+
+The "Reltio RDM Lookup Load" output channel logs each request, counts and chunk, never the token.
 
 
 **Workflow playbooks.** Four of the bundled skills cover Reltio Workflow: `workflow-bpmn-authoring`, `workflow-jar-customization`, `workflow-repo-contribution` and `workflow-local-adapter-setup`. The first ships a `references/bpmn-rules.md` beside it — `copyDirectory()` in `reltioAgentSync.ts` recurses, so a playbook's subfolder materializes with it. That file carries what determinism needs and a 30-line playbook cannot hold: the exact namespace block, the out-of-the-box class allow-list, the schema ordering constraints, a validation checklist and a deny-list, each entry naming the error code or silent failure it prevents.
@@ -304,6 +351,19 @@ Create actions use the **context menu** only (`3_insert@*` groups — no `inline
 **RDM authoring and push:** **Add a new Lookup Type** / **Add a new Source** insert a minimal skeleton into `RDM/{rdmTenantId}/config.json` through the shared `insertIntoArray` helper, which now takes its creatable-root-array allowlist as a required parameter — the L3 and RDM sets overlap on `sources` but differ elsewhere, so inheriting the wrong one would work for that key and fail silently for `lookupTypes`. **Apply RDM Configuration** PUTs the document to `{serviceUri}/configuration/{rdmTenantId}` after the same pre-flight L3 apply uses: refuse without a baseline, re-fetch the remote copy, compare against the baseline, and require review of a diff when the server has drifted. A successful push refreshes the RDM baseline.
 
 **RDM lookup values (on demand):** a lookup type's values are **not** in the configuration file — they come from `GET {serviceUri}/lookups/{rdmTenantId}/{lookupTypeName}`, one lookup type per call. The **Get Lookup Values** command (`reltio.getRdmLookupValues`, scoped to `reltio.rdm.item.lookupTypes`) fetches them on demand and renders Code / Source / Value at Source in a webview panel; Get Configuration never calls this endpoint. The service URI is recalled from an **in-memory** cache (`src/rdm/rdmServiceCache.ts`, keyed by environment and tenant, populated when a fetch discovers it) and rediscovered from the tenant physical configuration on a miss — so nothing from that credential-bearing response reaches disk, and only the URI outlives the call.
+
+**RDM lookup values (adding):** the lookup values panel's **Add Value** button opens an inline form of one block per new code, each with its own source-mapping rows. Submit sends every block, up to 100, in **one** `POST {serviceUri}/lookups/{rdmTenantId}` (`postRdmLookupValues`), on the same `toHttpsBase()` origin the reads use. That is the endpoint the team's "Update RDM Lookup Mapping" request uses; `…/lookups/{tenant}/_update` is Reltio's *partial*-update endpoint (an `operation` on every mapping value) and does not create codes. The pure logic is in `src/rdm/lookupValueDraft.ts`: message parsing and validation, the body (one plain lookup object per code — not the `{ uri, value }` wrapper the service returns; `updatedBy` / `updateDate` / `version` left to the server), and code comparison. Posting a code that exists **replaces** it, mappings included, so the handler (`submitLookupValues` in `extension.ts`) re-fetches the lookup type first and refuses the whole batch if any code already exists. After posting, a code counts as stored when the response lists it (one `{ uri, value }` per stored code) or a second re-fetch contains it, so a lagging read cannot hide a stored code. Codes that landed leave the form; the rest are restored as entered, with the reason. Source suggestions use each configured source's `abbreviation`, which is what a mapping's `source` must match. Only new codes can be added — editing or deleting existing values is not supported.
+
+The panel now runs one inline script under `default-src 'none'; style-src 'nonce-…'; script-src 'nonce-…'`, with `localResourceRoots: []`, no inline handlers, and no data interpolated into the script — every value is set through `.value` / `.textContent`. Message protocol:
+
+| Direction | Message | Meaning |
+|-----------|---------|---------|
+| webview → extension | `{ type: 'ready', render }` | Page loaded; the extension answers with any pending `restoreForm` for that render |
+| webview → extension | `{ type: 'submitLookupValues', render, values: [{ code, mappings: [{ source, code, value, canonicalValue, downStreamDefaultValue }] }] }` | Submit the form |
+| extension → webview | `{ type: 'submitResult', message }` | Validation error, refusal or unconfirmed outcome; the form is kept |
+| extension → webview | `{ type: 'restoreForm', values, message }` | After a re-render: blocks that were not stored (none when all landed) and the outcome |
+
+`render` is a random token generated per render. The extension acts on a message only if its token matches the current render, so a message from a page that has since been replaced is dropped. Tenant, RDM tenant and lookup type always come from the context recorded at render time, and any such field in a message is discarded by the parser. Validation lives only in the extension and runs before any network call. The script trusts inbound messages only from the `window.origin` it saw at start (`isTrustedMessageOrigin`, inlined). If Get Lookup Values replaces the panel mid-submission, the outcome is shown as a notification instead of re-rendering the old lookup type.
 
 **Silent 401 refresh:** API calls that return 401 go through `tryRefresh(env)` in `extension.ts` — looks up the stored refresh token via `TokenStore.getRefreshToken`, loads OAuth client credentials from `OAuthCredentialsStore`, calls `refreshTokens()` from `oauthLogin.ts`, and on success rotates the session via `TokenStore.setSession` + `SessionStore.saveRefreshToken`. Concurrent 401s share a single in-flight refresh via `TokenStore.refreshInFlight` so only one network round-trip happens. If credentials are missing or refresh fails, the session and stored refresh token are cleared and the user sees "Session expired — log in again".
 
