@@ -1043,7 +1043,7 @@
       {
         "id": "reltio.gettingStarted",
         "title": "Get Started with Reltio IDE",
-        "description": "Connect to your Reltio tenant or a Git repository, open your business configuration, and start modeling with AI-assisted authoring.",
+        "description": "Connect to your Reltio tenant or a Git repository, open your business configuration, start modeling with AI-assisted authoring, and manage BPMN workflows.",
         "featuredFor": [
           "**/*.reltio.json",
           "**/BusinessConfig.json",

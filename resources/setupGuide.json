@@ -1,6 +1,6 @@
 {
 	"title": "Reltio IDE Setup Guide",
-	"subtitle": "Get started with Reltio IDE in just a few minutes. First pick a Reltio tenant or a Git repository — you cannot use both in the same workspace — then start modeling with AI-assisted authoring.",
+	"subtitle": "Get started with Reltio IDE in just a few minutes. First pick a Reltio tenant or a Git repository — you cannot use both in the same workspace — then start modeling with AI-assisted authoring and manage BPMN workflows on a tenant.",
 	"steps": [
 		{
 			"id": "addEnvironment",
@@ -42,7 +42,7 @@
 			"number": 6,
 			"icon": "cloud-upload",
 			"title": "Apply Your Changes",
-			"body": "<p>When you're connected to a tenant and ready to deploy, right-click the tenant and select <strong>Apply Configuration to Tenant</strong>.</p><p>Before applying your changes, Reltio IDE automatically compares your local configuration with the latest version in the tenant. If the remote configuration has changed since you last downloaded it, you'll be shown a comparison view to review the differences before proceeding.</p><p>This helps prevent accidental overwrites and ensures you deploy with confidence.</p><p>When you work from a Git repository, Reltio IDE hides tenant apply and history. Save your edits, then commit and push them with your editor's <strong>Source Control</strong> view.</p>"
+			"body": "<p>When you're connected to a tenant and ready to deploy, right-click the tenant and select <strong>Apply Configuration to Tenant</strong>.</p><p>Before applying your changes, Reltio IDE automatically compares your local configuration with the latest version in the tenant. If the remote configuration has changed since you last downloaded it, you'll be shown a comparison view to review the differences before proceeding.</p><p>This helps prevent accidental overwrites and ensures you deploy with confidence.</p><p>Workflows are deployed separately. See step 7.</p><p>When you work from a Git repository, Reltio IDE hides tenant apply and history. Save your edits, then commit and push them with your editor's <strong>Source Control</strong> view.</p>"
 		},
 		{
 			"id": "workflows",

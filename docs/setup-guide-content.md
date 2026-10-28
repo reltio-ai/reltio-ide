@@ -112,6 +112,8 @@ Before applying your changes, Reltio IDE automatically compares your local confi
 
 This helps prevent accidental overwrites and ensures you deploy with confidence.
 
+Workflows are deployed separately. See [step 7](#step-7--work-with-workflows).
+
 When you work from a Git repository, Reltio IDE hides tenant apply and history. Save your edits, then commit and push them with your editor's **Source Control** view.
 
 ## Step 7 — Work with workflows
