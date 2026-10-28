@@ -374,10 +374,10 @@ Reltio IDE manages your tenant's BPMN workflows alongside your business configur
 
 1. In the **RELTIO IDE** view, expand your tenant's **Workflows** folder. Reltio IDE discovers your tenant's Workflow Adapter URL automatically and downloads a copy of every deployed workflow in the background.
 2. Expand **Process Definitions** to see all workflows in one list. The icon shows where each workflow comes from:
-   - <img src="docs/images/icons/method.svg" width="16" height="16" alt="Method icon" /> **Method icon** — a workflow that Reltio provides.
-   - <img src="docs/images/icons/class.svg" width="16" height="16" alt="Class icon" /> **Class icon** — a custom workflow deployed on your tenant. It reads **• local changes** when you have edited its local copy and not yet deployed it.
-   - <img src="docs/images/icons/pencil.svg" width="16" height="16" alt="Pencil icon" /> **Pencil icon, • draft** — a workflow that has not been deployed yet.
-   - <img src="docs/images/icons/repo.svg" width="16" height="16" alt="Repository icon" /> **Repository icon** — a workflow file from your connected Custom Workflow Repository. It always has its own row, even when a deployed workflow has the same ID. See [Connect a Custom Workflow Repository](#connect-a-custom-workflow-repository).
+   - <img src="docs/images/icons/.png" width="16" height="16" alt="Method icon" /> **Method icon** — a workflow that Reltio provides.
+   - <img src="docs/images/icons/.png" width="16" height="16" alt="Class icon" /> **Class icon** — a custom workflow deployed on your tenant. It reads **• local changes** when you have edited its local copy and not yet deployed it.
+   - <img src="docs/images/icons/.png" width="16" height="16" alt="Pencil icon" /> **Pencil icon, • draft** — a workflow that has not been deployed yet.
+   - <img src="docs/images/icons/.png" width="16" height="16" alt="Repository icon" /> **Repository icon** — a workflow file from your connected Custom Workflow Repository. It always has its own row, even when a deployed workflow has the same ID. See [Connect a Custom Workflow Repository](#connect-a-custom-workflow-repository).
 3. Expand **JAR Deployments** to see the Java modules registered against your tenant, and any **Unregistered JARs** that Reltio IDE finds but does not yet know about.
 4. Select a workflow to open its BPMN file in the editor. Right-click it and select **Show BPMN Diagram** to preview the process. If the file is not valid XML, the preview shows the first problem and its line number.
 
