@@ -362,18 +362,19 @@ If the tenant configuration changed since your last fetch, the dialog asks you t
 
 ## Workflows
 
-Reltio IDE brings your tenant's BPMN workflows into the same view as your business configuration. The sections below follow the order a team works in: browse what is on the tenant, open and preview it, create or change a workflow, and deploy it. When a workflow needs custom Java, connect a Custom Workflow Repository and let the AI agent build the Java and the workflow together.
+Reltio IDE brings your tenant's BPMN workflows into the same view as your business configuration. Browse the workflows and JAR packages on your tenant, preview them, create or change a workflow, and deploy it. When a workflow needs custom Java, connect a Custom Workflow Repository and use the AI agent to build the Java and the workflow together.
 
-**Where to start**
+**Workflow tasks**
 
-| I want to | Go to |
+| Task | Description |
 |---|---|
-| See which workflows and JARs exist on my tenant | [Browse your workflows](#browse-your-workflows) |
-| Read or preview a workflow | [Open and preview a workflow](#open-and-preview-a-workflow) |
-| Create a new workflow | [Create a workflow](#create-a-workflow) |
-| Publish a workflow to the tenant | [Deploy a workflow](#deploy-a-workflow) |
-| Build a workflow that needs custom code | [Connect a Custom Workflow Repository](#connect-a-custom-workflow-repository) and [Build a workflow that needs custom Java](#build-a-workflow-that-needs-custom-java) |
-| Use a Java package Reltio has built | [Register the JAR and deploy the workflow](#register-the-jar-and-deploy-the-workflow) |
+| **[Browse your workflows](#browse-your-workflows)** | View the workflows and JAR packages on your tenant. |
+| **[Open and preview a workflow](#open-and-preview-a-workflow)** | Open a workflow's BPMN file and view it as a diagram. |
+| **[Create a workflow](#create-a-workflow)** | Create a draft manually, duplicate an existing workflow, or describe it to the AI agent. |
+| **[Deploy a workflow](#deploy-a-workflow)** | Publish a draft or an edited workflow to your tenant. |
+| **[Connect a Custom Workflow Repository](#connect-a-custom-workflow-repository)** | Connect the repository that holds the Java code for custom workflows. |
+| **[Build a workflow that needs custom Java](#build-a-workflow-that-needs-custom-java)** | Use the AI agent to write the Java and the BPMN together, and raise a pull request. |
+| **[Register the JAR and deploy the workflow](#register-the-jar-and-deploy-the-workflow)** | Register the Java package that Reltio builds, then deploy the workflow that uses it. |
 
 <p align="center">
   <img src="docs/images/workflows-tree-overview.png" alt="Workflows folder under a connected tenant showing Process Definitions, JAR Deployments and the Connect Custom Workflow Repository action" width="400" />
@@ -449,7 +450,7 @@ Create a workflow manually, or describe it to the AI agent. Either way, the new 
 
 **Result:** The new workflow appears in **Process Definitions** marked **• draft**.
 
-If the use case needs custom Java, the assistant asks you to connect a Custom Workflow Repository first and creates nothing until you have. See [Build a workflow that needs custom Java](#build-a-workflow-that-needs-custom-java).
+If the use case needs custom Java, the assistant asks you to connect a Custom Workflow Repository first. See [Build a workflow that needs custom Java](#build-a-workflow-that-needs-custom-java).
 
 ### Deploy a workflow
 
@@ -474,10 +475,10 @@ If the workflow changed on the tenant after you downloaded it, Reltio IDE warns 
 
 ### Connect a Custom Workflow Repository
 
-You need a Custom Workflow Repository to write workflows that need custom Java code. The repository holds the Java, and Reltio reviews and builds it. If your workflows only use standard building blocks, you do not need one.
+You need a Custom Workflow Repository to write workflows that need custom Java code. The repository holds the Java, and Reltio reviews and builds it.
 
-1. Right-click **Workflows** and select **Connect Custom Workflow Repository...**. Until a repository is connected, the same action is also listed as a row under **Workflows**.
-2. Enter the Git URL that Reltio gave you for this tenant and press Enter. Reltio IDE clones the repository into the tenant's `Workflows/` folder, so its `bpmn/` folder is the same folder as your workflows.
+1. Right-click **Workflows** and select **Connect Custom Workflow Repository...**.
+2. Enter the Git URL for your Custom Workflow Repository. Reltio IDE clones the repository into the tenant's `Workflows/` folder, so its `bpmn/` folder is the same folder as your workflows.
 
 <p align="center">
   <img src="docs/images/connect-workflow-repository.png" alt="Connect Custom Workflow Repository prompt asking for the Git URL" width="800" />
@@ -491,7 +492,7 @@ Existing files are handled as follows:
 - If a draft has the same name as a workflow the repository already tracks, your local copy is kept and Git shows it as modified.
 - If any other file has the same name as one in the repository, nothing is changed and the message lists the files. Rename them and connect again.
 
-**Result:** The **Workflows** row reads **repository connected**. **Java Classes** and **Java Tests** appear, grouped by module, and the repository's workflows are added to **Process Definitions**.
+**Result:** **Java Classes** and **Java Tests** appear, grouped by module, and the repository's workflows are added to **Process Definitions**.
 
 <p align="center">
   <img src="docs/images/workflow-java-classes.png" alt="Workflows folder showing repository connected, with Java Classes and Java Tests grouped by module" width="450" />
@@ -524,12 +525,12 @@ Workflows downloaded from your tenant are stored in the same folder as the repos
 
 ### Build a workflow that needs custom Java
 
-A workflow needs Java when it must do something the standard building blocks cannot — for example, send a custom notification, call an external system, or apply only to a specific entity type. Java is delivered through your Custom Workflow Repository and reviewed by Reltio, so this path takes longer than a BPMN-only change: expect at least hours, and usually a business day or more.
+A workflow needs Java when it must do something the standard building blocks cannot — for example, send a custom notification, call an external system, or apply only to a specific entity type. Java is delivered through your Custom Workflow Repository and reviewed by Reltio.
 
 1. [Connect your Custom Workflow Repository](#connect-a-custom-workflow-repository).
 2. In your editor's AI assistant, describe the use case.
 3. The assistant writes the Java files in the relevant module folders of your repository, and the BPMN as a draft in `Workflows/bpmn/`. The draft already calls the new Java class. The Java appears under **Java Classes** and **Java Tests**, and the workflow under **Process Definitions** marked **• draft**.
-4. Review the result. When the assistant asks whether to raise a pull request, confirm. This is the first point at which anything leaves your machine. Reltio reviews the pull request and runs automated checks on it.
+4. Review the Java and the BPMN draft. When you are satisfied, raise a pull request. Reltio reviews the pull request and builds the Java package (JAR) from it.
 
 <p align="center">
   <img src="docs/images/workflow-ai-agent-java.png" alt="AI assistant describing a workflow and its Java classes, asking whether to raise a pull request, and listing the next steps" width="800" />
@@ -561,7 +562,9 @@ After the pull request is merged and Reltio has built the Java package:
 
 3. Right-click the draft workflow and select **Deploy to Tenant**.
 
-**Result:** The package moves from **Unregistered** to the registered list, and the workflow is live and calls your Java.
+**Result:** The package moves from **Unregistered** to the registered list. The workflow is now live on your tenant and calls your Java.
+
+With the JAR registered, you only need to deploy the related BPMN to make the workflow live.
 
 ### Disconnect a Custom Workflow Repository
 
@@ -571,7 +574,7 @@ After the pull request is merged and Reltio has built the Java package:
 - **Removed** — the repository's files, including its Java, so you can connect a different repository afterwards.
 - **Kept** — your drafts, workflows downloaded from the tenant, files you added yourself, and any change you made but have not committed.
 
-Push any unpushed commits before you disconnect. They are lost when the repository's local history is removed.
+Push any unpushed commits before you disconnect.
 
 ---
 
