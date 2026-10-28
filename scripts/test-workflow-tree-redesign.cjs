@@ -511,6 +511,17 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 		assert.deepStrictEqual(dupes, [], 'commands registered more than once: ' + dupes.join(', '));
 	}
 
+	// ── 14. A request that needs Java also produces the BPMN draft ────────────
+	{
+		const read = name => fs.readFileSync(path.join(__dirname, '..', 'skills', 'reltio-default', name, 'SKILL.md'), 'utf8');
+		const jar = read('workflow-jar-customization');
+		assert.ok(/Write the BPMN draft in the same pass/.test(jar) && jar.includes('Workflows/bpmn/<processId>.bpmn20.xml'),
+			'the Java playbook must tell the agent to write the BPMN draft too, at the draft path');
+		assert.ok(/never put it inside a Java module/i.test(jar), 'and not into a Java module, where the tree would not call it a draft');
+		assert.ok(read('workflow-assistant').includes('both the Java and the BPMN draft'), 'the entry playbook repeats the rule');
+		assert.ok(read('workflow-bpmn-authoring').includes('saved as a draft in `Workflows/bpmn/`'), 'the handoff keeps BPMN authoring');
+	}
+
 	console.log('test-workflow-tree-redesign: OK');
 })().catch(err => {
 	console.error(err);
