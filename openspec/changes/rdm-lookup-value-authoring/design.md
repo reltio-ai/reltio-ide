@@ -93,6 +93,8 @@ For a valid submission the extension sends a single request whose body has one e
 
 ### D4: Only new codes, checked against the server immediately before posting
 
+> **Superseded in Bugfix Round 2 by D9.** An existing code is no longer refused: the mappings the form adds are appended to it, and nothing already stored changes. The fresh fetch described below is kept — it is now the value the additions are merged into.
+
 `_update` replaces a value. Submitting a code that already exists would therefore discard its current source mappings and keep only those in the form. The extension refuses this.
 
 The check is made against a **fresh** fetch taken just before the post, not against the table on screen, which may be minutes old. This mirrors the pre-flight that Apply uses for configuration. A code is treated as existing on an exact match, because the RDM service, not the IDE, decides whether codes are case-sensitive.
@@ -158,6 +160,35 @@ The working request ends the path with `/`; the documented form does not. The ex
 
 References: [RDM Lookups API](https://docs.reltio.com/developer-resources/reference-data-management-apis/reference-data-management-apis-at-a-glance/rdm-api/rdm-lookups-api), [Partial update in RDM lookups](https://docs.reltio.com/developer-resources/reference-data-management-apis/reference-data-management-apis-at-a-glance/rdm-api/partial-update-in-rdm-lookups).
 
+### D9: Existing codes get the new mappings appended; nothing stored is changed or removed (Bugfix Round 2)
+
+**Observed:** adding source `DnB` to the existing code `A` of `OrganizationStatuses` was refused with "Already in OrganizationStatuses: A. Nothing was sent; adding it would replace the existing mappings." Adding a source to an existing code is the most common edit, and D4 made it impossible.
+
+**Decision:** a submitted code that already exists is **appended to**. Because `POST {serviceUri}/lookups/{rdmTenantId}` replaces a code's whole stored value, appending is done as a merge, by one pure function shared with the CSV load:
+
+1. Start from the code's value as returned by the fresh fetch, **every field kept as fetched** — `enabled`, `startDate`, `endDate`, `localizations`, `parents`, `attributes`, `updatedBy`, `updateDate`, `version` and every existing source mapping and source value. This is the shape the team's working "Update RDM Lookup Mapping" request posts.
+2. For each mapping in the form:
+   - **New source for this code**: append a source mapping holding the one value.
+   - **Existing source, new code at that source**: append the value to that source's `values`. A source may map several codes to one canonical code.
+   - **Existing source and code, same value**: already present; nothing is added.
+   - **Existing source and code, different value**: a **conflict**. The stored value is not changed.
+3. **Flags never move away from what is stored.** An appended value is canonical only when the code has no canonical value yet. It is downstream default only when its source has no downstream-default value yet. Otherwise it is added without the flag, and the user is told.
+4. The merged value is sent in the same `POST` as the new codes, at most 100 values per request.
+
+New codes are still built with `buildLookupValuesCreateBody` (D3). Nothing is ever removed: there is no path from the form to a delete.
+
+**In the panel:**
+
+- **A conflict refuses the submission** and names the code, source and both values; nothing is sent. The panel is the place to correct one value, so a refusal costs one edit.
+- **A submission where every mapping is already present** sends nothing and says so.
+- The message after a submission names the codes added, the codes appended to, and any flags not applied.
+
+**Judging what was stored (amends D7):** a code counts as stored when the create response or the re-fetch holds it with **every** mapping the form asked for, matched by source and code at the source. This one rule covers new and appended codes alike.
+
+**Alternative considered — `POST …/_update` with `"operation": "INSERT"` per appended value:** this is Reltio's documented partial update, and it would leave every other part of the value untouched on the server, with no window for a lost update. It is unverified in this environment, where the first use of `_update` failed silently (D8). The merge-and-post path is proven by the team's working request. It stays open as the preferred refinement once `_update` INSERT is confirmed on a live tenant.
+
+**Risk — lost update:** between the fetch and the post, another user's change to the same code would be overwritten. The window is the length of one request. The fetched `version` is sent back, so if the service checks it, a stale post is rejected and reported, not applied.
+
 ## Risks / Trade-offs
 
 - **[Risk]** The service may require `updatedBy` / `updateDate` / `version` even for a new value (D3) → **Mitigation**: the first manual QA step. If it does, the error detail surfaces in the panel with every code kept, and the body builder is the single place to change.
@@ -176,7 +207,9 @@ Additive. No stored state, file format or command changes. Rollback is a revert:
 
 - ~~Does `_update` accept a new value without `updatedBy`, `updateDate` and `version`?~~ Superseded by D8: codes are created with the create endpoint, whose documented body has no server-managed fields.
 - Does the create endpoint apply an array all-or-nothing, and how does it report a rejected element? (D7 does not depend on the answer; QA records it.)
-- ~~Does the create endpoint reject or replace a code that already exists?~~ It replaces: the team's working "Update RDM Lookup Mapping" request uses it to update existing values (D8). D4 refuses existing codes before posting.
+- ~~Does the create endpoint reject or replace a code that already exists?~~ It replaces: the team's working "Update RDM Lookup Mapping" request uses it to update existing values (D8). D9 therefore merges into the fetched value rather than sending only the additions.
+- Does the service check the posted `version` against the stored one? (D9's lost-update window; QA records it.)
+- Does `POST …/_update` with `"operation": "INSERT"` append a source value to an existing code? (D9's preferred refinement.)
 
 ## Test plan
 

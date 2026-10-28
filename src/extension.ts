@@ -94,11 +94,11 @@ import {
 	type LookupValuesView,
 } from './rdm/lookupValuesPanel';
 import {
-	buildLookupValuesCreateBody,
-	codesInCreateResponse,
+	describeConflicts,
 	describeSubmissionOutcome,
-	findExistingCodes,
+	planLookupValues,
 	sourceSuggestions,
+	storedCodes,
 	type LookupValueDraft,
 } from './rdm/lookupValueDraft';
 import { addRdmLookupType, addRdmSource } from './rdm/rdmEditCommands';
@@ -1661,11 +1661,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	}
 
 	/**
-	 * Add Value: post every new code in one `POST …/lookups/{rdmTenantId}`,
-	 * then judge what the service stored from its response and a re-fetch.
+	 * Add Value: create new codes and append mappings to existing ones in one
+	 * `POST …/lookups/{rdmTenantId}`, then judge what the service stored from
+	 * its response and a re-fetch.
 	 *
-	 * The codes are checked against a fresh fetch first, because that endpoint
-	 * replaces a code that exists: it would lose its current mappings.
+	 * That endpoint replaces a code's whole value, so an existing code is sent
+	 * as freshly fetched with only its missing mappings added
+	 * (`planLookupValues`): nothing stored is changed or removed, and a
+	 * mapping that contradicts a stored one refuses the submission.
 	 * Every identifier comes from `render.context`, recorded when the panel
 	 * was rendered — the panel supplies only the values.
 	 */
@@ -1700,7 +1703,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			return;
 		}
 
-		const codes = values.map(v => v.code);
 		let current: unknown;
 		try {
 			current = await fetchRdmLookupValues(serviceUri, ctx.rdmTenantId, ctx.lookupTypeName, token);
@@ -1709,17 +1711,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				await sessionExpired();
 				return;
 			}
-			report(`Could not check for existing codes (${(e as Error).message}). Nothing was sent.`);
+			report(`Could not read the stored values (${(e as Error).message}). Nothing was sent.`);
 			return;
 		}
-		const existing = findExistingCodes(codes, current);
-		if (existing.length > 0) {
-			report(
-				`Already in ${ctx.lookupTypeName}: ${existing.join(', ')}. Nothing was sent; ` +
-					`adding ${existing.length === 1 ? 'it' : 'them'} would replace the existing mappings.`,
-			);
+		// Existing codes are merged into their stored value, never replaced by the form's.
+		const plan = planLookupValues(values, current, ctx);
+		if (plan.conflicts.length > 0) {
+			report(describeConflicts(plan.conflicts));
 			return;
 		}
+		const toSend = plan.items.filter(i => i.element);
+		if (toSend.length === 0) {
+			report(`Nothing to add: every mapping is already stored in ${ctx.lookupTypeName}. Nothing was sent.`);
+			return;
+		}
+		const codes = toSend.map(i => i.draft.code);
 
 		let postError: string | undefined;
 		let created: unknown;
@@ -1733,7 +1739,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					postRdmLookupValues(
 						serviceUri,
 						ctx.rdmTenantId,
-						buildLookupValuesCreateBody(values, ctx),
+						toSend.map(i => i.element),
 						token,
 					),
 			);
@@ -1750,15 +1756,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		try {
 			refetched = await fetchRdmLookupValues(serviceUri, ctx.rdmTenantId, ctx.lookupTypeName, token);
 		} catch (e) {
-			const confirmed = codes.filter(c => codesInCreateResponse(created).has(c));
+			const confirmed = storedCodes(
+				[created],
+				toSend.map(i => ({ code: i.draft.code, mappings: i.expect })),
+			);
 			const sent = postError
 				? `The request failed: ${postError}`
-				: confirmed.length > 0
-					? `The service stored ${confirmed.join(', ')}.`
+				: confirmed.size > 0
+					? `The service stored ${[...confirmed].join(', ')}.`
 					: 'The request was sent.';
 			report(
 				`${sent} The table could not be refreshed (${(e as Error).message}), so what was stored is not confirmed. ` +
-					'Submitting again is safe: any code that was stored will be refused as existing.',
+					'Submitting again is safe: mappings already stored are not sent twice.',
 			);
 			if (e instanceof ReltioApiError && e.statusCode === 401) {
 				await handle401(ctx.environmentName);
@@ -1766,7 +1775,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			return;
 		}
 
-		const outcome = describeSubmissionOutcome(values, refetched, postError, created);
+		const outcome = describeSubmissionOutcome(plan, refetched, postError, created);
 		if (!isCurrentLookupValuesRender(render)) {
 			const text = `Lookup values (${ctx.lookupTypeName}): ${outcome.message}`;
 			void (outcome.remaining.length > 0

@@ -104,6 +104,8 @@ Only **Load** proceeds. Cancel, closing the dialog or pressing Escape writes a `
 
 ### D8: Existing codes are skipped and reported
 
+> **Superseded in Bugfix Round 1 by D12.** The user revised the decision: a CSV appends to existing codes instead of skipping them. Nothing stored is ever replaced or removed.
+
 Posting a code that exists replaces its stored value, mappings included. A load therefore sends **only** codes absent from the fresh fetch (exact match, as everywhere else in RDM authoring). Existing codes are listed as `skipped-existing` with their CSV lines. A rerun of the same file after a partial load sends only what is still missing.
 
 **Alternatives considered:** refusing the whole file when any code exists (Add Value's rule) — impractical for a bulk load that is often re-run; merging new mappings into existing codes — useful, but it edits live values and is left to a later change.
@@ -137,6 +139,50 @@ Every result carries the request's `requestId` (or `null` when it could not be r
 ### D11: What never leaves the extension
 
 The token is never written to `result.json` or the "Reltio RDM Lookup Load" output channel. The output channel logs each request, the counts and each chunk's outcome. Only the codes and mappings being loaded are sent, and only to the RDM service resolved for that tenant, through `toHttpsBase()`'s allowlist. `result.json` holds codes from the user's own tenant, under the git-ignored `.reltio/`.
+
+### D12: A CSV appends to existing codes; nothing stored is replaced or removed (Bugfix Round 1)
+
+**Observed:** the user expects a CSV to add its mappings to lookup types that already hold values — for example a new source's spellings for existing codes — and never to replace or delete anything. D8 skipped every existing code, so such a file loaded nothing.
+
+**Decision:** a load merges each existing code with the CSV's rows for it, using the same pure merge as Add Value (`rdm-lookup-value-authoring` design D9):
+
+- The fetched value is kept whole, with every field and every stored mapping as fetched.
+- A row for a new source, or a new code at an existing source, is appended.
+- A row whose source and code at the source are already stored with the same value is **already present**; nothing is added for it.
+- A row whose source and code at the source are already stored with a **different** value is a **conflict**. The stored value is kept, and the row is reported as a warning with its line. Unlike the panel, a conflict does not stop the file: a bulk load should not fail on one row, and nothing is overwritten either way.
+- An appended value is canonical only when the code has no canonical value yet, and downstream default only when its source has none. Otherwise the flag is dropped, and a warning names the row.
+
+**Plan classification** replaces `new` / `existing`:
+
+| Classification | Meaning |
+|---|---|
+| `new` | The code is not in the lookup type; it is created |
+| `append` | The code exists; at least one row adds a mapping |
+| `unchanged` | The code exists; every row is already present or a conflict |
+
+**Outcomes** replace D9's `skipped-existing`:
+
+| Outcome | Meaning |
+|---|---|
+| `added` | A new code, now stored with all its mappings |
+| `appended` | An existing code, now stored with every mapping that was appended |
+| `unchanged` | An existing code with nothing to append; not sent |
+| `not-stored` | Sent, and neither the response nor the re-fetch shows all its requested mappings |
+| `not-sent` | A previous chunk failed |
+| `unconfirmed` | Sent, not in the response, and the re-fetch failed |
+
+"Stored" is judged per mapping, as in Add Value: the code is present with every requested source and code at the source.
+
+**Dialog (amends D7):**
+
+> **Load into MaritalStatuses?**
+> 3 new codes, and 4 new mappings for 2 existing codes. Tenant `<tenant>` on `<environment>`, RDM tenant `<rdmTenantId>`, from `<csvFile>`. 1 warning.
+
+It is shown whenever anything is new or appended. When every code is `unchanged`, no dialog is shown and nothing is sent.
+
+**Rerun safety still holds.** A second load of the same file finds everything already present and sends nothing.
+
+**Risk — lost update** on an appended code, as in Add Value D9: the merge is taken from a fetch made just before the post, the fetched `version` is sent back, and the window is one request per chunk.
 
 ## Risks / Trade-offs
 

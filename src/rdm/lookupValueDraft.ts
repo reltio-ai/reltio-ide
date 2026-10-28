@@ -177,35 +177,30 @@ export function buildLookupValuesCreateBody(values: LookupValueDraft[], target: 
 }
 
 /**
- * Codes the create response says were stored. Documented as one
- * `{ uri, value }` per stored code; a bare lookup object is accepted too.
- * Anything else contributes nothing, leaving the re-fetch to decide.
+ * Lookup value objects in a response: a lookups `GET` returns them bare; the
+ * create response wraps each as `{ uri, value }`. Anything else contributes
+ * nothing.
  */
-export function codesInCreateResponse(response: unknown): Set<string> {
-	const codes = new Set<string>();
+function lookupEntries(response: unknown): Array<Record<string, unknown> & { code: string }> {
+	const out: Array<Record<string, unknown> & { code: string }> = [];
 	if (Array.isArray(response)) {
 		for (const entry of response) {
 			if (!isRecord(entry)) continue;
 			const value = isRecord(entry.value) ? entry.value : entry;
-			if (typeof value.code === 'string') {
-				codes.add(value.code);
-			}
+			if (typeof value.code === 'string') out.push(value as Record<string, unknown> & { code: string });
 		}
 	}
-	return codes;
+	return out;
+}
+
+/** Codes the create response says were stored. */
+export function codesInCreateResponse(response: unknown): Set<string> {
+	return new Set(lookupEntries(response).map(e => e.code));
 }
 
 /** Codes present in a `GET …/lookups/{rdmTenantId}/{lookupTypeName}` response. */
 export function codesInLookupsResponse(response: unknown): Set<string> {
-	const codes = new Set<string>();
-	if (Array.isArray(response)) {
-		for (const entry of response) {
-			if (isRecord(entry) && typeof entry.code === 'string') {
-				codes.add(entry.code);
-			}
-		}
-	}
-	return codes;
+	return new Set(lookupEntries(response).map(e => e.code));
 }
 
 /**
@@ -217,63 +212,240 @@ export function findExistingCodes(codes: string[], response: unknown): string[] 
 	return codes.filter(c => present.has(c));
 }
 
+/** A source mapping value, by the two keys RDM stores it under. */
+export interface MappingKey {
+	source: string;
+	code: string;
+}
+
+/** Where a note about one row of a submission points: its code and the mapping's position. */
+export interface MappingNote extends MappingKey {
+	valueCode: string;
+	index: number;
+}
+
+export interface PlannedValue {
+	draft: LookupValueDraft;
+	/** `new`: created. `append`: an existing code with mappings to add. `unchanged`: nothing to send. */
+	kind: 'new' | 'append' | 'unchanged';
+	/** The object to post: the create body for a new code, the merged stored value for an append. */
+	element?: Record<string, unknown>;
+	/** The mappings the post must store: all of a new code's, the appended ones of an existing code. */
+	expect: MappingKey[];
+}
+
+export interface LookupValuesPlan {
+	/** In submission order. */
+	items: PlannedValue[];
+	alreadyPresent: MappingNote[];
+	/** Same source and code at the source, a different value: the stored value is kept. */
+	conflicts: Array<MappingNote & { storedValue: string; value: string }>;
+	/** A flag the submission asked for but the stored value already gives to another mapping. */
+	flagsDropped: Array<MappingNote & { flag: 'canonical' | 'downstream default' }>;
+}
+
 /**
- * Which submitted codes the server stored: those a fetch taken after the post
- * contains, plus those the create response lists — so a re-fetch that lags
- * the write cannot report a stored code as missing. `notYetVisible` are the
- * stored codes the re-fetch does not show yet.
+ * Appends a submitted value's mappings to the stored value of the same code.
+ *
+ * The create endpoint replaces a code's whole value, so appending is a merge:
+ * the result is the stored value with **every field kept as fetched** — its
+ * other mappings, flags, dates, `version` — plus the mappings it lacks.
+ * Nothing stored is changed or removed:
+ *
+ * - same source and code at the source, same value: already present;
+ * - same source and code at the source, other value: a conflict, left alone;
+ * - an appended value is canonical only when the code has no canonical value,
+ *   and downstream default only when its source has none.
  */
-export function reconcileSubmittedCodes(
-	codes: string[],
-	refetched: unknown,
-	createResponse?: unknown,
-): { landed: string[]; notLanded: string[]; notYetVisible: string[] } {
-	const visible = codesInLookupsResponse(refetched);
-	const created = codesInCreateResponse(createResponse);
-	const stored = (c: string) => visible.has(c) || created.has(c);
-	return {
-		landed: codes.filter(stored),
-		notLanded: codes.filter(c => !stored(c)),
-		notYetVisible: codes.filter(c => created.has(c) && !visible.has(c)),
+export function mergeLookupValue(
+	stored: Record<string, unknown>,
+	draft: LookupValueDraft,
+): Pick<LookupValuesPlan, 'alreadyPresent' | 'conflicts' | 'flagsDropped'> & {
+	merged: Record<string, unknown> | undefined;
+	appended: MappingKey[];
+} {
+	const merged = JSON.parse(JSON.stringify(stored)) as Record<string, unknown>;
+	if (!Array.isArray(merged.sourceMappings)) merged.sourceMappings = [];
+	const sourceMappings = merged.sourceMappings as unknown[];
+	const valuesOf = (sm: Record<string, unknown>): Array<Record<string, unknown>> => {
+		if (!Array.isArray(sm.values)) sm.values = [];
+		return (sm.values as unknown[]).filter(isRecord);
 	};
+	let hasCanonical = sourceMappings.some(sm => isRecord(sm) && valuesOf(sm).some(v => v.canonicalValue === true));
+
+	const appended: MappingKey[] = [];
+	const result: Pick<LookupValuesPlan, 'alreadyPresent' | 'conflicts' | 'flagsDropped'> = {
+		alreadyPresent: [],
+		conflicts: [],
+		flagsDropped: [],
+	};
+
+	draft.mappings.forEach((m, index) => {
+		const code = m.code || draft.code;
+		const note: MappingNote = { valueCode: draft.code, index, source: m.source, code };
+		let target = sourceMappings.find(sm => isRecord(sm) && sm.source === m.source) as Record<string, unknown> | undefined;
+		if (target) {
+			const storedValue = valuesOf(target).find(v => v.code === code);
+			if (storedValue) {
+				if (storedValue.value === m.value) result.alreadyPresent.push(note);
+				else result.conflicts.push({ ...note, storedValue: String(storedValue.value ?? ''), value: m.value });
+				return;
+			}
+		}
+
+		const canonical = m.canonicalValue && !hasCanonical;
+		if (m.canonicalValue && !canonical) result.flagsDropped.push({ ...note, flag: 'canonical' });
+		const sourceHasDownstream = !!target && valuesOf(target).some(v => v.downStreamDefaultValue === true);
+		const downstream = m.downStreamDefaultValue && !sourceHasDownstream;
+		if (m.downStreamDefaultValue && !downstream) result.flagsDropped.push({ ...note, flag: 'downstream default' });
+
+		const value = { code, value: m.value, enabled: true, canonicalValue: canonical, downStreamDefaultValue: downstream };
+		if (target) {
+			(target.values as unknown[]).push(value);
+		} else {
+			target = { source: m.source, values: [value] };
+			sourceMappings.push(target);
+		}
+		if (canonical) hasCanonical = true;
+		appended.push({ source: m.source, code });
+	});
+
+	return { merged: appended.length > 0 ? merged : undefined, appended, ...result };
+}
+
+/**
+ * What a submission does against the lookup type as just fetched: new codes
+ * are created; existing codes get their missing mappings appended
+ * (`mergeLookupValue`); codes with nothing to append are left alone.
+ */
+export function planLookupValues(values: LookupValueDraft[], current: unknown, target: LookupValueTarget): LookupValuesPlan {
+	const storedByCode = new Map(lookupEntries(current).map(e => [e.code, e]));
+	const plan: LookupValuesPlan = { items: [], alreadyPresent: [], conflicts: [], flagsDropped: [] };
+	for (const draft of values) {
+		const stored = storedByCode.get(draft.code);
+		if (!stored) {
+			plan.items.push({
+				draft,
+				kind: 'new',
+				element: buildLookupValuesCreateBody([draft], target)[0] as Record<string, unknown>,
+				expect: draft.mappings.map(m => ({ source: m.source, code: m.code || draft.code })),
+			});
+			continue;
+		}
+		const merge = mergeLookupValue(stored, draft);
+		plan.alreadyPresent.push(...merge.alreadyPresent);
+		plan.conflicts.push(...merge.conflicts);
+		plan.flagsDropped.push(...merge.flagsDropped);
+		plan.items.push(
+			merge.merged
+				? { draft, kind: 'append', element: merge.merged, expect: merge.appended }
+				: { draft, kind: 'unchanged', expect: [] },
+		);
+	}
+	return plan;
+}
+
+/** Requested mappings of one code, as judged after a post. */
+export interface StoredExpectation {
+	code: string;
+	mappings: MappingKey[];
+}
+
+/**
+ * Codes that some response holds with **every** requested mapping, matched by
+ * source and code at the source. One rule for new and appended codes, and for
+ * the create response and a re-fetch alike — so a re-fetch that lags the
+ * write cannot report a stored code as missing.
+ */
+export function storedCodes(responses: unknown[], expectations: StoredExpectation[]): Set<string> {
+	const stored = new Set<string>();
+	for (const response of responses) {
+		const byCode = new Map(lookupEntries(response).map(e => [e.code, e]));
+		for (const x of expectations) {
+			const entry = byCode.get(x.code);
+			if (entry && x.mappings.every(k => holdsMapping(entry, k))) stored.add(x.code);
+		}
+	}
+	return stored;
+}
+
+function holdsMapping(entry: Record<string, unknown>, key: MappingKey): boolean {
+	const mappings = Array.isArray(entry.sourceMappings) ? entry.sourceMappings : [];
+	return mappings.some(
+		sm =>
+			isRecord(sm) &&
+			sm.source === key.source &&
+			Array.isArray(sm.values) &&
+			sm.values.some(v => isRecord(v) && v.code === key.code),
+	);
+}
+
+/** Why a submission was refused: each conflict, with both values. Nothing stored is ever changed. */
+export function describeConflicts(conflicts: LookupValuesPlan['conflicts']): string {
+	const each = conflicts.map(
+		c => `${c.valueCode}: ${c.source} code "${c.code}" is stored as "${c.storedValue}", not "${c.value}"`,
+	);
+	return `Nothing was sent. ${each.join('; ')}. Stored values are never changed; correct the value or remove the mapping.`;
+}
+
+/** One sentence per flag the stored value kept. */
+export function describeFlagsDropped(flags: LookupValuesPlan['flagsDropped']): string {
+	return flags
+		.map(f =>
+			f.flag === 'canonical'
+				? `${f.source} on ${f.valueCode} was added as non-canonical: ${f.valueCode} already has a canonical value.`
+				: `${f.source} on ${f.valueCode} was added without downstream default: ${f.source} already has one for ${f.valueCode}.`,
+		)
+		.join(' ');
 }
 
 /**
  * What the panel shows once the outcome is known: the blocks to restore
- * (those not stored, as entered) and one message. `postError` is the post's
- * failure detail, if it failed.
+ * (those whose requested mappings are not all stored, as entered) and one
+ * message. `postError` is the post's failure detail, if it failed.
  */
 export function describeSubmissionOutcome(
-	values: LookupValueDraft[],
+	plan: LookupValuesPlan,
 	refetched: unknown,
 	postError: string | undefined,
 	createResponse?: unknown,
 ): { landed: string[]; remaining: LookupValueDraft[]; message: string } {
-	const { landed, notLanded, notYetVisible } = reconcileSubmittedCodes(
-		values.map(v => v.code),
-		refetched,
-		createResponse,
-	);
-	const remaining = values.filter(v => notLanded.includes(v.code));
-	const reported = postError ? ` The service reported: ${postError}` : '';
-	const lagging =
-		notYetVisible.length > 0
-			? ` ${notYetVisible.join(', ')} may take a moment to appear in the table; run Get Lookup Values again to refresh it.`
-			: '';
+	const sent = plan.items.filter(i => i.kind !== 'unchanged');
+	const expectations = sent.map(i => ({ code: i.draft.code, mappings: i.expect }));
+	const visible = storedCodes([refetched], expectations);
+	const stored = storedCodes([refetched, createResponse], expectations);
+	const codes = (pick: (i: PlannedValue) => boolean) => sent.filter(pick).map(i => i.draft.code);
 
-	let message: string;
-	if (notLanded.length === 0) {
-		message = `Added ${plural(landed.length, 'value')}.${lagging}${reported}`;
-	} else if (landed.length === 0) {
-		message = postError
-			? `Nothing was added.${reported}`
-			: `Nothing was added: the service accepted the request but did not store ${notLanded.join(', ')}.`;
-	} else {
-		message =
-			`Added ${landed.join(', ')}. Not stored: ${notLanded.join(', ')}.${lagging}` +
-			(postError ? reported : ' The service accepted the request but did not store them.');
+	const added = codes(i => i.kind === 'new' && stored.has(i.draft.code));
+	const appendedTo = codes(i => i.kind === 'append' && stored.has(i.draft.code));
+	const notStored = codes(i => !stored.has(i.draft.code));
+	const lagging = codes(i => stored.has(i.draft.code) && !visible.has(i.draft.code));
+	const unchanged = plan.items.filter(i => i.kind === 'unchanged').map(i => i.draft.code);
+
+	const parts: string[] = [];
+	if (added.length > 0) parts.push(`Added ${plural(added.length, 'new value')} (${added.join(', ')}).`);
+	if (appendedTo.length > 0) parts.push(`Added mappings to ${appendedTo.join(', ')}.`);
+	if (added.length === 0 && appendedTo.length === 0) parts.push('Nothing was added.');
+	if (unchanged.length > 0) parts.push(`${unchanged.join(', ')} already had every mapping.`);
+	if (notStored.length > 0) {
+		parts.push(
+			postError
+				? `Not stored: ${notStored.join(', ')}.`
+				: `Not stored: ${notStored.join(', ')}; the service accepted the request but did not store ${notStored.length === 1 ? 'it' : 'them'}.`,
+		);
 	}
-	return { landed, remaining, message };
+	if (postError) parts.push(`The service reported: ${postError}`);
+	if (lagging.length > 0) {
+		parts.push(`${lagging.join(', ')} may take a moment to appear in the table; run Get Lookup Values again to refresh it.`);
+	}
+	const flags = describeFlagsDropped(plan.flagsDropped);
+	if (flags) parts.push(flags);
+
+	return {
+		landed: [...added, ...appendedTo],
+		remaining: plan.items.filter(i => i.kind !== 'unchanged' && !stored.has(i.draft.code)).map(i => i.draft),
+		message: parts.join(' '),
+	};
 }
 
 /**

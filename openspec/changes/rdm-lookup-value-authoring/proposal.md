@@ -9,15 +9,15 @@ Values are not stored in any local file: they live on the RDM service and are fe
 - An **Add Value** button on the lookup values panel opens an inline form holding one or more new codes. Each code has its own rows of source mappings — source, code at the source, value, canonical, downstream default. **Add Code** adds another code to the form; codes and rows can be added and removed in place.
 - **Submit** sends every code in the form, up to 100, in one `POST {serviceUri}/lookups/{rdmTenantId}` — the endpoint the team already uses to load lookup mappings — with a body built by the extension. (Not `…/_update`: that is Reltio's partial-update endpoint and does not create codes; see design D8.)
 - After submitting, the extension compares the service's response and a re-fetch of the lookup type: the table shows what the server stored, codes that landed leave the form, and codes that did not stay in it with the reason. A partial outcome is reported as partial, never as success or failure of the whole batch.
-- Only **new** codes can be added. Posting a code that already exists replaces it, so submitting one would discard its existing source mappings. If any code in the form already exists — checked against a fresh fetch, not the possibly stale table — nothing is sent and every such code is named.
+- A code that **already exists** gets the form's mappings **appended** (design D9). Posting a code replaces its whole stored value, so the extension sends the freshly fetched value with every field and mapping as stored, plus only the mappings it lacks. Nothing stored is changed or removed. A mapping already stored is skipped. A mapping that contradicts a stored one (same source and code at the source, different value) refuses the submission, naming both values.
 - The panel gains a script for the first time: nonce-gated under a `default-src 'none'` policy, with no inline handlers, no local resources, origin-checked messages from the extension, and every message from the webview validated by the extension before it is used.
-- **Reverses** the non-goal "Editing lookup values" recorded in `rdm-lookup-values` and `rdm-configuration-authoring`: this adds writing new values. Editing or deleting existing values remains out of scope.
+- **Reverses** the non-goal "Editing lookup values" recorded in `rdm-lookup-values` and `rdm-configuration-authoring`: this adds writing new values and appending mappings to existing ones. Changing or deleting stored mappings remains out of scope.
 
 ## Capabilities
 
 ### New Capabilities
 
-- `rdm-lookup-value-authoring`: adding one or more new lookup values from the lookup values panel — the form and its validation, the request body and endpoint, refusal of existing codes, reconciling what the server stored, failure handling, and the safety rules for the panel's script and messages.
+- `rdm-lookup-value-authoring`: adding one or more new lookup values from the lookup values panel — the form and its validation, the request body and endpoint, appending to existing codes without changing what is stored, reconciling what the server stored, failure handling, and the safety rules for the panel's script and messages.
 
 ### Modified Capabilities
 

@@ -52,3 +52,15 @@
 - [ ] 7.7 Manual QA: a file with an error and a misnamed file — line-numbered errors, near-miss message, no dialog
 - [ ] 7.8 Manual QA: signed out — `not-run` / `signed-out`; record whether undeclared sources are accepted (design open questions)
 - [x] 7.9 `npx openspec validate rdm-lookup-csv-load --strict`
+
+## Bugfix Round 1 — a CSV must append to existing codes, never replace
+
+Reported: loading a CSV into a lookup type that already has values should add the CSV's mappings to them, never replace or delete what is stored. The first version skipped every existing code. See design D12.
+
+- [x] B1.1 Append to existing codes instead of skipping them — root cause: design D8 sent only absent codes. Merge each existing code with its CSV rows through the shared `mergeLookupValue` (Add Value design D9), post merged values together with new codes, and never change or remove a stored entry (design D12)
+- [x] B1.2 Conflicting rows (same source and code at the source, different value) and flags not applied (canonical, downstream default) become line-numbered warnings; a conflict never stops the file (design D12)
+- [x] B1.3 Plan classification `new` / `append` / `unchanged`; outcomes `added` / `appended` / `unchanged` / `not-stored` / `not-sent` / `unconfirmed`, judged per requested mapping; remove `skipped-existing` (design D12)
+- [x] B1.4 Approval dialog states new codes and appended mappings separately; no dialog when every code is `unchanged` (design D7, D12)
+- [x] B1.5 Skill: describe appending (never replacing), the new classifications and outcomes, and conflicts; raise `skillsBundleVersion` to `24` and update the pinned version and hash
+- [x] B1.6 Update `spec.md`, `proposal.md`, `ARCHITECTURE.md` and `scripts/test-rdm-lookup-csv-load.cjs`; `npm test`, compile, build, package; `openspec validate --strict`
+- [ ] B1.7 Manual QA: a CSV adding a new source to existing codes — appended, stored mappings unchanged; rerun — everything `unchanged`, no dialog; a conflicting row — warning, stored value kept

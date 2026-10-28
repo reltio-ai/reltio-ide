@@ -7,7 +7,14 @@
  * The CSV has the columns Get Lookup Values shows — Code, Source, Value at
  * Source — one row per source mapping; rows sharing a Code are one value.
  */
-import { codesInCreateResponse, codesInLookupsResponse, sourceSuggestions, type LookupValueDraft } from './lookupValueDraft';
+import {
+	sourceSuggestions,
+	storedCodes,
+	type LookupValueDraft,
+	type LookupValuesPlan,
+	type MappingNote,
+	type PlannedValue,
+} from './lookupValueDraft';
 
 /** Bounds what one file can turn into: a stray large file must not become thousands of requests. */
 export const MAX_CSV_BYTES = 2 * 1024 * 1024;
@@ -284,34 +291,56 @@ export function chunk<T>(items: T[], size: number): T[][] {
 	return out;
 }
 
-export const LOAD_OUTCOMES = ['added', 'not-stored', 'not-sent', 'skipped-existing', 'unconfirmed'] as const;
+/**
+ * Rows the stored values decide against, as line-numbered warnings: a
+ * conflicting value (the stored one is kept) and a flag the stored value
+ * already gives to another mapping. Neither stops the file.
+ */
+export function planWarnings(plan: LookupValuesPlan, csv: LookupCsv): CsvFinding[] {
+	const lineOf = (n: MappingNote) => csv.linesByCode[n.valueCode]?.[n.index] ?? 1;
+	return [
+		...plan.conflicts.map(c => ({
+			lines: [lineOf(c)],
+			message:
+				`Line ${lineOf(c)}: ${c.valueCode} already maps ${c.source} code "${c.code}" to "${c.storedValue}", not "${c.value}". ` +
+				'The stored value is kept and this row is skipped.',
+		})),
+		...plan.flagsDropped.map(f => ({
+			lines: [lineOf(f)],
+			message:
+				f.flag === 'canonical'
+					? `Line ${lineOf(f)}: ${f.valueCode} already has a canonical value, so ${f.source} is added as non-canonical.`
+					: `Line ${lineOf(f)}: ${f.source} already has a downstream default for ${f.valueCode}, so this row is added without one.`,
+		})),
+	];
+}
+
+export const LOAD_OUTCOMES = ['added', 'appended', 'unchanged', 'not-stored', 'not-sent', 'unconfirmed'] as const;
 export type LoadOutcome = (typeof LOAD_OUTCOMES)[number];
 
 /**
- * One outcome per code, in CSV order. A sent code is `added` when a create
- * response lists it or the re-fetch contains it; without a re-fetch
- * (`refetched` undefined) a sent code the responses do not list is
- * `unconfirmed` rather than `not-stored`.
+ * One outcome per code, in CSV order. A sent code is stored when a create
+ * response or the re-fetch holds it with every mapping it asked for
+ * (`storedCodes`); without a re-fetch (`refetched` undefined) a sent code the
+ * responses do not show is `unconfirmed` rather than `not-stored`.
  */
 export function loadOutcomes(input: {
-	codes: string[];
-	existing: string[];
+	items: PlannedValue[];
 	sent: string[];
 	createResponses: unknown[];
 	refetched: unknown | undefined;
 }): Array<{ code: string; outcome: LoadOutcome }> {
-	const existing = new Set(input.existing);
 	const sent = new Set(input.sent);
-	const created = new Set<string>();
-	for (const r of input.createResponses) for (const c of codesInCreateResponse(r)) created.add(c);
-	const visible = input.refetched === undefined ? undefined : codesInLookupsResponse(input.refetched);
+	const expectations = input.items.filter(i => sent.has(i.draft.code)).map(i => ({ code: i.draft.code, mappings: i.expect }));
+	const responses = input.refetched === undefined ? input.createResponses : [...input.createResponses, input.refetched];
+	const stored = storedCodes(responses, expectations);
 
-	return input.codes.map(code => {
+	return input.items.map(({ draft: { code }, kind }) => {
 		let outcome: LoadOutcome;
-		if (existing.has(code)) outcome = 'skipped-existing';
+		if (kind === 'unchanged') outcome = 'unchanged';
 		else if (!sent.has(code)) outcome = 'not-sent';
-		else if (created.has(code) || visible?.has(code)) outcome = 'added';
-		else outcome = visible === undefined ? 'unconfirmed' : 'not-stored';
+		else if (stored.has(code)) outcome = kind === 'new' ? 'added' : 'appended';
+		else outcome = input.refetched === undefined ? 'unconfirmed' : 'not-stored';
 		return { code, outcome };
 	});
 }

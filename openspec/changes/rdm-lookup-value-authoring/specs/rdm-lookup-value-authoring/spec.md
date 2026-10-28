@@ -76,24 +76,37 @@ The extension SHALL validate every submission itself before sending anything, an
 - **WHEN** the extension receives a panel message of an unknown type or with fields of the wrong type
 - **THEN** it SHALL send no request and change nothing
 
-### Requirement: Only new codes can be added
+### Requirement: Existing codes get the new mappings appended, and nothing stored changes
 
-The extension SHALL refuse a submission in which any code already exists in the lookup type, because posting a code that exists replaces its stored value and would discard that code's current source mappings. The check SHALL be made against the lookup type's values fetched immediately before submitting, not against the values already shown in the panel, and SHALL treat an exact match as existing. When any code exists, no code in the submission SHALL be sent, and the refusal SHALL name every existing code.
+For a submitted code that already exists in the lookup type, the extension SHALL append the form's mappings to the code's stored value instead of refusing or replacing it. Existence and the stored value SHALL be taken from the lookup type's values fetched immediately before submitting, by exact code match. Because posting a code replaces its whole value, the extension SHALL send the fetched value with every field and every stored mapping exactly as fetched, plus the mappings it lacks. It SHALL NOT change or remove any stored mapping or field.
 
-#### Scenario: Batch with an existing code refused
+A mapping whose source and code at the source are already stored with the same value SHALL be treated as already present, and nothing SHALL be added for it. A mapping whose source and code at the source are stored with a **different** value is a conflict: the submission SHALL be refused, nothing SHALL be sent, and the panel SHALL name the code, the source and both values. An appended value SHALL be canonical only when the code has no canonical value yet, and downstream default only when its source has none for the code; otherwise it SHALL be added without the flag, and the panel SHALL say so. A submission where every mapping is already present SHALL send nothing and SHALL say so.
 
-- **WHEN** the user submits `HOME`, `WORK` and `PRIMARY`, and the server already holds `PRIMARY`
+#### Scenario: Add a source to an existing code
+
+- **WHEN** code `A` is stored with a canonical `Reltio` mapping `A` / `Acquired`, and the user adds `DnB` / `Acquired` to `A`
+- **THEN** the request SHALL carry `A` with its `Reltio` mapping and every other stored field unchanged, plus a `DnB` mapping
+- **AND** the `DnB` value SHALL be non-canonical, and the panel SHALL say it was added as non-canonical because `A` already has a canonical value
+
+#### Scenario: Mapping already stored
+
+- **WHEN** the user submits `A` with `Reltio` / `A` / `Acquired`, which is already stored
+- **THEN** no request SHALL be sent, and the panel SHALL say every mapping is already stored
+
+#### Scenario: Conflicting value refused
+
+- **WHEN** the user submits `A` with `Reltio` / `A` / `Active`, while `Reltio` / `A` is stored as `Acquired`
 - **THEN** no request SHALL be sent
-- **AND** the panel SHALL say that `PRIMARY` already exists, keeping all three blocks
+- **AND** the panel SHALL name `A`, `Reltio`, `Acquired` and `Active`, keeping the form
 
 #### Scenario: Code added elsewhere since the panel opened
 
 - **WHEN** a code was not in the table when the panel opened but was added on the server since
-- **THEN** the submission SHALL still be refused, because the check uses a fresh fetch
+- **THEN** the form's mappings SHALL be appended to it as stored now, because the merge uses a fresh fetch
 
 ### Requirement: All codes are sent in one request to the RDM lookups endpoint
 
-The extension SHALL send `POST {serviceUri}/lookups/{rdmTenantId}` once per submission, with the environment bearer token. It SHALL NOT use `…/lookups/{rdmTenantId}/_update`, which is a partial-update endpoint that does not create codes. The body SHALL be an array of plain lookup objects — not wrapped in `{ uri, value }` — one per code, in form order, each shaped:
+The extension SHALL send `POST {serviceUri}/lookups/{rdmTenantId}` once per submission, with the environment bearer token. It SHALL NOT use `…/lookups/{rdmTenantId}/_update`, which is a partial-update endpoint that does not create codes. The body SHALL be an array of plain lookup objects — not wrapped in `{ uri, value }` — one per code with something to send, in form order. An existing code SHALL be sent as its merged stored value (previous requirement). A new code SHALL be shaped:
 
 ```json
 { "tenantId": "{rdmTenantId}", "type": "{lookupTypeUri}", "code": "{code}", "enabled": true,
@@ -102,7 +115,7 @@ The extension SHALL send `POST {serviceUri}/lookups/{rdmTenantId}` once per subm
   "startDate": 0, "endDate": 0 }
 ```
 
-The RDM tenant and lookup type URI SHALL come from the context the extension recorded when it rendered the panel, never from the panel's message. `updatedBy`, `updateDate` and `version` SHALL NOT be sent: they describe a prior revision, which a new value does not have, and the extension SHALL NOT invent the user's identity or a timestamp. A mapping whose code was left blank SHALL use its block's code.
+The RDM tenant and lookup type URI SHALL come from the context the extension recorded when it rendered the panel, never from the panel's message. For a new code, `updatedBy`, `updateDate` and `version` SHALL NOT be sent: they describe a prior revision, which a new value does not have, and the extension SHALL NOT invent the user's identity or a timestamp. An existing code carries them back exactly as fetched. A mapping whose code was left blank SHALL use its block's code.
 
 #### Scenario: Request for the supplied example
 
@@ -128,7 +141,7 @@ The RDM tenant and lookup type URI SHALL come from the context the extension rec
 
 ### Requirement: The panel shows what the server stored
 
-After the request, the extension SHALL re-fetch the lookup type's values and treat a submitted code as added when the re-fetch contains it or the response lists it as stored (one `{ uri, value }` per stored code); anything else in the response SHALL be ignored. A code the response lists but the re-fetch does not yet show SHALL be reported as added, with a note that it may take a moment to appear in the table. When the re-fetch succeeds, the panel SHALL be re-rendered from it; codes that were added SHALL leave the form, and codes that were not SHALL remain in it as the user entered them, with the reason. When every code was added, the form SHALL close and the panel SHALL say how many values were added. While a submission is in flight, the form SHALL NOT allow a second submission.
+After the request, the extension SHALL re-fetch the lookup type's values and treat a submitted code as stored when the re-fetch, or the response (one `{ uri, value }` per stored code), holds the code with **every** mapping the submission asked to add, matched by source and code at the source; anything else in the response SHALL be ignored. The same rule SHALL apply to new codes and to existing codes that were appended to. A code the response lists but the re-fetch does not yet show SHALL be reported as added, with a note that it may take a moment to appear in the table. When the re-fetch succeeds, the panel SHALL be re-rendered from it; codes that were added SHALL leave the form, and codes that were not SHALL remain in it as the user entered them, with the reason. When every code was added, the form SHALL close and the panel SHALL say how many values were added. While a submission is in flight, the form SHALL NOT allow a second submission.
 
 #### Scenario: All codes added
 
