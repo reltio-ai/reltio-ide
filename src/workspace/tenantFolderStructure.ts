@@ -75,10 +75,10 @@ export interface ComponentFolder {
 	/** Documentation page on docs.reltio.com. */
 	docsUrl: string;
 	/**
-	 * Replaces the generic "Expected files" section of the generated README, for a folder the IDE
-	 * does work in and whose README therefore must not say it is unmanaged.
+	 * Closing paragraph of the generated README, for a folder the IDE does work in, where the
+	 * generic "not yet managed" footer would be false. Must carry `GENERATED_README_MARKER`.
 	 */
-	readmeBody?: string;
+	readmeFooter?: string;
 	/**
 	 * True when the IDE fetches or applies content here. Managed folders get no README,
 	 * because they hold a real file that keeps the directory alive in git.
@@ -97,7 +97,8 @@ export function isGeneratedReadmeText(text: string): boolean {
 	return text.includes(GENERATED_README_MARKER) || text.includes(LEGACY_README_MARKER);
 }
 
-const WORKFLOWS_README_BODY = "This folder holds the workflows for this tenant. Work with them from the **Workflows** row in the Reltio view; the row reads and writes the files here.\n\n## What is in this folder\n\n- `bpmn/` — BPMN process definitions, one `{processId}.bpmn20.xml` each.\n  - Every workflow deployed on the tenant is downloaded here when the **Process Definitions** list loads.\n  - Each downloaded workflow has a `{processId}.bpmn20.baseline.xml` beside it: a snapshot of what the tenant had at the last fetch. The extension compares against it to show **local changes**. Do not edit it or commit it; it is ignored by git in a connected repository.\n  - A workflow you create with **New Workflow...** is a **draft**: a file with no baseline, because it is not on the tenant yet.\n- Everything else appears only after you connect a Custom Workflow Repository. It is cloned straight into this folder (Maven modules, `pom.xml`, `pipeline/`, and its own `bpmn/`), and this README is replaced by the repository's own.\n\n## Common tasks\n\n- **Create a workflow:** right-click **Process Definitions**, then **New Workflow...**. Open the draft, edit it, and use **Show BPMN Diagram** to check it.\n- **Change a deployed workflow:** open it from **Process Definitions** and edit the file. The row shows **local changes**; **Compare with Last Fetch** shows the difference and **Discard Local Changes** restores the last fetch.\n- **Deploy:** right-click the workflow, then **Deploy to Tenant**. Deploying an id that is already live replaces it, so check the id first.\n- **Add Java (custom classes):** right-click **Workflows**, then **Connect Custom Workflow Repository...**. **Java Classes** and **Java Tests** appear once it is connected. A BPMN that calls a custom class needs the Java first, then the JAR registered under **JAR Deployments**.\n- **Refresh from the tenant:** **Refresh BPMNs** on **Process Definitions**. You are asked before any local change is overwritten.\n\n## Good to know\n\n- A file from the connected repository has its own row, even when a workflow with the same id is deployed.\n- **Disconnect Custom Workflow Repository** removes the repository's files from this folder. Your drafts, downloaded copies, uncommitted edits and files you added yourself are kept.\n- When this tenant is also bound to Git, committing from the repository root includes the downloaded workflows. Stage only the files you mean to share.";
+const WORKFLOWS_README_FOOTER = `${GENERATED_README_MARKER}. Connecting a Custom Workflow Repository replaces this file with the
+repository's own README.`;
 
 /**
  * Leaf folders of the component tree, in the order they appear in the tenant folder.
@@ -118,9 +119,13 @@ export const COMPONENT_FOLDERS: readonly ComponentFolder[] = [
 		path: WORKFLOWS_DIR,
 		title: 'Workflows',
 		description:
-			'Workflow work for this tenant. BPMN process definitions you author live in bpmn/ (the same folder a connected Custom Workflow Repository uses). Connecting a Custom Workflow Repository clones it directly into this folder, so its Maven modules sit beside bpmn/.',
-		expectedFiles: ['bpmn/*.bpmn20.xml', 'Maven modules (only after a Custom Workflow Repository is connected)'],
-		readmeBody: WORKFLOWS_README_BODY,
+			'BPMN workflows for this tenant: deployed workflows downloaded from the tenant and drafts you create, one file each in bpmn/. A connected Custom Workflow Repository is cloned into this folder, so its Maven modules sit beside bpmn/.',
+		expectedFiles: [
+			'bpmn/<processId>.bpmn20.xml (one per workflow)',
+			'bpmn/<processId>.bpmn20.baseline.xml (the last fetched copy, used to detect local changes)',
+			'<module>/ (one Maven module per custom workflow, only after a Custom Workflow Repository is connected)',
+		],
+		readmeFooter: WORKFLOWS_README_FOOTER,
 		docsUrl: 'https://docs.reltio.com/en/objectives/manage-workflow-tasks/workflow-management-at-a-glance/workflow-management-set-up/overview-of-workflow-customizations/overview-of-workflow-configuration/configure-custom-workflows',
 		managed: false,
 	},
@@ -207,25 +212,12 @@ async function exists(uri: vscode.Uri): Promise<boolean> {
 	}
 }
 
+const UNMANAGED_README_FOOTER = `This component is not yet managed by Reltio IDE. Files placed here are **not** fetched from or
+applied to the tenant; they are version-controlled alongside the configuration so the repository
+describes the whole tenant. This file exists because Git does not track empty directories.`;
+
 /** The README written into an unmanaged component folder. */
 export function renderReadme(folder: ComponentFolder): string {
-	if (folder.readmeBody !== undefined) {
-		return `# ${folder.title}
-
-${folder.description}
-
-${folder.readmeBody}
-
-## Documentation
-
-${folder.docsUrl}
-
----
-
-${GENERATED_README_MARKER}. Connecting a Custom Workflow Repository replaces this file with the
-repository's own README.
-`;
-	}
 	const files = folder.expectedFiles.map(f => `- \`${f}\``).join('\n');
 	return `# ${folder.title}
 
@@ -241,9 +233,7 @@ ${folder.docsUrl}
 
 ---
 
-This component is not yet managed by Reltio IDE. Files placed here are **not** fetched from or
-applied to the tenant; they are version-controlled alongside the configuration so the repository
-describes the whole tenant. This file exists because Git does not track empty directories.
+${folder.readmeFooter ?? UNMANAGED_README_FOOTER}
 `;
 }
 

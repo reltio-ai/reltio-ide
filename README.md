@@ -362,7 +362,7 @@ If the tenant configuration changed since your last fetch, the dialog asks you t
 
 ## Workflows
 
-Reltio IDE manages your tenant's BPMN workflows alongside your business configuration: browse deployed workflows, change and deploy them, create new ones, and implement custom Java when a workflow needs it. Workflows require a tenant connection — this feature is not available in a git-only workspace.
+Reltio IDE manages your tenant's BPMN workflows alongside your business configuration: browse deployed workflows, change and deploy them, create new ones, and implement custom Java when a workflow needs it.
 
 <p align="center">
   <img src="docs/images/workflows-entry-point.png" alt="Workflows row under a connected tenant in the RELTIO IDE view" width="400" />
@@ -372,12 +372,12 @@ Reltio IDE manages your tenant's BPMN workflows alongside your business configur
 
 ### Browse your workflows
 
-1. In the **RELTIO IDE** view, expand your tenant's **Workflows** folder. Reltio IDE discovers your tenant's Workflow Adapter URL automatically and downloads a copy of every deployed workflow in the background. Copies you already have are never overwritten.
+1. In the **RELTIO IDE** view, expand your tenant's **Workflows** folder. Reltio IDE discovers your tenant's Workflow Adapter URL automatically and downloads a copy of every deployed workflow in the background.
 2. Expand **Process Definitions** to see all workflows in one list. The icon shows where each workflow comes from:
-   - **Method icon** — a workflow that Reltio provides.
-   - **Class icon** — a custom workflow deployed on your tenant. It reads **• local changes** when you have edited its local copy and not yet deployed it.
-   - **Pencil icon, • draft** — a workflow that has not been deployed yet.
-   - **Repository icon** — a workflow file from your connected Custom Workflow Repository. It always has its own row, even when a deployed workflow has the same ID. See [Connect a Custom Workflow Repository](#connect-a-custom-workflow-repository).
+   - <img src="docs/images/icons/method.svg" width="16" height="16" alt="Method icon" /> **Method icon** — a workflow that Reltio provides.
+   - <img src="docs/images/icons/class.svg" width="16" height="16" alt="Class icon" /> **Class icon** — a custom workflow deployed on your tenant. It reads **• local changes** when you have edited its local copy and not yet deployed it.
+   - <img src="docs/images/icons/pencil.svg" width="16" height="16" alt="Pencil icon" /> **Pencil icon, • draft** — a workflow that has not been deployed yet.
+   - <img src="docs/images/icons/repo.svg" width="16" height="16" alt="Repository icon" /> **Repository icon** — a workflow file from your connected Custom Workflow Repository. It always has its own row, even when a deployed workflow has the same ID. See [Connect a Custom Workflow Repository](#connect-a-custom-workflow-repository).
 3. Expand **JAR Deployments** to see the Java modules registered against your tenant, and any **Unregistered JARs** that Reltio IDE finds but does not yet know about.
 4. Select a workflow to open its BPMN file in the editor. Right-click it and select **Show BPMN Diagram** to preview the process. If the file is not valid XML, the preview shows the first problem and its line number.
 
@@ -393,7 +393,7 @@ Reltio IDE manages your tenant's BPMN workflows alongside your business configur
   <em>Screenshot (VS Code): Show BPMN Diagram.</em>
 </p>
 
-On disk, workflows are in `Workflows/bpmn/` inside the tenant folder, one `.bpmn20.xml` file each. Each downloaded workflow also has a `.baseline.xml` file that Reltio IDE uses to detect your changes. Leave it in place; Git ignores it in a connected repository.
+You can see your BPMN files in the file explorer, in `Workflows/bpmn/` under your tenant folder. Each downloaded workflow also has a `.baseline.xml` file that Reltio IDE uses to detect your changes. Leave it in place; Git ignores it in a connected repository.
 
 To change the Workflow Adapter URL, right-click **Workflows**, select **Edit Workflow Adapter URL**, enter the URL, and press Enter.
 

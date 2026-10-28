@@ -1,0 +1,1 @@
+These icons are from Microsoft's Visual Studio Code Codicons (https://github.com/microsoft/vscode-codicons), licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). They are recoloured to match the Reltio IDE view.
