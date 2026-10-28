@@ -114,6 +114,18 @@ This helps prevent accidental overwrites and ensures you deploy with confidence.
 
 When you work from a Git repository, Reltio IDE hides tenant apply and history. Save your edits, then commit and push them with your editor's **Source Control** view.
 
+## Step 7 — Work with workflows
+
+*This step applies to a tenant connection.*
+
+Reltio IDE also manages your tenant's BPMN workflows. In the Reltio side panel, expand your tenant's **Workflows** folder. **Process Definitions** lists the workflows on your tenant, and **JAR Deployments** lists the Java packages registered against it.
+
+* Select a workflow to open its BPMN file, and right-click it and select **Show BPMN Diagram** to preview it.
+* Right-click **Process Definitions** and select **New Workflow...**, or describe the workflow to your AI assistant. New workflows are saved as drafts.
+* Right-click a draft or an edited workflow and select **Deploy to Tenant**.
+
+If a workflow needs custom Java, right-click **Workflows** and select **Connect Custom Workflow Repository...**. The AI assistant then writes the Java in your repository and the BPMN as a draft. After you raise a pull request and Reltio builds the Java package, use **Refresh JARs** and **Register JAR...** under **JAR Deployments**, then deploy the workflow.
+
 ---
 
 **Need Help?**

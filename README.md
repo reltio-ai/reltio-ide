@@ -4,7 +4,7 @@
 
 # Reltio IDE
 
-**Model, validate, and deploy your Reltio tenant's business configuration — without leaving VS Code or Cursor.**
+**Model, validate, and deploy your Reltio tenant's business configuration and workflows — without leaving VS Code or Cursor.**
 
 </div>
 
@@ -38,7 +38,7 @@
 
 ## What is Reltio IDE
 
-Reltio IDE is an editor extension for building and managing Reltio business configuration (L3) inside VS Code or Cursor. It brings modeling, validation, AI-assisted authoring, a Life Cycle Action (LCA) agent, and a review step into one place.
+Reltio IDE is an editor extension for building and managing Reltio business configuration (L3) inside VS Code or Cursor. It brings modeling, validation, AI-assisted authoring, a Life Cycle Action (LCA) agent, BPMN workflow authoring, and a review step into one place.
 
 You open configuration from **either** a live Reltio tenant **or** a Git repository — not both in the same workspace. Choose the source that matches how your team already works, then follow the matching section below.
 

@@ -1,7 +1,7 @@
 {
   "name": "reltio-ide",
   "displayName": "Reltio IDE",
-  "description": "Use the Reltio IDE to review and update the business configuration of your Reltio tenant.",
+  "description": "Use the Reltio IDE to review and update the business configuration and BPMN workflows of your Reltio tenant.",
   "version": "1.0.28",
   "publisher": "Reltio",
   "icon": "resources/icons/reltio-icon.png",
@@ -1094,6 +1094,14 @@
             "id": "applyChanges",
             "title": "Step 6: Apply Your Changes",
             "description": "When connected to a tenant, right-click the tenant and select **Apply Configuration to Tenant**. Reltio IDE compares your local configuration against the latest remote version and shows you a diff before deploying. For a Git repository that contains your BusinessConfig, commit and push with Source Control instead.",
+            "completionEvents": [
+              "onCommand:reltio.never_fired"
+            ]
+          },
+          {
+            "id": "workflows",
+            "title": "Step 7: Work with workflows",
+            "description": "For a tenant connection, expand the **Workflows** folder to browse, preview, create and deploy BPMN workflows. Right-click **Process Definitions** and select **New Workflow...**, or describe the workflow to your AI assistant. For a workflow that needs custom Java, select **Connect Custom Workflow Repository...**, raise a pull request, then use **Refresh JARs** and **Register JAR...** before you deploy.",
             "completionEvents": [
               "onCommand:reltio.never_fired"
             ]
