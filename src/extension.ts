@@ -80,10 +80,27 @@ import {
 	fetchRdmLookupValues,
 	flattenRdmLookupValues,
 	putRdmConfiguration,
+	postRdmLookupValues,
 } from './api/reltioClient';
 import { prettyPrintJsonIfPossible } from './api/formatJson';
 import { recallRdmServiceUri, rememberRdmServiceUri } from './rdm/rdmServiceCache';
-import { showLookupValuesPanel } from './rdm/lookupValuesPanel';
+import {
+	isCurrentLookupValuesRender,
+	postLookupValuesResult,
+	setLookupValuesSubmitHandler,
+	showLookupValuesPanel,
+	type LookupValuesContext,
+	type LookupValuesRender,
+	type LookupValuesView,
+} from './rdm/lookupValuesPanel';
+import {
+	buildLookupValuesCreateBody,
+	codesInCreateResponse,
+	describeSubmissionOutcome,
+	findExistingCodes,
+	sourceSuggestions,
+	type LookupValueDraft,
+} from './rdm/lookupValueDraft';
 import { addRdmLookupType, addRdmSource } from './rdm/rdmEditCommands';
 import { tenantIdFromTreeContext } from './util/tenantIdFromTreeContext';
 import {
@@ -163,6 +180,7 @@ import {
 import { createModeSyncTrigger, syncReltioAgentAssets, type ReltioAgentSyncReport } from './workspace/reltioAgentSync';
 import { AGENT_SKILLS_SETTING, OVERRIDES_SEGMENTS } from './workspace/agentSkillDiscovery';
 import { MATCH_VERIFICATION_SETTING, registerMatchVerificationBridge } from './workspace/matchVerification';
+import { approvalText, RDM_LOOKUP_LOAD_SETTING, registerLookupLoadBridge } from './rdm/lookupLoadBridge';
 import { registerReltioAutoSave } from './workspace/reltioAutoSave';
 import {
 	isGitRepo,
@@ -933,6 +951,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				log: line => verificationLog.appendLine(line),
 			}),
 		);
+
+		const lookupLoadLog = vscode.window.createOutputChannel('Reltio RDM Lookup Load');
+		context.subscriptions.push(
+			lookupLoadLog,
+			registerLookupLoadBridge({
+				workspaceRoot: folder.uri,
+				isEnabled: () =>
+					vscode.workspace.getConfiguration('reltio').get<boolean>(RDM_LOOKUP_LOAD_SETTING, true),
+				isRepositoryMode: () => workspaceSource === 'git',
+				resolveTenant: async file => {
+					// Identity comes from the markers, never from the request.
+					await environmentManager.scanEnvironments();
+					return environmentManager.locFromPath(file.fsPath);
+				},
+				rdmConfigUri: (env, tenant, rdmTenantId) => environmentManager.getRdmUri(env, tenant, rdmTenantId),
+				getToken: env => tokenStore.getToken(env),
+				tryRefresh,
+				resolveServiceUri: resolveRdmServiceUri,
+				// The only path to a write: a modal the agent cannot answer.
+				approve: async approval => {
+					const { message, detail } = approvalText(approval);
+					return (await vscode.window.showWarningMessage(message, { modal: true, detail }, 'Load')) === 'Load';
+				},
+				log: line => lookupLoadLog.appendLine(line),
+			}),
+		);
 	}
 
 	context.subscriptions.push(
@@ -957,6 +1001,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}),
 	);
 
+	setLookupValuesSubmitHandler(submitLookupValues);
+
 	context.subscriptions.push(
 		vscode.commands.registerCommand('reltio.addRdmLookupType', async (node?: unknown) => {
 			const fileUri = rdmFileUriFromNode(node);
@@ -973,7 +1019,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		vscode.commands.registerCommand('reltio.getRdmLookupValues', async (node?: unknown) => {
 			if (!(node instanceof RdmItemNode) || node.sectionKey !== 'lookupTypes') return;
 			const lookupTypeName = node.typeName;
-			if (!lookupTypeName) {
+			const lookupTypeUri = node.uri;
+			if (!lookupTypeName || !lookupTypeUri) {
 				void vscode.window.showErrorMessage('This lookup type has no URI to resolve a name from.');
 				return;
 			}
@@ -1017,12 +1064,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				return;
 			}
 
-			showLookupValuesPanel(flattenRdmLookupValues(response), response, {
-				environmentName: node.environmentName,
-				tenantId: node.tenantId,
-				rdmTenantId: node.rdmTenantId,
-				lookupTypeName,
-			});
+			showLookupValuesPanel(
+				await lookupValuesView(
+					{
+						environmentName: node.environmentName,
+						tenantId: node.tenantId,
+						rdmTenantId: node.rdmTenantId,
+						lookupTypeName,
+						lookupTypeUri,
+						rdmFileUri: node.fileUri,
+					},
+					response,
+				),
+			);
 		}),
 		vscode.commands.registerCommand('reltio.revealInEditor', async (item?: unknown) => {
 			// RDM nodes carry their own file, so they resolve before the L3 path below.
@@ -1587,6 +1641,143 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 		rememberRdmServiceUri(environmentName, tenantId, serviceUri);
 		return serviceUri;
+	}
+
+	/** Panel content for one lookups response; sources are suggested from it and the RDM file on disk. */
+	async function lookupValuesView(context: LookupValuesContext, response: unknown): Promise<LookupValuesView> {
+		let configuration: unknown;
+		try {
+			const doc = await vscode.workspace.openTextDocument(context.rdmFileUri);
+			configuration = parseRdmDocument(doc.getText()).model;
+		} catch {
+			// Suggestions only: without the file the form still accepts any source.
+		}
+		return {
+			rows: flattenRdmLookupValues(response),
+			rawResponse: response,
+			context,
+			sourceSuggestions: sourceSuggestions(response, configuration),
+		};
+	}
+
+	/**
+	 * Add Value: post every new code in one `POST …/lookups/{rdmTenantId}`,
+	 * then judge what the service stored from its response and a re-fetch.
+	 *
+	 * The codes are checked against a fresh fetch first, because that endpoint
+	 * replaces a code that exists: it would lose its current mappings.
+	 * Every identifier comes from `render.context`, recorded when the panel
+	 * was rendered — the panel supplies only the values.
+	 */
+	async function submitLookupValues(render: LookupValuesRender, values: LookupValueDraft[]): Promise<void> {
+		const ctx = render.context;
+		// Once the panel has moved on, its form is gone: say it in a notification instead.
+		const report = (message: string): void => {
+			if (isCurrentLookupValuesRender(render)) {
+				postLookupValuesResult(render, message);
+			} else {
+				void vscode.window.showWarningMessage(`Lookup values (${ctx.lookupTypeName}): ${message}`);
+			}
+		};
+		// Report before `handle401`, which can wait on a notification the user never dismisses.
+		const sessionExpired = async (): Promise<void> => {
+			report('The session had to be renewed. Nothing was sent; submit again once signed in.');
+			await handle401(ctx.environmentName);
+		};
+
+		const token = tokenStore.getToken(ctx.environmentName);
+		if (!token) {
+			report('Provide a token for this environment first. Nothing was sent.');
+			return;
+		}
+		const serviceUri = await resolveRdmServiceUri(ctx.environmentName, ctx.tenantId, token);
+		if (serviceUri === '401') {
+			await sessionExpired();
+			return;
+		}
+		if (!serviceUri) {
+			report(`No RDM service is configured for "${ctx.tenantId}". Nothing was sent.`);
+			return;
+		}
+
+		const codes = values.map(v => v.code);
+		let current: unknown;
+		try {
+			current = await fetchRdmLookupValues(serviceUri, ctx.rdmTenantId, ctx.lookupTypeName, token);
+		} catch (e) {
+			if (e instanceof ReltioApiError && e.statusCode === 401) {
+				await sessionExpired();
+				return;
+			}
+			report(`Could not check for existing codes (${(e as Error).message}). Nothing was sent.`);
+			return;
+		}
+		const existing = findExistingCodes(codes, current);
+		if (existing.length > 0) {
+			report(
+				`Already in ${ctx.lookupTypeName}: ${existing.join(', ')}. Nothing was sent; ` +
+					`adding ${existing.length === 1 ? 'it' : 'them'} would replace the existing mappings.`,
+			);
+			return;
+		}
+
+		let postError: string | undefined;
+		let created: unknown;
+		try {
+			created = await vscode.window.withProgress(
+				{
+					location: vscode.ProgressLocation.Notification,
+					title: `Adding ${codes.length === 1 ? codes[0] : `${codes.length} values`} to ${ctx.lookupTypeName}…`,
+				},
+				() =>
+					postRdmLookupValues(
+						serviceUri,
+						ctx.rdmTenantId,
+						buildLookupValuesCreateBody(values, ctx),
+						token,
+					),
+			);
+		} catch (e) {
+			if (e instanceof ReltioApiError && e.statusCode === 401) {
+				await sessionExpired();
+				return;
+			}
+			// Not final: a failed or timed-out request may still have stored some codes.
+			postError = (e as Error).message;
+		}
+
+		let refetched: unknown;
+		try {
+			refetched = await fetchRdmLookupValues(serviceUri, ctx.rdmTenantId, ctx.lookupTypeName, token);
+		} catch (e) {
+			const confirmed = codes.filter(c => codesInCreateResponse(created).has(c));
+			const sent = postError
+				? `The request failed: ${postError}`
+				: confirmed.length > 0
+					? `The service stored ${confirmed.join(', ')}.`
+					: 'The request was sent.';
+			report(
+				`${sent} The table could not be refreshed (${(e as Error).message}), so what was stored is not confirmed. ` +
+					'Submitting again is safe: any code that was stored will be refused as existing.',
+			);
+			if (e instanceof ReltioApiError && e.statusCode === 401) {
+				await handle401(ctx.environmentName);
+			}
+			return;
+		}
+
+		const outcome = describeSubmissionOutcome(values, refetched, postError, created);
+		if (!isCurrentLookupValuesRender(render)) {
+			const text = `Lookup values (${ctx.lookupTypeName}): ${outcome.message}`;
+			void (outcome.remaining.length > 0
+				? vscode.window.showWarningMessage(text)
+				: vscode.window.showInformationMessage(text));
+			return;
+		}
+		showLookupValuesPanel(await lookupValuesView(ctx, refetched), {
+			values: outcome.remaining,
+			message: outcome.message,
+		});
 	}
 
 	/**

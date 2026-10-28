@@ -562,6 +562,11 @@
           "default": true,
           "description": "Let AI agents test a candidate match rule against the connected tenant before inserting it. The extension answers requests written to '.reltio/reltio-agent/match-verification/request.json' using your signed-in session and the read-only _verifyMatches API, which never creates, merges or changes entities. When off, agents test rules without the tenant and label the results as not verified."
         },
+        "reltio.enableRdmLookupLoad": {
+          "type": "boolean",
+          "default": true,
+          "description": "Let AI agents load RDM lookup values from a CSV named after the lookup type. The extension answers requests written to '.reltio/reltio-agent/rdm-lookup-load/request.json' using your signed-in session. Every load first asks for your approval in a dialog, and codes that already exist are skipped, never replaced. When off, agents cannot load lookup values."
+        },
         "reltio.defaultEnvironments": {
           "type": "array",
           "default": [],

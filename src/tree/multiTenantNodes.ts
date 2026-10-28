@@ -315,7 +315,12 @@ export class RdmItemNode extends vscode.TreeItem {
 		readonly sectionKey: string,
 		readonly jsonPath: (string | number)[],
 		label: string,
-		uri: string | undefined,
+		/**
+		 * The entry's own `uri`, e.g. `rdm/lookupTypes/AddressTypes`. Add Value
+		 * sends it as each new value's `type`, so the request carries the
+		 * server's value rather than one rebuilt from the name.
+		 */
+		readonly uri: string | undefined,
 		iconId: string,
 		/**
 		 * Trailing segment of `uri`, e.g. `AddressTypes`. Carried here so the

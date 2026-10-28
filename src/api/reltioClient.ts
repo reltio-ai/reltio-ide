@@ -541,6 +541,79 @@ export async function fetchRdmLookupValues(
 }
 
 /**
+ * Create lookup values — `POST {serviceUri}/lookups/{rdmTenantId}`.
+ *
+ * `body` is the array `buildLookupValuesCreateBody` produces. A code that
+ * already exists is **replaced**, mappings included, so callers must refuse
+ * existing codes first. Not `…/_update`: that is the partial-update endpoint,
+ * which needs an `operation` on every mapping value and does not create codes.
+ *
+ * Returns the parsed response — documented as one `{ uri, value }` per stored
+ * code — or `undefined` when the body is not JSON.
+ *
+ * The service URI comes from a server response, so it passes through
+ * `toHttpsBase()` and its trusted-host allowlist like every RDM read.
+ */
+export async function postRdmLookupValues(
+	serviceUri: string,
+	rdmTenantId: string,
+	body: unknown,
+	token: string,
+): Promise<unknown> {
+	const root = toHttpsBase(serviceUri);
+	const url = `${root}/lookups/${encodeURIComponent(rdmTenantId)}`;
+	const res = await fetchWithTimeout(
+		url,
+		{
+			method: 'POST',
+			headers: reltioHeaders(token, { 'Content-Type': 'application/json' }),
+			body: JSON.stringify(body),
+		},
+		DEFAULT_TIMEOUT_MS,
+	);
+	if (res.status === 401) {
+		throw new ReltioApiError('Unauthorized (401)', 401);
+	}
+	if (!res.ok) {
+		let fullText = '';
+		try {
+			fullText = await res.text();
+		} catch {
+			/* ignore */
+		}
+		throw new ReltioApiError(formatRdmLookupUpdateFailureMessage(res.status, fullText), res.status);
+	}
+	try {
+		return JSON.parse(await res.text()) as unknown;
+	} catch {
+		// The write succeeded; the caller still re-fetches to see what was stored.
+		return undefined;
+	}
+}
+
+/**
+ * The service's own words when it has them. Unlike
+ * `formatPutConfigurationFailureMessage` there is no "fix your L3 JSON"
+ * framing: these values have no local file.
+ */
+function formatRdmLookupUpdateFailureMessage(httpStatus: number, bodyText: string): string {
+	const reltio = tryParseReltioConfigurationError(bodyText);
+	if (reltio && (reltio.errorMessage || reltio.errorDetailMessage)) {
+		const detail = [reltio.errorMessage, reltio.errorDetailMessage]
+			.filter((m, i, all): m is string => !!m && all.indexOf(m) === i)
+			.join(' ');
+		return `HTTP ${httpStatus}: ${detail}`;
+	}
+	const trimmed = bodyText.trim();
+	if (!trimmed) {
+		return `HTTP ${httpStatus}.`;
+	}
+	return `HTTP ${httpStatus}: ${
+		trimmed.length > MAX_ERROR_BODY_CHARS ? `${trimmed.slice(0, MAX_ERROR_BODY_CHARS)}…` : trimmed
+	}`;
+}
+
+/**
  * Flatten the nested lookup response into one row per (code, source, value).
  *
  * Pure and total — anything unexpected contributes no rows rather than
