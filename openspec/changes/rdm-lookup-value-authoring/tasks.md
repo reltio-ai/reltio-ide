@@ -70,3 +70,14 @@ Reported in manual QA: adding one code (`Partner`) showed "Nothing was added: th
 - [x] B1.4 Cap a submission at 100 codes — the documented per-request maximum for create; reject a larger form in validation, before any request (design D6)
 - [x] B1.5 Update `spec.md` (endpoint, body, how the outcome is judged, the 100-code cap), `proposal.md`, `ARCHITECTURE.md` and `scripts/test-rdm-lookup-value-authoring.cjs`; `npm test`, `npm run compile`, `npm run build`, package a `.vsix`; `openspec validate --strict`
 - [ ] B1.6 Manual QA: add `Partner` again — if the earlier attempt was stored after all, the pre-flight now names it as existing; otherwise it is added and appears in the table. Then add three codes in one submission
+
+## Bugfix Round 2 — cannot add a source to an existing code
+
+Reported in manual QA: adding source `DnB` to existing code `A` in `OrganizationStatuses` was refused: "Already in OrganizationStatuses: A. Nothing was sent; adding it would replace the existing mappings." See design D9.
+
+- [x] B2.1 Append to existing codes instead of refusing them — root cause: D4 refused any existing code because the create endpoint replaces a code's whole value. Add a pure `mergeLookupValue(existing, draft)` to `src/rdm/lookupValueDraft.ts` that starts from the fetched value with every field kept, appends new sources and new codes at a source, reports already-present mappings and conflicts, and never changes or removes a stored entry (design D9)
+- [x] B2.2 Keep stored flags — an appended value is canonical only if the code has no canonical value, and downstream default only if its source has none; report each flag not applied (design D9)
+- [x] B2.3 Panel flow — after the fresh fetch, merge each existing code, refuse the submission when any mapping conflicts (naming code, source and both values), send nothing when everything is already present, and post merged existing values together with new codes in chunks of ≤ 100 (design D9)
+- [x] B2.4 Judge stored per mapping — a code counts as stored when the response or re-fetch holds it with every requested source and code at the source; messages name codes added, codes appended to, and flags not applied (design D7, D9)
+- [x] B2.5 Update `spec.md` (replace "Only new codes can be added" with the append requirement and its scenarios), `proposal.md`, `ARCHITECTURE.md` and `scripts/test-rdm-lookup-value-authoring.cjs` (merge rules, conflicts, flags, nothing removed, stored-per-mapping); `npm test`, compile, build, package; `openspec validate --strict`
+- [ ] B2.6 Manual QA: add `DnB` to existing code `A` — the `Reltio` mapping is unchanged and `DnB` appears; repeat — "already present", nothing sent; give `DnB` a different value for the same code at source — refused as a conflict; record whether a stale `version` is rejected

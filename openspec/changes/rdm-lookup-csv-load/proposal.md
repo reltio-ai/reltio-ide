@@ -11,7 +11,7 @@ The IDE's agents can already read a workspace and talk to the user. What they ca
 - **Value at Source sets both the source's code and its value**, so source data arriving with that value is transcoded to the canonical code. `Code at Source`, when present, sets the source's code separately.
 - **A new file bridge**, `.reltio/reltio-agent/rdm-lookup-load/`, alongside the match verification bridge. The agent writes `request.json` naming the CSV and the tenant's RDM configuration file. The extension parses and checks the CSV, works out the environment, tenant, RDM tenant and lookup type itself, calls the RDM service with the user's session, and writes `result.json`.
 - **Two steps: plan, then load.** A plan is read-only: it reports which codes are new, which already exist, and any errors or warnings, with CSV line numbers. A load repeats the plan against a fresh fetch, then shows a **modal dialog in the IDE** naming the tenant, lookup type and counts. Nothing is written unless the user clicks **Load** there; the agent alone can never write.
-- **Existing codes are skipped and reported.** Posting a code that already exists would replace its mappings, so only new codes are sent. Rerunning a load is therefore safe.
+- **Existing codes are appended to, never replaced** (design D12, revised from skipping). A code that already exists gets only the CSV mappings it lacks, merged into its stored value with every stored mapping and field kept. A row that contradicts a stored mapping is skipped with a line-numbered warning. Rerunning a load is therefore safe: everything already stored is `unchanged`.
 - New codes are sent with the same request Add Value uses, `POST {serviceUri}/lookups/{rdmTenantId}`, in chunks of at most 100. Each code's outcome is judged from the response and a re-fetch.
 - A setting, **`reltio.enableRdmLookupLoad`** (default on), lets the user turn the bridge off.
 
@@ -19,7 +19,7 @@ The IDE's agents can already read a workspace and talk to the user. What they ca
 
 ### New Capabilities
 
-- `rdm-lookup-csv-load`: loading lookup values from a CSV through an agent skill — the CSV format and its checks, the plan/load bridge and its identity rules, the approval dialog, skipping existing codes, chunked posting and per-code results, and the bundled skill.
+- `rdm-lookup-csv-load`: loading lookup values from a CSV through an agent skill — the CSV format and its checks, the plan/load bridge and its identity rules, the approval dialog, appending to existing codes without replacing anything, chunked posting and per-code results, and the bundled skill.
 
 ### Modified Capabilities
 
@@ -35,4 +35,4 @@ _None._ The panel's Add Value (`rdm-lookup-value-authoring`) is unchanged; this 
 - `skills/reltio-default/rdm-lookup-values-from-csv/` — the skill. `resources/reltio-agent-assets.json` — `skillsBundleVersion` raised so existing workspaces receive it. `.cursor/skills/reltio-rdm-lookup-values-from-csv/SKILL.md` — contributor pointer.
 - `scripts/test-rdm-lookup-csv-load.cjs` — new, registered in `scripts/run-unit-tests.cjs`; `scripts/test-workflow-skills-library.cjs` — pinned bundle version and content hash updated.
 - `ARCHITECTURE.md` — the bridge, its protocol and the skill.
-- Depends on `rdm-lookup-value-authoring` (same branch) for the request body, client call and reconciliation.
+- Depends on `rdm-lookup-value-authoring` (same branch) for the request body, client call, the shared append merge (its design D9) and reconciliation.

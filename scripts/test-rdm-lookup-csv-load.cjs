@@ -6,7 +6,7 @@
  *         lookup type from the file name, chunking and per-code outcomes.
  * Tier B: the bridge with injected dependencies — identity from workspace
  *         files only, plan never writes, load only after approval, existing
- *         codes never sent, chunks, failures, no token in results; the bundled
+ *         codes appended to and never replaced, chunks, failures, no token in results; the bundled
  *         skill and the manifest.
  * Tier C (manual): live tenant in Claude Code and Cursor — see design.md.
  */
@@ -183,24 +183,38 @@ assert.deepStrictEqual(chunk(Array.from({ length: 250 }, (_, i) => i), 100).map(
 assert.deepStrictEqual(chunk([], 100), []);
 
 {
-	const created = codes => codes.map(code => ({ uri: `T/X/${code}`, value: { code } }));
+	const item = (code, kind, expect) => ({ draft: { code, mappings: [] }, kind, expect: kind === 'unchanged' ? [] : expect ?? [{ source: 'Reltio', code }] });
+	const has = (code, ...sources) => ({ code, sourceMappings: sources.map(source => ({ source, values: [{ code, value: code }] })) });
+	const items = [
+		item('U', 'unchanged'),
+		item('A', 'new'),
+		item('B', 'append', [{ source: 'BvD', code: 'B' }]),
+		item('C', 'new'),
+		item('D', 'new'),
+		item('P', 'append', [{ source: 'BvD', code: 'P' }]),
+	];
 	const outcomes = loadOutcomes({
-		codes: ['E', 'A', 'B', 'C', 'D'],
-		existing: ['E'],
-		sent: ['A', 'B', 'C'],
-		createResponses: [created(['A'])],
-		refetched: [{ code: 'E' }, { code: 'B' }],
+		items,
+		sent: ['A', 'B', 'C', 'P'],
+		createResponses: [[{ uri: 'x', value: has('A', 'Reltio') }]],
+		refetched: [has('B', 'Reltio', 'BvD'), has('P', 'Reltio')],
 	});
 	assert.deepStrictEqual(outcomes, [
-		{ code: 'E', outcome: 'skipped-existing' },
+		{ code: 'U', outcome: 'unchanged' },
 		{ code: 'A', outcome: 'added' },
-		{ code: 'B', outcome: 'added' },
+		{ code: 'B', outcome: 'appended' },
 		{ code: 'C', outcome: 'not-stored' },
 		{ code: 'D', outcome: 'not-sent' },
-	]);
-	const noRefetch = loadOutcomes({ codes: ['A', 'C'], existing: [], sent: ['A', 'C'], createResponses: [created(['A'])], refetched: undefined });
+		{ code: 'P', outcome: 'not-stored' },
+	], 'P is there, but without the mapping that was appended');
+	const noRefetch = loadOutcomes({
+		items: [item('A', 'new'), item('C', 'new')],
+		sent: ['A', 'C'],
+		createResponses: [[{ uri: 'x', value: has('A', 'Reltio') }]],
+		refetched: undefined,
+	});
 	assert.deepStrictEqual(noRefetch.map(o => o.outcome), ['added', 'unconfirmed']);
-	assert.deepStrictEqual(countOutcomes(outcomes), { added: 2, 'not-stored': 1, 'not-sent': 1, 'skipped-existing': 1, unconfirmed: 0 });
+	assert.deepStrictEqual(countOutcomes(outcomes), { added: 1, appended: 1, unchanged: 1, 'not-stored': 2, 'not-sent': 1, unconfirmed: 0 });
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +228,8 @@ const CSV_REL = 'data/MaritalStatuses.csv';
 
 function makeDeps(over = {}, files = {}) {
 	const calls = { fetch: [], post: [], approve: [], read: [] };
-	const server = new Set(over.serverHas ?? []);
+	const copy = v => JSON.parse(JSON.stringify(v));
+	const server = new Map((over.serverValues ?? []).map(v => [v.code, copy(v)]));
 	const store = {
 		[`/ws/${CONFIG_REL}`]: JSON.stringify(CONFIG),
 		[`/ws/${CSV_REL}`]: SAMPLE,
@@ -240,17 +255,30 @@ function makeDeps(over = {}, files = {}) {
 		},
 		fetchValues: async (service, rdmTenantId, type, token) => {
 			calls.fetch.push({ service, rdmTenantId, type, token });
-			return [...server].map(code => ({ code, sourceMappings: [] }));
+			return [...server.values()].map(copy);
 		},
 		postValues: async (service, rdmTenantId, body, token) => {
 			calls.post.push({ service, rdmTenantId, body, token });
-			for (const v of body) server.add(v.code);
+			for (const v of body) server.set(v.code, copy(v));
 			return body.map(v => ({ uri: `${rdmTenantId}/${v.type.split('/').pop()}/${v.code}`, value: v }));
 		},
 		...over,
 	};
 	return { deps, calls, server };
 }
+
+/** Single as stored: one canonical Reltio mapping, and fields the merge must carry back. */
+const singleStored = () => ({
+	tenantId: 'RdmT',
+	type: 'rdm/lookupTypes/MaritalStatuses',
+	code: 'Single',
+	enabled: true,
+	sourceMappings: [{ source: 'Reltio', values: [{ code: 'S', value: 'S', enabled: true, canonicalValue: true, downStreamDefaultValue: true }] }],
+	startDate: 0,
+	endDate: 0,
+	updatedBy: 'someone@example.com',
+	version: 7,
+});
 
 const request = over => ({ requestId: 'r1', mode: 'plan', csvFile: CSV_REL, rdmConfigFile: CONFIG_REL, ...over });
 const run = (raw, over, files) => {
@@ -323,13 +351,29 @@ async function testIdentityAndLookupType() {
 }
 
 async function testPlan() {
-	const r = await run(request(), { serverHas: ['Single'] });
+	const r = await run(request(), { serverValues: [singleStored()] });
 	assert.strictEqual(r.result.status, 'planned');
-	assert.deepStrictEqual(r.result.counts, { new: 3, existing: 1 });
-	assert.deepStrictEqual(r.result.codes[0], { code: 'Single', lines: [2, 3, 4], classification: 'existing' });
+	assert.deepStrictEqual(r.result.counts, { new: 3, append: 1, unchanged: 0 });
+	assert.strictEqual(r.result.appendMappingCount, 2, 'BvD and ReltioCleanser are added to Single; Reltio is already there');
+	assert.deepStrictEqual(r.result.codes[0], { code: 'Single', lines: [2, 3, 4], classification: 'append' });
 	assert.deepStrictEqual(r.result.codes.slice(1).map(c => c.classification), ['new', 'new', 'new']);
 	assert.strictEqual(r.calls.post.length, 0, 'a plan never writes');
 	assert.strictEqual(r.calls.approve.length, 0, 'a plan never prompts');
+
+	// A conflicting row and a canonical flag the stored value keeps: warnings with lines, never errors.
+	const conflicts = await run(request(), { serverValues: [singleStored()] }, {
+		[`/ws/${CSV_REL}`]: 'Code,Source,Value at Source,Code at Source,Canonical\nSingle,Reltio,Solo,S,\nSingle,BvD,Unmarried,,yes',
+	});
+	assert.deepStrictEqual(conflicts.result.errors, []);
+	assert.deepStrictEqual(conflicts.result.codes.map(c => c.classification), ['append']);
+	const [conflict, flag] = conflicts.result.warnings;
+	assert.deepStrictEqual(conflict.lines, [2]);
+	assert.match(conflict.message, /Single already maps Reltio code "S" to "S", not "Solo"\. The stored value is kept/);
+	assert.deepStrictEqual(flag.lines, [3]);
+	assert.match(flag.message, /already has a canonical value, so BvD is added as non-canonical/);
+
+	const unchanged = await run(request(), { serverValues: [singleStored()] }, { [`/ws/${CSV_REL}`]: 'Code,Source,Value at Source\nSingle,Reltio,S' });
+	assert.deepStrictEqual(unchanged.result.counts, { new: 0, append: 0, unchanged: 1 });
 
 	const bad = await run(request(), {}, { [`/ws/${CSV_REL}`]: 'Code,Source,Value at Source\nSingle,BvD,U\nSingle,BvD,X' });
 	assert.strictEqual(bad.result.status, 'planned');
@@ -345,39 +389,47 @@ async function testLoad() {
 	assert.strictEqual(r.calls.approve.length + r.calls.post.length, 0);
 
 	// Not approved: nothing written.
-	r = await run(request({ mode: 'load' }), { serverHas: ['Single'], approved: false });
+	r = await run(request({ mode: 'load' }), { serverValues: [singleStored()], approved: false });
 	assert.strictEqual(r.result.status, 'cancelled');
-	assert.deepStrictEqual(r.result.counts, { new: 3, existing: 1 });
+	assert.deepStrictEqual(r.result.counts, { new: 3, append: 1, unchanged: 0 });
 	assert.strictEqual(r.calls.post.length, 0);
 	assert.deepStrictEqual(r.calls.approve, [{
-		environmentName: 'dev', tenantId: 'T1', rdmTenantId: 'RdmT', lookupType: 'MaritalStatuses',
-		csvFile: CSV_REL, newCount: 3, existingCount: 1, warningCount: 0,
+		environmentName: 'dev', tenantId: 'T1', rdmTenantId: 'RdmT', lookupType: 'MaritalStatuses', csvFile: CSV_REL,
+		newCount: 3, appendCount: 1, appendMappingCount: 2, unchangedCount: 0, warningCount: 0,
 	}]);
 
-	// Approved: only new codes, one request, the Add Value body.
-	r = await run(request({ mode: 'load' }), { serverHas: ['Single'] });
+	// Approved: one request, in CSV order — Single merged, the rest created.
+	r = await run(request({ mode: 'load' }), { serverValues: [singleStored()] });
 	assert.strictEqual(r.result.status, 'loaded');
 	assert.strictEqual(r.calls.post.length, 1);
 	const body = r.calls.post[0].body;
-	assert.deepStrictEqual(body.map(v => v.code), ['Married', 'Divorced', 'Unknown'], 'the existing code is never sent');
-	assert.ok(body.every(v => v.tenantId === 'RdmT' && v.type === 'rdm/lookupTypes/MaritalStatuses' && v.enabled === true));
-	assert.deepStrictEqual(body[0].sourceMappings[1], {
+	assert.deepStrictEqual(body.map(v => v.code), ['Single', 'Married', 'Divorced', 'Unknown']);
+	const { sourceMappings, ...singleRest } = body[0];
+	const { sourceMappings: storedMappings, ...storedRest } = singleStored();
+	assert.deepStrictEqual(singleRest, storedRest, 'the existing value is sent back as fetched, version included');
+	assert.deepStrictEqual(sourceMappings[0], storedMappings[0], 'the stored Reltio mapping is not changed');
+	assert.deepStrictEqual(sourceMappings.slice(1).map(m => [m.source, m.values[0].code, m.values[0].canonicalValue]), [
+		['BvD', 'Unmarried', false],
+		['ReltioCleanser', 'Never married', false],
+	], 'only the missing mappings are appended');
+	assert.ok(body.slice(1).every(v => v.tenantId === 'RdmT' && v.type === 'rdm/lookupTypes/MaritalStatuses' && v.enabled === true));
+	assert.deepStrictEqual(body[1].sourceMappings[1], {
 		source: 'BvD',
 		values: [{ code: 'Spouse present', value: 'Spouse present', enabled: true, canonicalValue: false, downStreamDefaultValue: true }],
 	});
-	assert.strictEqual(r.calls.post[0].rdmTenantId, 'RdmT');
-	assert.deepStrictEqual(r.result.counts, { added: 3, 'not-stored': 0, 'not-sent': 0, 'skipped-existing': 1, unconfirmed: 0 });
-	assert.strictEqual(r.result.codes[0].outcome, 'skipped-existing');
+	assert.deepStrictEqual(r.result.counts, { added: 3, appended: 1, unchanged: 0, 'not-stored': 0, 'not-sent': 0, unconfirmed: 0 });
+	assert.strictEqual(r.result.codes[0].outcome, 'appended');
+	assert.strictEqual(r.server.get('Single').sourceMappings.length, 3);
 
 	// A load without a plan still fetches first, then asks.
 	assert.ok(r.calls.fetch.length >= 1 && r.calls.approve.length === 1);
 
-	// Rerun: everything exists, so no dialog and nothing sent.
-	r = await run(request({ mode: 'load' }), { serverHas: ['Single', 'Married', 'Divorced', 'Unknown'] });
+	// Rerun against what was stored: every code unchanged, no dialog, nothing sent.
+	r = await run(request({ mode: 'load' }), { serverValues: [...r.server.values()] });
 	assert.strictEqual(r.result.status, 'loaded');
 	assert.strictEqual(r.calls.approve.length, 0);
 	assert.strictEqual(r.calls.post.length, 0);
-	assert.strictEqual(r.result.counts['skipped-existing'], 4);
+	assert.strictEqual(r.result.counts.unchanged, 4);
 }
 
 async function testChunksAndFailures() {
@@ -399,7 +451,7 @@ async function testChunksAndFailures() {
 	};
 	const res = await bridge.handleLookupLoadRequest(request({ mode: 'load' }), failing.deps);
 	assert.strictEqual(posts, 2);
-	assert.deepStrictEqual(res.counts, { added: 100, 'not-stored': 100, 'not-sent': 50, 'skipped-existing': 0, unconfirmed: 0 });
+	assert.deepStrictEqual(res.counts, { added: 100, appended: 0, unchanged: 0, 'not-stored': 100, 'not-sent': 50, unconfirmed: 0 });
 	assert.deepStrictEqual([res.error.kind, res.error.httpStatus], ['api-error', 400]);
 	assert.match(res.message, /Invalid source/);
 
@@ -449,10 +501,13 @@ async function testNoTokenInResults() {
 {
 	const t = bridge.approvalText({
 		environmentName: 'dev', tenantId: 'T1', rdmTenantId: 'RdmT', lookupType: 'MaritalStatuses',
-		csvFile: CSV_REL, newCount: 1, existingCount: 2, warningCount: 0,
+		csvFile: CSV_REL, newCount: 1, appendCount: 2, appendMappingCount: 3, unchangedCount: 0, warningCount: 1,
 	});
-	assert.strictEqual(t.message, 'Load 1 new code into MaritalStatuses?');
-	assert.strictEqual(t.detail, `Tenant T1 on dev, RDM tenant RdmT, from ${CSV_REL}. 2 existing codes will be skipped. 0 warnings.`);
+	assert.strictEqual(t.message, 'Load into MaritalStatuses?');
+	assert.strictEqual(
+		t.detail,
+		`1 new code, and 3 new mappings for 2 existing codes. Nothing stored is changed or removed. Tenant T1 on dev, RDM tenant RdmT, from ${CSV_REL}. 0 codes already stored. 1 warning.`,
+	);
 }
 
 // ---------------------------------------------------------------------------

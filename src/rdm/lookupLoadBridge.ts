@@ -7,11 +7,12 @@ import {
 	UntrustedHostError,
 } from '../api/reltioClient';
 import { GIT_SOURCE_TOKEN } from '../api/tokenStore';
-import { buildLookupValuesCreateBody, findExistingCodes, MAX_LOOKUP_VALUES_PER_REQUEST } from './lookupValueDraft';
+import { MAX_LOOKUP_VALUES_PER_REQUEST, planLookupValues } from './lookupValueDraft';
 import {
 	chunk,
 	countOutcomes,
 	loadOutcomes,
+	planWarnings,
 	readLookupCsv,
 	resolveLookupType,
 	unknownSourceWarnings,
@@ -56,9 +57,15 @@ export interface LoadApproval {
 	lookupType: string;
 	csvFile: string;
 	newCount: number;
-	existingCount: number;
+	/** Existing codes that get mappings appended, and how many mappings in all. */
+	appendCount: number;
+	appendMappingCount: number;
+	unchangedCount: number;
 	warningCount: number;
 }
+
+type Classification = 'new' | 'append' | 'unchanged';
+type ClassCounts = Record<Classification, number>;
 
 interface Target {
 	tenant: { environment: string; tenantId: string };
@@ -68,8 +75,9 @@ interface Target {
 
 export type LookupLoadResult =
 	| ({ requestId: string; status: 'planned'; message: string; completedAt: string } & Target & {
-			codes: Array<{ code: string; lines: number[]; classification: 'new' | 'existing' }>;
-			counts: { new: number; existing: number };
+			codes: Array<{ code: string; lines: number[]; classification: Classification }>;
+			counts: ClassCounts;
+			appendMappingCount: number;
 			errors: CsvFinding[];
 			warnings: CsvFinding[];
 	  })
@@ -80,7 +88,7 @@ export type LookupLoadResult =
 			error?: LoadError;
 	  })
 	| ({ requestId: string; status: 'cancelled'; message: string; completedAt: string } & Target & {
-			counts: { new: number; existing: number };
+			counts: ClassCounts;
 	  })
 	| { requestId: string | null; status: 'not-run'; reason: NotRunReason; message: string; completedAt: string }
 	| { requestId: string | null; status: 'failed'; error: LoadError; errors?: CsvFinding[]; message: string; completedAt: string };
@@ -152,10 +160,12 @@ function toLoadError(e: unknown): LoadError {
 export function approvalText(a: LoadApproval): { message: string; detail: string } {
 	const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 	return {
-		message: `Load ${plural(a.newCount, 'new code')} into ${a.lookupType}?`,
+		message: `Load into ${a.lookupType}?`,
 		detail:
+			`${plural(a.newCount, 'new code')}, and ${plural(a.appendMappingCount, 'new mapping')} for ${plural(a.appendCount, 'existing code')}. ` +
+			'Nothing stored is changed or removed. ' +
 			`Tenant ${a.tenantId} on ${a.environmentName}, RDM tenant ${a.rdmTenantId}, from ${a.csvFile}. ` +
-			`${plural(a.existingCount, 'existing code')} will be skipped. ${plural(a.warningCount, 'warning')}.`,
+			`${plural(a.unchangedCount, 'code')} already stored. ${plural(a.warningCount, 'warning')}.`,
 	};
 }
 
@@ -272,24 +282,29 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 	} catch (e) {
 		return failed(requestId, toLoadError(e));
 	}
-	const warnings = [...csv.warnings, ...unknownSourceWarnings(csv, current, configuration)];
-	const codes = csv.values.map(v => v.code);
-	const existing = findExistingCodes(codes, current);
-	const existingSet = new Set(existing);
-	const newValues = csv.values.filter(v => !existingSet.has(v.code));
+	// Existing codes get their missing mappings appended to the stored value; nothing stored changes.
+	const lookupTarget = { rdmTenantId, lookupTypeName: lookupType.name, lookupTypeUri: lookupType.uri };
+	const plan = planLookupValues(csv.values, current, lookupTarget);
+	const warnings = [...csv.warnings, ...unknownSourceWarnings(csv, current, configuration), ...planWarnings(plan, csv)];
 	const lines = (code: string) => csv.linesByCode[code] ?? [];
+	const counts: ClassCounts = { new: 0, append: 0, unchanged: 0 };
+	for (const i of plan.items) counts[i.kind]++;
+	const appendMappingCount = plan.items.filter(i => i.kind === 'append').reduce((n, i) => n + i.expect.length, 0);
+	const toSend = plan.items.filter(i => i.element);
 
 	if (mode === 'plan') {
 		const message = csv.errors.length > 0
 			? `${csv.errors.length} error(s) must be fixed before loading.`
-			: `${newValues.length} new code(s) to load into ${lookupType.name}; ${existing.length} existing code(s) would be skipped.`;
-		log(`  planned: ${newValues.length} new, ${existing.length} existing, ${csv.errors.length} errors, ${warnings.length} warnings`);
+			: `${counts.new} new code(s) and ${appendMappingCount} new mapping(s) for ${counts.append} existing code(s) to load into ${lookupType.name}; ` +
+				`${counts.unchanged} code(s) already stored. Nothing stored is changed or removed.`;
+		log(`  planned: ${counts.new} new, ${counts.append} append, ${counts.unchanged} unchanged, ${csv.errors.length} errors, ${warnings.length} warnings`);
 		return {
 			requestId,
 			status: 'planned',
 			...target,
-			codes: codes.map(code => ({ code, lines: lines(code), classification: existingSet.has(code) ? 'existing' : 'new' })),
-			counts: { new: newValues.length, existing: existing.length },
+			codes: plan.items.map(i => ({ code: i.draft.code, lines: lines(i.draft.code), classification: i.kind })),
+			counts,
+			appendMappingCount,
 			errors: csv.errors,
 			warnings,
 			message,
@@ -299,13 +314,13 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 
 	// ── Load: approved by the user, then sent in chunks ────────────────────
 	const finish = (sent: string[], createResponses: unknown[], refetched: unknown | undefined, error?: LoadError): LookupLoadResult => {
-		const outcomes = loadOutcomes({ codes, existing, sent, createResponses, refetched });
-		const counts = countOutcomes(outcomes);
+		const outcomes = loadOutcomes({ items: plan.items, sent, createResponses, refetched });
+		const outcomeCounts = countOutcomes(outcomes);
 		const message =
-			`${counts.added} added, ${counts['skipped-existing']} skipped as existing` +
-			(counts['not-stored'] ? `, ${counts['not-stored']} not stored` : '') +
-			(counts['not-sent'] ? `, ${counts['not-sent']} not sent` : '') +
-			(counts.unconfirmed ? `, ${counts.unconfirmed} unconfirmed` : '') +
+			`${outcomeCounts.added} added, ${outcomeCounts.appended} appended to, ${outcomeCounts.unchanged} unchanged` +
+			(outcomeCounts['not-stored'] ? `, ${outcomeCounts['not-stored']} not stored` : '') +
+			(outcomeCounts['not-sent'] ? `, ${outcomeCounts['not-sent']} not sent` : '') +
+			(outcomeCounts.unconfirmed ? `, ${outcomeCounts.unconfirmed} unconfirmed` : '') +
 			`.${error ? ` ${error.message}` : ''}`;
 		log(`  loaded: ${message}`);
 		return {
@@ -313,7 +328,7 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 			status: 'loaded',
 			...target,
 			codes: outcomes.map(o => ({ code: o.code, lines: lines(o.code), outcome: o.outcome })),
-			counts,
+			counts: outcomeCounts,
 			warnings,
 			...(error ? { error } : {}),
 			message,
@@ -321,7 +336,7 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 		};
 	};
 
-	if (newValues.length === 0) return finish([], [], current);
+	if (toSend.length === 0) return finish([], [], current);
 
 	const approved = await deps.approve({
 		environmentName,
@@ -329,8 +344,10 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 		rdmTenantId,
 		lookupType: lookupType.name,
 		csvFile,
-		newCount: newValues.length,
-		existingCount: existing.length,
+		newCount: counts.new,
+		appendCount: counts.append,
+		appendMappingCount,
+		unchangedCount: counts.unchanged,
 		warningCount: warnings.length,
 	});
 	if (!approved) {
@@ -339,30 +356,29 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 			requestId,
 			status: 'cancelled',
 			...target,
-			counts: { new: newValues.length, existing: existing.length },
+			counts,
 			message: 'The load was not approved in the IDE; nothing was sent.',
 			completedAt: now(),
 		};
 	}
 
-	const lookupTarget = { rdmTenantId, lookupTypeName: lookupType.name, lookupTypeUri: lookupType.uri };
 	const sent: string[] = [];
 	const createResponses: unknown[] = [];
 	let error: LoadError | undefined;
-	const chunks = chunk(newValues, MAX_LOOKUP_VALUES_PER_REQUEST);
+	const chunks = chunk(toSend, MAX_LOOKUP_VALUES_PER_REQUEST);
 	for (const [i, part] of chunks.entries()) {
 		try {
-			const created = await withSession(t => postValues(service, rdmTenantId, buildLookupValuesCreateBody(part, lookupTarget), t));
+			const created = await withSession(t => postValues(service, rdmTenantId, part.map(p => p.element), t));
 			if (created === 'signed-out') {
 				error = { kind: 'api-error', message: `The session for ${environmentName} expired; codes from chunk ${i + 1} on were not sent.`, httpStatus: 401 };
 				break;
 			}
-			sent.push(...part.map(v => v.code));
+			sent.push(...part.map(p => p.draft.code));
 			createResponses.push(created);
 			log(`  chunk ${i + 1}/${chunks.length}: ${part.length} code(s) sent`);
 		} catch (e) {
 			// A failed or timed-out request may still have stored some of its codes.
-			sent.push(...part.map(v => v.code));
+			sent.push(...part.map(p => p.draft.code));
 			error = toLoadError(e);
 			log(`  chunk ${i + 1}/${chunks.length}: failed (${error.kind}${error.httpStatus ? ` ${error.httpStatus}` : ''}) ${error.message}`);
 			break;

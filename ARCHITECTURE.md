@@ -216,20 +216,20 @@ The CSV logic is pure (`src/rdm/lookupCsv.ts`):
 - **Checks:** every error and warning carries its CSV line.
 - **Limits:** 2 MB and 10,000 rows per file.
 
-**`plan`** is read-only. It fetches the lookup type and classifies each code as new or existing.
+**`plan`** is read-only. It fetches the lookup type and classifies each code as `new`, `append` or `unchanged`.
 
 **`load`**:
 
 1. Re-plans against a fresh fetch.
 2. Refuses on CSV errors.
-3. Skips existing codes, because posting one would replace it.
+3. Appends to existing codes through the same `planLookupValues` / `mergeLookupValue` as Add Value, so nothing stored is replaced or removed. A conflicting row is skipped with a line-numbered warning instead of refusing the file. Codes with nothing to add are `unchanged` and not sent.
 4. Asks for approval via `approvalText`, a modal whose only proceed action is **Load**.
-5. Posts the new codes with Add Value's `buildLookupValuesCreateBody` / `postRdmLookupValues`, in chunks of ≤ 100. A 401 gets one refresh and retry, and the first chunk that still fails stops the load.
-6. Re-fetches the lookup type and reports one outcome per code: `added`, `not-stored`, `not-sent`, `skipped-existing` or `unconfirmed`.
+5. Posts the created and merged values with `postRdmLookupValues`, in CSV order, in chunks of ≤ 100. A 401 gets one refresh and retry, and the first chunk that still fails stops the load.
+6. Re-fetches the lookup type and reports one outcome per code: `added`, `appended`, `unchanged`, `not-stored`, `not-sent` or `unconfirmed`.
 
 | `status` | Meaning |
 |---|---|
-| `planned` | Codes with `classification`, `counts`, `errors`, `warnings` |
+| `planned` | Codes with `classification`, `counts`, `appendMappingCount`, `errors`, `warnings` |
 | `loaded` | Per-code `outcome`, `counts`, and the failing chunk's `error` if any |
 | `cancelled` | The user did not click **Load**; nothing was sent |
 | `not-run` | `disabled` (`reltio.enableRdmLookupLoad`), `repository-mode`, `no-tenant`, `signed-out`, `no-rdm-service` |
@@ -352,7 +352,15 @@ Create actions use the **context menu** only (`3_insert@*` groups — no `inline
 
 **RDM lookup values (on demand):** a lookup type's values are **not** in the configuration file — they come from `GET {serviceUri}/lookups/{rdmTenantId}/{lookupTypeName}`, one lookup type per call. The **Get Lookup Values** command (`reltio.getRdmLookupValues`, scoped to `reltio.rdm.item.lookupTypes`) fetches them on demand and renders Code / Source / Value at Source in a webview panel; Get Configuration never calls this endpoint. The service URI is recalled from an **in-memory** cache (`src/rdm/rdmServiceCache.ts`, keyed by environment and tenant, populated when a fetch discovers it) and rediscovered from the tenant physical configuration on a miss — so nothing from that credential-bearing response reaches disk, and only the URI outlives the call.
 
-**RDM lookup values (adding):** the lookup values panel's **Add Value** button opens an inline form of one block per new code, each with its own source-mapping rows. Submit sends every block, up to 100, in **one** `POST {serviceUri}/lookups/{rdmTenantId}` (`postRdmLookupValues`), on the same `toHttpsBase()` origin the reads use. That is the endpoint the team's "Update RDM Lookup Mapping" request uses; `…/lookups/{tenant}/_update` is Reltio's *partial*-update endpoint (an `operation` on every mapping value) and does not create codes. The pure logic is in `src/rdm/lookupValueDraft.ts`: message parsing and validation, the body (one plain lookup object per code — not the `{ uri, value }` wrapper the service returns; `updatedBy` / `updateDate` / `version` left to the server), and code comparison. Posting a code that exists **replaces** it, mappings included, so the handler (`submitLookupValues` in `extension.ts`) re-fetches the lookup type first and refuses the whole batch if any code already exists. After posting, a code counts as stored when the response lists it (one `{ uri, value }` per stored code) or a second re-fetch contains it, so a lagging read cannot hide a stored code. Codes that landed leave the form; the rest are restored as entered, with the reason. Source suggestions use each configured source's `abbreviation`, which is what a mapping's `source` must match. Only new codes can be added — editing or deleting existing values is not supported.
+**RDM lookup values (adding):** the lookup values panel's **Add Value** button opens an inline form of one block per new code, each with its own source-mapping rows. Submit sends every block, up to 100, in **one** `POST {serviceUri}/lookups/{rdmTenantId}` (`postRdmLookupValues`), on the same `toHttpsBase()` origin the reads use. That is the endpoint the team's "Update RDM Lookup Mapping" request uses; `…/lookups/{tenant}/_update` is Reltio's *partial*-update endpoint (an `operation` on every mapping value) and does not create codes. The pure logic is in `src/rdm/lookupValueDraft.ts`: message parsing and validation, the body (one plain lookup object per code — not the `{ uri, value }` wrapper the service returns; `updatedBy` / `updateDate` / `version` left to the server), and code comparison. Posting a code that exists **replaces** it, mappings included. So the handler (`submitLookupValues` in `extension.ts`) re-fetches the lookup type first and runs `planLookupValues`:
+
+- **A new code** is created.
+- **An existing code** is **appended to** by `mergeLookupValue`. The fetched value is sent back with every field and stored mapping as fetched, plus only the mappings it lacks.
+- **Already present:** a mapping with the same source, code at the source and value is skipped.
+- **Conflict:** a mapping with the same source and code at the source but a different value refuses the submission. Nothing stored is ever changed or removed.
+- **Flags:** an appended value is canonical only if the code has none, and downstream default only if its source has none.
+
+After posting, a code counts as stored when the response (one `{ uri, value }` per stored code) or a second re-fetch holds it with **every** requested mapping (`storedCodes`), so a lagging read cannot hide a stored code. Codes that landed leave the form; the rest are restored as entered, with the reason. Source suggestions use each configured source's `abbreviation`, which is what a mapping's `source` must match. Only new codes can be added — editing or deleting existing values is not supported.
 
 The panel now runs one inline script under `default-src 'none'; style-src 'nonce-…'; script-src 'nonce-…'`, with `localResourceRoots: []`, no inline handlers, and no data interpolated into the script — every value is set through `.value` / `.textContent`. Message protocol:
 
