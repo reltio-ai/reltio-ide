@@ -522,6 +522,69 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 		assert.ok(read('workflow-bpmn-authoring').includes('saved as a draft in `Workflows/bpmn/`'), 'the handoff keeps BPMN authoring');
 	}
 
+	// ── 15. The generated Workflows README ────────────────────────────────────
+	{
+		const {
+			COMPONENT_FOLDERS, renderReadme, isGeneratedReadmeText, materializeTenantTree, pruneRetiredComponentFolders,
+		} = importDist('workspace/tenantFolderStructure');
+		const folder = COMPONENT_FOLDERS.find(c => c.path === 'Workflows');
+		const readme = renderReadme(folder);
+
+		// It must not say the IDE ignores a folder the IDE works in.
+		assert.ok(!/not yet managed/i.test(readme), 'the Workflows README no longer claims the folder is unmanaged');
+		assert.ok(!/not fetched from or\s+applied/i.test(readme));
+		assert.ok(readme.includes(folder.docsUrl));
+
+		// Every action it names must be a real command title, so the README cannot drift from the product.
+		const titles = new Set(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'))
+			.contributes.commands.map(c => c.title));
+		const named = [...readme.matchAll(/\*\*([^*]+)\*\*/g)].map(m => m[1]);
+		const rowNames = new Set(['Workflows', 'Process Definitions', 'Java Classes', 'Java Tests', 'JAR Deployments',
+			'local changes', 'draft']);
+		for (const name of named) {
+			if (rowNames.has(name) || name.endsWith(':')) continue; // row names and bold lead-ins
+			assert.ok(titles.has(name), `the README names "${name}", which is not a command title in package.json`);
+		}
+		for (const must of ['New Workflow...', 'Deploy to Tenant', 'Show BPMN Diagram', 'Compare with Last Fetch',
+			'Discard Local Changes', 'Refresh BPMNs', 'Connect Custom Workflow Repository...', 'Disconnect Custom Workflow Repository']) {
+			assert.ok(readme.includes(`**${must}**`), `the README covers "${must}"`);
+		}
+
+		// Both wordings count as generated; a user's own README does not.
+		assert.ok(isGeneratedReadmeText(readme));
+		assert.ok(isGeneratedReadmeText('x\nThis component is not yet managed by Reltio IDE. y'), 'READMEs written by earlier builds still count');
+		assert.ok(!isGeneratedReadmeText('# My team\'s notes'));
+
+		// An existing tenant with the old README is left alone by materialize...
+		const memOld = installMemoryFs();
+		const TR = vscode.Uri.file('/rd/tenant');
+		await memOld.writeFile(vscode.Uri.joinPath(TR, 'Workflows', 'README.md'), enc('# Workflows\nnot yet managed by Reltio IDE\n'));
+		await materializeTenantTree(TR);
+		assert.ok(dec(await memOld.readFile(vscode.Uri.joinPath(TR, 'Workflows', 'README.md'))).includes('not yet managed'),
+			'materialize never rewrites an existing README');
+
+		// ...and a fresh one gets the new text.
+		const memNew = installMemoryFs();
+		await materializeTenantTree(TR);
+		assert.strictEqual(dec(await memNew.readFile(vscode.Uri.joinPath(TR, 'Workflows', 'README.md'))), readme);
+
+		// Connect replaces the new README with the repository's, exactly as it did the old one.
+		const WF = vscode.Uri.joinPath(TR, 'Workflows');
+		const ST = vscode.Uri.file(`/rd/${WORKFLOW_REPO_STAGING_DIR}`);
+		await memNew.writeFile(vscode.Uri.joinPath(ST, 'README.md'), enc('# repo'));
+		await memNew.writeFile(vscode.Uri.joinPath(ST, 'pom.xml'), enc('<project/>'));
+		await memNew.writeFile(vscode.Uri.joinPath(ST, '.git', 'info', '.keep'), enc(''));
+		await adoptStagedRepository(WF, ST);
+		assert.strictEqual(dec(await memNew.readFile(vscode.Uri.joinPath(WF, 'README.md'))), '# repo');
+
+		// A user's README is never mistaken for ours: it still blocks the connect.
+		const memUser = installMemoryFs();
+		await memUser.writeFile(vscode.Uri.joinPath(WF, 'README.md'), enc('my own notes'));
+		await memUser.writeFile(vscode.Uri.joinPath(ST, 'README.md'), enc('# repo'));
+		await memUser.writeFile(vscode.Uri.joinPath(ST, '.git', 'info', '.keep'), enc(''));
+		await assert.rejects(() => adoptStagedRepository(WF, ST), e => e instanceof WorkflowRepoAdoptionConflictError);
+	}
+
 	console.log('test-workflow-tree-redesign: OK');
 })().catch(err => {
 	console.error(err);

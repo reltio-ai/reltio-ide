@@ -8,15 +8,13 @@
  * performs them, and undoes them if a move fails part-way.
  */
 import * as vscode from 'vscode';
-import { IDE_STATE_DIR } from './tenantFolderStructure';
+import { IDE_STATE_DIR, isGeneratedReadmeText } from './tenantFolderStructure';
 import {
 	planWorkflowRepoAdoption,
 	withBaselineExclude,
 	type AdoptionEntry,
 } from './workflowRepoAdoption';
 
-/** Sentence every generated README carries — see `tenantFolderStructure.ts#renderReadme()`. */
-const GENERATED_README_MARKER = 'not yet managed by Reltio IDE';
 
 /** Gitignored scratch folder, relative to the tenant root, that the clone is made in. */
 export const WORKFLOW_REPO_STAGING_DIR = `${IDE_STATE_DIR}/workflow-repo-staging`;
@@ -50,7 +48,7 @@ async function listDirectory(dir: vscode.Uri): Promise<AdoptionEntry[]> {
 async function isGeneratedReadme(uri: vscode.Uri): Promise<string | undefined> {
 	try {
 		const text = new TextDecoder().decode(await vscode.workspace.fs.readFile(uri));
-		return text.includes(GENERATED_README_MARKER) ? text : undefined;
+		return isGeneratedReadmeText(text) ? text : undefined;
 	} catch {
 		return undefined;
 	}
