@@ -95,6 +95,8 @@ export async function adoptStagedRepository(
 		existingReadmeIsGenerated: readmeText !== undefined,
 		staged,
 		stagedBpmn: stagedBpmn.filter(e => !e.isDirectory).map(e => e.name),
+		existingBpmnDirs: existingBpmn.filter(e => e.isDirectory).map(e => e.name),
+		stagedBpmnDirs: stagedBpmn.filter(e => e.isDirectory).map(e => e.name),
 	});
 	if (!plan.ok) throw new WorkflowRepoAdoptionConflictError(plan.collisions);
 

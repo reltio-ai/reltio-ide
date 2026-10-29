@@ -194,7 +194,7 @@ import {
 	removeStagingDir,
 } from './workspace/workflowRepoConnect';
 import { describeAdoptedDrafts } from './workspace/workflowRepoAdoption';
-import { describeDisconnect, isRepoOriginFile, relativeToWorkflows } from './workspace/workflowRepoOrigin';
+import { describeDisconnect, describeDisconnectDetail, isRepoOriginFile, relativeToWorkflows } from './workspace/workflowRepoOrigin';
 import { inspectRepoForDisconnect, listTrackedFiles, removeRepoFiles } from './workspace/workflowRepoCleanup';
 import type { DiscoveredBpmnFile } from './workspace/workflowRepoDiscovery';
 import { describeDeploy, planDeploy, type DeployPlan } from './workspace/workflowDeployPlan';
@@ -2385,13 +2385,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			// clone refuses to land on files that are already there. Only files git says came from
 			// the repository go; drafts and anything the user added or changed stay.
 			const inspection = await inspectRepoForDisconnect(repoDir);
-			const warning = describeDisconnect(tenantId, inspection?.plan, inspection?.unpushedCommits ?? 0);
-			const pick = await vscode.window.showWarningMessage(warning, { modal: true }, 'Disconnect');
+			const warning = describeDisconnect(
+				tenantId, inspection?.plan, inspection?.unpushedCommits ?? 0, inspection?.stashes ?? 0,
+			);
+			const pick = await vscode.window.showWarningMessage(
+				warning, { modal: true, detail: describeDisconnectDetail(inspection?.plan) }, 'Disconnect',
+			);
 			if (pick !== 'Disconnect') return;
 
 			try {
-				if (inspection) await removeRepoFiles(repoDir, inspection.plan);
-				await disconnectFromGit(repoDir);
+				// The dialog can stay open for a while. Plan again now, so a file edited meanwhile is kept.
+				const confirmed = inspection ? await inspectRepoForDisconnect(repoDir) : undefined;
+				if (confirmed) await removeRepoFiles(repoDir, confirmed.plan);
+				// A teammate's clone has the sidecar but no `Workflows/.git`; the link is still removed.
+				const hasGitDir = await Promise.resolve(vscode.workspace.fs.stat(vscode.Uri.joinPath(repoDir, '.git')))
+					.then(() => true, () => false);
+				if (hasGitDir) await disconnectFromGit(repoDir);
 				await deleteWorkflowRepoConfig(repoConfigUri);
 				// The folder's generated README comes back, so the tenant tree is whole again.
 				await materializeTenantTree(environmentManager.getTenantRootUri(environmentName, tenantId));

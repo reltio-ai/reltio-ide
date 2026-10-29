@@ -36,6 +36,10 @@ export interface AdoptionInput {
 	readonly staged: readonly AdoptionEntry[];
 	/** File names inside the staged `bpmn/`, when it is a directory. */
 	readonly stagedBpmn: readonly string[];
+	/** Sub-folder names inside the existing `Workflows/bpmn/`. */
+	readonly existingBpmnDirs?: readonly string[];
+	/** Sub-folder names inside the staged `bpmn/`. */
+	readonly stagedBpmnDirs?: readonly string[];
 }
 
 export type AdoptionPlan =
@@ -74,6 +78,7 @@ export function draftFileNames(bpmnFiles: readonly string[]): string[] {
 export function planWorkflowRepoAdoption(input: AdoptionInput): AdoptionPlan {
 	const existingTop = new Map(input.existing.map(e => [fold(e.name), e]));
 	const existingBpmn = new Set(input.existingBpmn.map(fold));
+	const existingBpmnDirs = new Set((input.existingBpmnDirs ?? []).map(fold));
 	const collisions: string[] = [];
 	const moveTop: string[] = [];
 	const mergeBpmn: string[] = [];
@@ -87,8 +92,15 @@ export function planWorkflowRepoAdoption(input: AdoptionInput): AdoptionPlan {
 		if (clash && fold(entry.name) === BPMN_DIR && clash.isDirectory && entry.isDirectory) {
 			// The one folder both sides legitimately own: merge, file by file.
 			for (const file of input.stagedBpmn) {
-				if (existingBpmn.has(fold(file))) keptLocal.push(file);
+				if (existingBpmnDirs.has(fold(file))) collisions.push(`${BPMN_DIR}/${file}`);
+				else if (existingBpmn.has(fold(file))) keptLocal.push(file);
 				else mergeBpmn.push(file);
+			}
+			// A sub-folder (for example `bpmn/archive/`) moves across whole. It is refused, not
+			// merged, when anything local already has that name.
+			for (const dir of input.stagedBpmnDirs ?? []) {
+				if (existingBpmn.has(fold(dir)) || existingBpmnDirs.has(fold(dir))) collisions.push(`${BPMN_DIR}/${dir}`);
+				else mergeBpmn.push(dir);
 			}
 			continue;
 		}

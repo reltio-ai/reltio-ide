@@ -36,6 +36,8 @@ export interface RepoFileSets {
 	readonly modified: readonly string[];
 	/** Untracked files git ignores: build output, and the baseline snapshots excluded at connect. */
 	readonly ignored: readonly string[];
+	/** Files touched by commits that no remote has (`git log --branches --not --remotes`). */
+	readonly unpushed?: readonly string[];
 }
 
 export interface RepoCleanupPlan {
@@ -46,6 +48,9 @@ export interface RepoCleanupPlan {
 }
 
 const BASELINE_SUFFIX = '.baseline.xml';
+
+/** Build output: anything under a `target/` folder. */
+const BUILD_OUTPUT = /(^|\/)target\//;
 
 /** A path git reported that must not be deleted from: absolute, parent-relative, or inside `.git`. */
 function isUnsafePath(path: string): boolean {
@@ -63,7 +68,8 @@ function isUnsafePath(path: string): boolean {
  * tenant workflow that is kept never loses its baseline.
  */
 export function planRepoCleanup(sets: RepoFileSets): RepoCleanupPlan {
-	const modified = new Set(sets.modified);
+	// Uncommitted edits and files touched by commits that are not on the remote are the user's work.
+	const modified = new Set([...sets.modified, ...(sets.unpushed ?? [])]);
 	const remove = new Set<string>();
 	const keptModified: string[] = [];
 	for (const path of sets.tracked) {
@@ -78,7 +84,8 @@ export function planRepoCleanup(sets: RepoFileSets): RepoCleanupPlan {
 			if (remove.has(owner)) remove.add(path);
 			continue;
 		}
-		remove.add(path);
+		// Only build output goes. Other ignored files (`.env`, `.idea/`, local settings) are the user's.
+		if (BUILD_OUTPUT.test(path)) remove.add(path);
 	}
 	return {
 		remove: [...remove].sort((a, b) => a.localeCompare(b)),
@@ -86,21 +93,48 @@ export function planRepoCleanup(sets: RepoFileSets): RepoCleanupPlan {
 	};
 }
 
+/** True when two folder paths name the same folder, whatever the slash style, case or trailing slash. */
+export function isSameFolder(a: string, b: string): boolean {
+	const normalize = (p: string): string => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+	return normalize(a) === normalize(b);
+}
+
+const MAX_LISTED_FILES = 12;
+
+function listFiles(files: readonly string[]): string {
+	const shown = files.slice(0, MAX_LISTED_FILES).map(f => `  ${f}`).join('\n');
+	return files.length > MAX_LISTED_FILES ? `${shown}\n  ... and ${files.length - MAX_LISTED_FILES} more` : shown;
+}
+
+/** The files the confirmation is about, so the user sees what is deleted and what is kept. */
+export function describeDisconnectDetail(plan: RepoCleanupPlan | undefined): string {
+	if (!plan) return '';
+	const parts: string[] = [];
+	if (plan.remove.length > 0) parts.push(`Moved to the trash:\n${listFiles(plan.remove)}`);
+	if (plan.keptModified.length > 0) parts.push(`Kept, because of local changes:\n${listFiles(plan.keptModified)}`);
+	return parts.join('\n\n');
+}
+
 /** The confirmation text for disconnecting, saying what goes and what stays. */
 export function describeDisconnect(
 	tenantId: string,
 	plan: RepoCleanupPlan | undefined,
 	unpushedCommits: number,
+	stashes = 0,
 ): string {
 	if (!plan) {
 		return `Disconnect the Custom Workflow Repository for "${tenantId}"? The repository could not be read, so every file in Workflows/ stays as it is; only the repository link and its local history are removed.`;
 	}
 	const kept = plan.keptModified.length > 0
-		? ` ${plan.keptModified.length} repository file${plan.keptModified.length === 1 ? ' has' : 's have'} uncommitted changes and will be kept.`
+		? ` ${plan.keptModified.length} repository file${plan.keptModified.length === 1 ? ' has' : 's have'} uncommitted or unpushed changes and will be kept.`
 		: '';
-	const unpushed = unpushedCommits > 0
+	const unpushedCount = unpushedCommits > 0
 		? ` ${unpushedCommits} commit${unpushedCommits === 1 ? ' has' : 's have'} not been pushed and will be lost.`
 		: '';
+	const stashed = stashes > 0
+		? ` ${stashes} stash${stashes === 1 ? ' entry' : ' entries'} will be lost.`
+		: '';
+	const unpushed = `${unpushedCount}${stashed}`;
 	return (
 		`Disconnect the Custom Workflow Repository for "${tenantId}"? ` +
 		`Its ${plan.remove.length} file${plan.remove.length === 1 ? '' : 's'} will be removed from Workflows/, ` +

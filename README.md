@@ -572,9 +572,9 @@ With the JAR registered, you only need to deploy the related BPMN to make the wo
 2. Review the message, which states how many files are removed and how many are kept, and confirm.
 
 - **Removed** — the repository's files, including its Java, so you can connect a different repository afterwards.
-- **Kept** — your drafts, workflows downloaded from the tenant, files you added yourself, and any change you made but have not committed.
+- **Kept** — your drafts (including drafts you committed but have not pushed), workflows downloaded from the tenant, files you added yourself, ignored files that are not build output (such as `.env`), and any change you made but have not pushed.
 
-Push any unpushed commits before you disconnect.
+Removed files go to your trash, and the message lists them. Commits that no remote has, on any branch, and stashes are lost, and the message says how many. Push them before you disconnect.
 
 ---
 

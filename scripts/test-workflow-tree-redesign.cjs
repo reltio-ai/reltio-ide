@@ -433,6 +433,8 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 			modified: ['bpmn/edited.bpmn20.xml'],
 			ignored: [
 				'mod/target/A.class',
+				'.env',
+				'.idea/workspace.xml',
 				'bpmn/repo.bpmn20.baseline.xml',
 				'bpmn/edited.bpmn20.baseline.xml',
 				'bpmn/mine.bpmn20.baseline.xml',
@@ -443,7 +445,7 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 		assert.ok(!plan.remove.some(p => p.includes('evil') || p.includes('.git/')), 'paths outside the folder or inside .git are never planned');
 
 		const text = describeDisconnect('T1', plan, 2);
-		assert.ok(text.includes('5 files') && text.includes('1 repository file has uncommitted changes') && text.includes('2 commits have not been pushed'));
+		assert.ok(text.includes('5 files') && text.includes('1 repository file has uncommitted or unpushed changes') && text.includes('2 commits have not been pushed'));
 		assert.ok(text.includes('Drafts and files you added yourself are kept'));
 		assert.ok(describeDisconnect('T1', undefined, 0).includes('stays as it is'));
 
@@ -482,6 +484,16 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 				fs.writeFileSync(path.join(dirPath, 'mod', 'sub dir', 'Ünï.java'), 'class A {}');
 				run('add', '.');
 				run('commit', '-q', '-m', 'init');
+				// What the remote has: everything so far. A commit made after this is the user's own work.
+				run('update-ref', 'refs/remotes/origin/main', 'HEAD');
+				fs.writeFileSync(path.join(dirPath, 'bpmn', 'committed.bpmn20.xml'), '<c/>');
+				run('add', '.');
+				run('commit', '-q', '-m', 'my draft');
+				fs.writeFileSync(path.join(dirPath, '.env'), 'SECRET=1');
+				fs.appendFileSync(path.join(dirPath, '.gitignore'), '.env\n');
+				fs.mkdirSync(path.join(dirPath, 'mod', 'target'), { recursive: true });
+				fs.writeFileSync(path.join(dirPath, 'mod', 'target', 'A.class'), 'x');
+				fs.appendFileSync(path.join(dirPath, '.gitignore'), 'target/\n');
 				fs.writeFileSync(path.join(dirPath, 'pom.xml'), '<p changed/>');
 				fs.writeFileSync(path.join(dirPath, 'bpmn', 'mine.bpmn20.xml'), '<m/>');
 				fs.writeFileSync(path.join(dirPath, 'bpmn', 'repo.bpmn20.baseline.xml'), '<b/>');
@@ -493,8 +505,16 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 				assert.ok(!trackedSet.has('bpmn/mine.bpmn20.xml'));
 
 				const inspection = await inspectRepoForDisconnect(dirUri);
-				assert.deepStrictEqual(inspection.plan.keptModified, ['pom.xml'], 'the edited tracked file is kept');
-				assert.deepStrictEqual(inspection.plan.remove, ['bpmn/repo.bpmn20.baseline.xml', 'bpmn/repo.bpmn20.xml', 'mod/sub dir/Ünï.java']);
+				// `.gitignore` itself is tracked? It was added by the second `add .` so it is part of the draft commit.
+				assert.ok(inspection.plan.keptModified.includes('pom.xml'), 'the edited tracked file is kept');
+				assert.ok(inspection.plan.keptModified.includes('bpmn/committed.bpmn20.xml'), 'a committed draft that no remote has is kept');
+				assert.ok(!inspection.plan.remove.includes('.env'), 'an ignored file that is not build output is never removed');
+				assert.ok(inspection.plan.remove.includes('mod/target/A.class'), 'build output is removed');
+				assert.ok(inspection.plan.remove.includes('bpmn/repo.bpmn20.xml') && inspection.plan.remove.includes('mod/sub dir/Ünï.java'));
+				assert.strictEqual(inspection.unpushedCommits, 1, 'unpushed commits are counted without an upstream');
+				run('stash', 'push', '-q', '-m', 'wip');
+				fs.writeFileSync(path.join(dirPath, 'pom.xml'), '<p changed again/>');
+				assert.strictEqual((await inspectRepoForDisconnect(dirUri)).stashes, 1, 'stashes are counted');
 				assert.ok(!inspection.plan.remove.includes('bpmn/mine.bpmn20.xml'), 'an untracked draft is never planned for removal');
 			} finally {
 				fs.rmSync(dirPath, { recursive: true, force: true });
@@ -577,6 +597,81 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 		await memUser.writeFile(vscode.Uri.joinPath(ST, 'README.md'), enc('# repo'));
 		await memUser.writeFile(vscode.Uri.joinPath(ST, '.git', 'info', '.keep'), enc(''));
 		await assert.rejects(() => adoptStagedRepository(WF, ST), e => e instanceof WorkflowRepoAdoptionConflictError);
+
+		// A connected repository owns Workflows/: a later materialize must not write a README back
+		// next to a repository that has none of its own.
+		const memRepo = installMemoryFs();
+		await memRepo.writeFile(vscode.Uri.joinPath(WF, '.git', 'info', '.keep'), enc(''));
+		await memRepo.writeFile(vscode.Uri.joinPath(WF, 'pom.xml'), enc('<project/>'));
+		await materializeTenantTree(TR);
+		assert.ok(!memRepo._files.has('/rd/tenant/Workflows/README.md'), 'no generated README beside a connected repository');
+		assert.ok(memRepo._files.has('/rd/tenant/LifeCycle Actions/README.md'), 'other folders still get theirs');
+	}
+
+	// ── 16. Disconnect never plans deletions from a repository it is not inside ──
+	{
+		const { isSameFolder } = importDist('workspace/workflowRepoOrigin');
+		const { inspectRepoForDisconnect } = importDist('workspace/workflowRepoCleanup');
+		assert.ok(isSameFolder('C:/t/Workflows', 'c:\\t\\Workflows\\'), 'slash style, case and trailing slash do not matter');
+		assert.ok(!isSameFolder('/t', '/t/Workflows'), 'a parent folder is not the same folder');
+
+		// A sub-folder in the repository's bpmn/ moves across; a clash with anything local is refused.
+		const { planWorkflowRepoAdoption } = importDist('workspace/workflowRepoAdoption');
+		const dir = name => ({ name, isDirectory: true });
+		const base = {
+			existing: [dir('bpmn')], existingBpmn: ['mine.bpmn20.xml'], existingReadmeIsGenerated: false,
+			staged: [dir('bpmn'), dir('.git')], stagedBpmn: ['repo.bpmn20.xml'],
+		};
+		const nested = planWorkflowRepoAdoption({ ...base, stagedBpmnDirs: ['archive'] });
+		assert.ok(nested.ok && nested.mergeBpmn.includes('archive') && nested.mergeBpmn.includes('repo.bpmn20.xml'), 'the sub-folder is carried across');
+		const clashDir = planWorkflowRepoAdoption({ ...base, existingBpmnDirs: ['Archive'], stagedBpmnDirs: ['archive'] });
+		assert.ok(!clashDir.ok && clashDir.collisions.includes('bpmn/archive'), 'a local folder of the same name is a conflict, whatever the case');
+		const clashFile = planWorkflowRepoAdoption({ ...base, existingBpmn: ['archive'], stagedBpmnDirs: ['archive'] });
+		assert.ok(!clashFile.ok, 'a local file with the folder\'s name is a conflict');
+
+		// Over the in-memory fs: the folder and its files really arrive.
+		{
+			const memN = installMemoryFs();
+			const W = vscode.Uri.file('/nested/Workflows');
+			const S = vscode.Uri.file('/nested/stage');
+			const wr = (u, p, c) => memN.writeFile(vscode.Uri.joinPath(u, p), enc(c));
+			await memN.createDirectory(vscode.Uri.joinPath(W, 'bpmn'));
+			await wr(W, 'bpmn/mine.bpmn20.xml', '<m/>');
+			await wr(S, 'bpmn/repo.bpmn20.xml', '<r/>');
+			await wr(S, 'bpmn/archive/old.bpmn20.xml', '<o/>');
+			await wr(S, '.git/info/.keep', '');
+			await adoptStagedRepository(W, S);
+			assert.ok(memN._files.has('/nested/Workflows/bpmn/archive/old.bpmn20.xml'), 'a nested file survives connecting');
+			assert.ok(memN._files.has('/nested/Workflows/bpmn/repo.bpmn20.xml') && memN._files.has('/nested/Workflows/bpmn/mine.bpmn20.xml'));
+		}
+
+		// Disconnect: the dialog lists the files, and ignored files outside target/ are not planned.
+		const { planRepoCleanup, describeDisconnectDetail, describeDisconnect } = importDist('workspace/workflowRepoOrigin');
+		const cleanup = planRepoCleanup({ tracked: ['a.java'], modified: [], ignored: ['.env', 'x/target/B.class'], unpushed: ['a.java'] });
+		assert.deepStrictEqual(cleanup.remove, ['x/target/B.class']);
+		assert.deepStrictEqual(cleanup.keptModified, ['a.java'], 'a file touched by an unpushed commit is kept');
+		const detail = describeDisconnectDetail(cleanup);
+		assert.ok(detail.includes('x/target/B.class') && detail.includes('a.java'));
+		assert.ok(describeDisconnect('T', cleanup, 0, 2).includes('2 stash entries will be lost'));
+
+		const { execFileSync } = require('child_process');
+		const os = require('os');
+		let gitAvailable = true;
+		try { execFileSync('git', ['--version'], { stdio: 'ignore' }); } catch { gitAvailable = false; }
+		if (gitAvailable) {
+			const outer = fs.mkdtempSync(path.join(os.tmpdir(), 'reltio-outer-'));
+			try {
+				execFileSync('git', ['init', '-q'], { cwd: outer, stdio: 'ignore' });
+				fs.writeFileSync(path.join(outer, '.gitignore'), 'Workflows/\n');
+				fs.mkdirSync(path.join(outer, 'Workflows', 'bpmn'), { recursive: true });
+				fs.writeFileSync(path.join(outer, 'Workflows', 'bpmn', 'mine.bpmn20.xml'), '<m/>');
+				// No Workflows/.git: git falls through to the outer repository, which ignores the folder.
+				const result = await inspectRepoForDisconnect(vscode.Uri.file(path.join(outer, 'Workflows')));
+				assert.strictEqual(result, undefined, 'nothing is planned for removal, so no user file is at risk');
+			} finally {
+				fs.rmSync(outer, { recursive: true, force: true });
+			}
+		}
 	}
 
 	console.log('test-workflow-tree-redesign: OK');

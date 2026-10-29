@@ -251,6 +251,9 @@ export async function materializeTenantTree(tenantRoot: vscode.Uri): Promise<voi
 
 	const enc = new TextEncoder();
 	for (const folder of unmanagedFolders()) {
+		// A connected Custom Workflow Repository owns `Workflows/`. Its README replaces ours, and
+		// writing a new one would leave an untracked file in the customer's repository.
+		if (folder.path === WORKFLOWS_DIR && (await exists(joinRelative(tenantRoot, `${WORKFLOWS_DIR}/.git`)))) continue;
 		const readmeUri = joinRelative(tenantRoot, `${folder.path}/README.md`);
 		if (await exists(readmeUri)) continue;
 		await vscode.workspace.fs.writeFile(readmeUri, enc.encode(renderReadme(folder)));

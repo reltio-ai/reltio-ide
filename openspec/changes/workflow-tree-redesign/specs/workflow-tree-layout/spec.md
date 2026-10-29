@@ -78,7 +78,7 @@ When the Process Definitions list loads, the extension SHALL download, in the ba
 - **THEN** `Workflows/.git/info/exclude` ignores `*.bpmn20.baseline.xml`, added to an older clone on the next download, and never creating `.git` in a folder that is not a repository
 
 ### Requirement: Disconnect removes the repository's files
-Disconnecting SHALL delete the repository's tracked files that have no uncommitted change and its ignored build output, remove folders left empty except `bpmn/`, and delete `.git`. Files with uncommitted changes and untracked files that are not ignored SHALL be kept. The confirmation SHALL state the counts and warn about unpushed commits.
+Disconnecting SHALL plan nothing unless `Workflows/` is itself the git top level. It SHALL move to the trash the repository's tracked files that have no uncommitted change and are in no commit that a remote lacks, and its ignored files under `target/`; remove folders left empty except `bpmn/`; and delete `.git` when present. Files with uncommitted or unpushed changes, untracked files, and ignored files outside `target/` SHALL be kept. The files SHALL be planned again after the user confirms. The confirmation SHALL list the files, state the counts, and warn about commits on any branch that no remote has and about stashes.
 
 #### Scenario: Reconnect after disconnect
 - **WHEN** a repository is disconnected and another is connected
