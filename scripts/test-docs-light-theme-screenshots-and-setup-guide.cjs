@@ -39,7 +39,7 @@ const quickstart = fs.readFileSync(path.join(repoRoot, 'QUICKSTART.md'), 'utf8')
 const setupMd = fs.readFileSync(path.join(repoRoot, 'docs/setup-guide-content.md'), 'utf8');
 const setupJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'resources/setupGuide.json'), 'utf8'));
 
-assert.strictEqual(setupJson.steps.length, 6, 'Setup Guide should have 6 steps');
+assert.strictEqual(setupJson.steps.length, 7, 'Setup Guide should have 7 steps');
 assert.strictEqual(setupJson.steps[3].id, 'connectGit');
 assert.strictEqual(setupJson.steps[3].number, 4);
 assert.match(setupJson.steps[3].body, /Connect your Repository/);

@@ -28,8 +28,8 @@ const fs = require('fs');
 const path = require('path');
 
 // Pinned together: change the skills, bump skillsBundleVersion, update both values.
-const PINNED_SKILLS_BUNDLE_VERSION = '22';
-const PINNED_SKILLS_HASH = 'dd792da2720a598fd95635acda30aecdf8abbaaea76b028db27e2bc61f29f0f9';
+const PINNED_SKILLS_BUNDLE_VERSION = '26';
+const PINNED_SKILLS_HASH = '5bd886e9fb68d2b2c45966d21e832cee79ab1c9fe5c3e399b9c828c512ff3e52';
 
 
 const repoRoot = path.join(__dirname, '..');
@@ -256,7 +256,11 @@ for (const folder of PLAYBOOKS) {
 		}
 		assert.ok(
 			!/\/workflows\/<processId>/.test(text),
-			`${rel} points drafts at the lowercase workflows/ folder; they live in Workflows/BPMN/ now`,
+			`${rel} points drafts at the lowercase workflows/ folder; they live in Workflows/bpmn/ now`,
+		);
+		assert.ok(
+			!/Workflows\/BPMN|Workflows\/Custom Workflows/.test(text),
+			`${rel} names a retired Workflows path; drafts live in Workflows/bpmn/ and the repository is cloned into Workflows/`,
 		);
 		// Stopping without naming the next action is the most common way these
 		// playbooks fail a user: the step succeeded and the turn just ended.
@@ -286,6 +290,17 @@ for (const folder of PLAYBOOKS) {
 		/review|registration/i.test(contribution.split('## When to use')[1].slice(0, 1200)),
 		'workflow-repo-contribution must say up front that the IDE does not bypass Reltio\u2019s review',
 	);
+
+	for (const folder of ['workflow-assistant', 'workflow-jar-customization']) {
+		const text = read(`skills/reltio-default/${folder}/SKILL.md`);
+		assert.ok(
+			text.includes('Java needs a connected repository') &&
+				text.includes('Connect Custom Workflow Repository') &&
+				/Do not offer to "write it anyway"/.test(text) &&
+				/chat only and write no file/.test(text),
+			`${folder} must tell the agent to ask the user to connect a repository, never offer to write Java anyway, and show Java in chat only if the user overrides unprompted`,
+		);
+	}
 
 	// Skill edits do not reach an existing workspace unless this string changes:
 	// reltioAgentSync.ts gates the sync on equality, not on file contents.

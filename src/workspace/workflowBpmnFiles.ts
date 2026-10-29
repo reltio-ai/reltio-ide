@@ -4,8 +4,8 @@
  * This is the Business Config model applied to workflows. Opening a deployed
  * process definition downloads two files:
  *
- *   {tenant}/Workflows/BPMN/{processId}.bpmn20.xml           ← editable
- *   {tenant}/Workflows/BPMN/{processId}.bpmn20.baseline.xml  ← last fetch
+ *   {tenant}/Workflows/bpmn/{processId}.bpmn20.xml           ← editable
+ *   {tenant}/Workflows/bpmn/{processId}.bpmn20.baseline.xml  ← last fetch
  *
  * exactly as `L3.reltio.json` sits beside `L3.remote-baseline.reltio.json`. The
  * baseline is what makes "do I have undeployed changes?" and "did the server
@@ -153,7 +153,7 @@ export async function readTextFile(uri: vscode.Uri): Promise<string | undefined>
 	}
 }
 
-/** Write a BPMN (or its baseline), creating `Workflows/BPMN/` on first use. */
+/** Write a BPMN (or its baseline), creating `Workflows/bpmn/` on first use. */
 export async function writeBpmnFile(
 	directory: vscode.Uri,
 	fileName: string,
@@ -228,7 +228,7 @@ export interface LocalBpmnState {
 }
 
 /**
- * Every local BPMN in a tenant's `Workflows/BPMN/` folder, with its baseline state.
+ * Every local BPMN in a tenant's `Workflows/bpmn/` folder, with its baseline state.
  *
  * One pass over the directory answers both "which rows should show a local-changes
  * marker" and "which files are drafts", so the tree and the navigation guard read

@@ -499,7 +499,7 @@ function textResponse(status, text) {
 			'the tooltip must be a MarkdownString, not a plain string',
 		);
 		const text = builtIn.tooltip.value;
-		assert.ok(text.startsWith('**Built-in workflow**'), `classification must lead in bold, got: ${text}`);
+		assert.ok(text.startsWith('**OOTB workflow**'), `classification must lead in bold, got: ${text}`);
 		assert.ok(text.includes('Name: Data Change Request Review'));
 		assert.ok(text.includes('ID: dataChangeRequestReview'));
 		assert.ok(

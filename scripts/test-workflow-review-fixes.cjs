@@ -26,7 +26,6 @@ const { planBpmnDiff, planDiscardBpmnChanges, bpmnFileName } = importDist('works
 const { KeyedDebouncer } = importDist('util/keyedDebouncer');
 const { compareBpmnContent } = importDist('workspace/workflowRepoSync');
 const { discoverBpmnFilesDetailed } = importDist('workspace/workflowRepoDiscovery');
-const { clearGeneratedReadmeBeforeClone, restoreGeneratedReadme } = importDist('workspace/workflowRepoConnect');
 const { EnvironmentManager } = importDist('workspace/environmentManager');
 const { draftFileName } = importDist('workspace/workflowDrafts');
 const { MultiTenantTreeProvider } = importDist('tree/multiTenantTreeProvider');
@@ -37,9 +36,6 @@ const {
 	ProcessDefinitionsFolderNode,
 	JarDeploymentsFolderNode,
 	ProcessDefinitionNode,
-	WorkflowRepoNode,
-	WorkflowDraftsFolderNode,
-	WorkflowRepoBpmnFileNode,
 	WorkflowDraftNode,
 } = importDist('tree/workflowNodes');
 
@@ -145,26 +141,6 @@ const ADAPTER = 'https://tst-01-workflow.reltio.com';
 		assert.strictEqual(capped.truncated, true, 'a repository of generated XML must stop at the cap and say so');
 	}
 
-	// ── 5. A failed clone puts the generated README back ─────────────────────
-	{
-		const mem = installMemoryFs();
-		const dir = vscode.Uri.file('/tenant/Workflows/Custom Workflows');
-		const readme = '# Custom Workflows\nThis folder is not yet managed by Reltio IDE.\n';
-		await mem.writeFile(vscode.Uri.joinPath(dir, 'README.md'), enc(readme));
-		const removed = await clearGeneratedReadmeBeforeClone(dir);
-		assert.strictEqual(removed, readme, 'the removed text is returned so it can be restored');
-		assert.strictEqual(mem._files.has('/tenant/Workflows/Custom Workflows/README.md'), false);
-		await restoreGeneratedReadme(dir, removed);
-		assert.strictEqual(dec(mem._files.get('/tenant/Workflows/Custom Workflows/README.md')), readme, 'restored byte for byte');
-
-		// a user's own README is never touched, and nothing is "restored" over it
-		const mem2 = installMemoryFs();
-		await mem2.writeFile(vscode.Uri.joinPath(dir, 'README.md'), enc('my notes'));
-		assert.strictEqual(await clearGeneratedReadmeBeforeClone(dir), undefined);
-		await restoreGeneratedReadme(dir, undefined);
-		assert.strictEqual(dec(mem2._files.get('/tenant/Workflows/Custom Workflows/README.md')), 'my notes');
-	}
-
 	// ── 6. Tree state ────────────────────────────────────────────────────────
 	{
 		// 6a. a repository sync on a never-fetched tenant does not invent empty folders
@@ -213,23 +189,26 @@ const ADAPTER = 'https://tst-01-workflow.reltio.com';
 		{
 			const mem = installMemoryFs();
 			const { mgr, provider } = makeProvider();
-			await mem.writeFile(mgr.getWorkflowRepoConfigUri(ENV, TENANT), enc(JSON.stringify({
-				version: 1, repoUrl: 'https://github.com/acme/wf', relativePath: 'Workflows/Custom Workflows',
-			})));
-			const folder = new WorkflowsFolderNode(ENV, TENANT, undefined, true);
+			const config = { version: 1, repoUrl: 'https://github.com/acme/wf', relativePath: 'Workflows' };
+			await mem.writeFile(mgr.getWorkflowRepoConfigUri(ENV, TENANT), enc(JSON.stringify(config)));
+			const folder = new WorkflowsFolderNode(ENV, TENANT, undefined, config);
 			assert.strictEqual(folder.collapsibleState, vscode.TreeItemCollapsibleState.Collapsed,
-				'the folder must be expandable or the repository row can never be reached');
+				'the folder must be expandable or the repository\'s Java can never be reached');
 			assert.strictEqual(folder.command, undefined, 'a click must expand, not interrupt with the URL prompt');
+			assert.strictEqual(folder.contextValue, 'reltio.workflows.folder.noUrl.repo');
 			assert.strictEqual(
-				new WorkflowsFolderNode(ENV, TENANT, undefined, false).collapsibleState,
+				new WorkflowsFolderNode(ENV, TENANT, undefined).collapsibleState,
 				vscode.TreeItemCollapsibleState.None, 'unchanged when nothing is connected',
 			);
 
 			const asked = [];
 			provider.setWorkflowRepoDiscoveryHandler((e, t) => asked.push(`${e}/${t}`));
 			const kids = await provider.getChildren(folder);
-			assert.ok(kids.some(k => k instanceof WorkflowRepoNode), 'the repository row renders without an Adapter URL');
-			assert.ok(!kids.some(k => k instanceof WorkflowFetchActionNode), 'no Fetch row without a URL');
+			assert.deepStrictEqual(names(kids), ['WorkflowRepoGroupNode', 'WorkflowRepoGroupNode'],
+				'Java Classes and Java Tests render without an Adapter URL, and nothing else does');
+			assert.deepStrictEqual(kids.map(k => k.label), ['Java Classes', 'Java Tests'].map(l => `${l} (0)`),
+				'both Java groups are always shown once a repository is connected, even empty');
+			assert.ok(kids.every(k => k.collapsibleState === vscode.TreeItemCollapsibleState.None), 'an empty group is not expandable');
 			await provider.getChildren(folder);
 			assert.deepStrictEqual(asked, [`${ENV}/${TENANT}`], 'local discovery is requested exactly once');
 
@@ -250,28 +229,45 @@ const ADAPTER = 'https://tst-01-workflow.reltio.com';
 			provider.setInvalidRepoConfigHandler((e, t, reason) => reports.push([e, t, reason]));
 			const folder = new WorkflowsFolderNode(ENV, TENANT, ADAPTER);
 			const kids = await provider.getChildren(folder);
-			const repoRow = kids.find(k => k instanceof WorkflowRepoNode);
-			assert.ok(repoRow && !repoRow.config, 'an invalid sidecar means "not connected"');
+			assert.ok(!kids.some(k => k.constructor.name === 'WorkflowRepoGroupNode'), 'an invalid sidecar means "not connected"');
 			await provider.getChildren(folder);
 			assert.strictEqual(reports.length, 1, 'reported once per session, not on every render');
 			assert.ok(reports[0][2].length > 0);
 		}
 
-		// 6f. repo state decorates a definition row; only the downloaded copy decides the actions
+		// 6f. a repository file keeps its own row, even when its process id is deployed
 		{
-			installMemoryFs();
-			const { provider } = makeProvider();
-			provider.markProcessDefinitionsLoaded(ENV, TENANT, [def('p1')]);
-			provider.markWorkflowRepoSync(ENV, TENANT, 1, new Map([['p1', 'changed']]), [], []);
-			const rows = await provider.getChildren(new ProcessDefinitionsFolderNode(ENV, TENANT, [def('p1')]));
-			assert.strictEqual(rows.length, 1);
-			assert.strictEqual(rows[0].contextValue, 'reltio.workflows.processDefinition',
-				'a repo difference must not offer Deploy/Compare/Discard on a copy that was never downloaded');
-			assert.ok(String(rows[0].description).includes('differs from repository'));
+			const mem = installMemoryFs();
+			const { mgr, provider } = makeProvider();
+			await mem.writeFile(mgr.getWorkflowRepoConfigUri(ENV, TENANT), enc(JSON.stringify({
+				version: 1, repoUrl: 'https://github.com/acme/wf', relativePath: 'Workflows',
+			})));
+			const repoFile = {
+				processId: 'p1', processName: undefined, moduleName: undefined, fromRepo: true,
+				fileUri: vscode.Uri.file('/rfws/repo/p1.bpmn20.xml'),
+			};
+			const repoOnly = { ...repoFile, processId: 'p3', fileUri: vscode.Uri.file('/rfws/repo/p3.bpmn20.xml') };
+			provider.markProcessDefinitionsLoaded(ENV, TENANT, [def('p1'), def('p2'), def('dataChangeRequestReview', true)]);
+			provider.markWorkflowRepoSync(ENV, TENANT, 2, new Map([['p1', 'changed']]), [repoFile, repoOnly], []);
+			const folderKids = await provider.getChildren(new WorkflowsFolderNode(ENV, TENANT, ADAPTER));
+			const pdFolder = folderKids.find(k => k instanceof ProcessDefinitionsFolderNode);
+			const rows = await provider.getChildren(pdFolder);
 
-			const downloadedAndEdited = new ProcessDefinitionNode(ENV, TENANT, def('p1'), 'changed', 'clean');
-			assert.strictEqual(downloadedAndEdited.contextValue, 'reltio.workflows.processDefinition.changed',
-				'a clean repo state must not hide real local edits');
+			const tenantRows = rows.filter(r => r instanceof ProcessDefinitionNode);
+			assert.deepStrictEqual(tenantRows.map(r => r.definition.type), ['p1', 'p2', 'dataChangeRequestReview'],
+				'tenant rows are exactly what is deployed');
+			assert.ok(tenantRows.every(r => r.contextValue === 'reltio.workflows.processDefinition'),
+				'a repository file never changes what a tenant row offers');
+			const repoRows = rows.filter(r => r instanceof WorkflowDraftNode && r.source === 'repo');
+			assert.deepStrictEqual(repoRows.map(r => r.draft.processId), ['p1', 'p3'],
+				'p1 is deployed and still gets its own repository row, next to the tenant row');
+			assert.ok(String(repoRows[0].description).includes('differs from tenant'));
+			assert.ok(String(repoRows[1].description).includes('not deployed'));
+			assert.strictEqual(new Set(rows.map(r => r.id)).size, rows.length, 'every row has a unique tree id');
+
+			const both = new ProcessDefinitionNode(ENV, TENANT, def('p1'), 'changed');
+			assert.strictEqual(both.contextValue, 'reltio.workflows.processDefinition.changed');
+			assert.ok(String(both.description).includes('local changes'));
 		}
 
 		// 6g. removing a tenant forgets what was fetched
@@ -283,89 +279,60 @@ const ADAPTER = 'https://tst-01-workflow.reltio.com';
 			assert.strictEqual(provider.hasFetchedProcessDefinitions(ENV, TENANT), false);
 		}
 
-		// 6h. Drafts renders above the Custom Workflow Repository row, not below it — in
-		// both the "not fetched yet" branch and the normal, fully-loaded branch.
+		// 6h. one Process Definitions list holds drafts too; the Java groups follow it. There is no
+		// separate Drafts folder and no repository row.
 		{
 			const mem = installMemoryFs();
 			const { mgr, provider } = makeProvider();
-			await mem.writeFile(mgr.getWorkflowRepoConfigUri(ENV, TENANT), enc(JSON.stringify({
-				version: 1, repoUrl: 'https://github.com/acme/wf', relativePath: 'Workflows/Custom Workflows',
-			})));
+			const config = { version: 1, repoUrl: 'https://github.com/acme/wf', relativePath: 'Workflows' };
+			await mem.writeFile(mgr.getWorkflowRepoConfigUri(ENV, TENANT), enc(JSON.stringify(config)));
 			await mem.writeFile(
 				vscode.Uri.joinPath(mgr.getWorkflowDraftsDirectoryUri(ENV, TENANT), draftFileName('d1')),
 				enc(bpmn('d1')),
 			);
 
-			// Not fetched yet: only the (optional) Fetch row and the repository row are
-			// unconditional; Drafts must still come first among what *does* render.
-			const unfetched = new WorkflowsFolderNode(ENV, TENANT, undefined, true);
-			const unfetchedKids = await provider.getChildren(unfetched);
-			const unfetchedDraftsIdx = unfetchedKids.findIndex(k => k instanceof WorkflowDraftsFolderNode);
-			const unfetchedRepoIdx = unfetchedKids.findIndex(k => k instanceof WorkflowRepoNode);
-			assert.ok(unfetchedDraftsIdx >= 0 && unfetchedRepoIdx >= 0, 'both rows must render');
-			assert.ok(unfetchedDraftsIdx < unfetchedRepoIdx,
-				'Drafts must render above Custom Workflow Repository before Workflows has been fetched too');
+			const unfetched = await provider.getChildren(new WorkflowsFolderNode(ENV, TENANT, undefined, config));
+			assert.deepStrictEqual(
+				names(unfetched), ['ProcessDefinitionsFolderNode', 'WorkflowRepoGroupNode', 'WorkflowRepoGroupNode'],
+				'before any fetch: the list (it holds the draft), then Java Classes and Java Tests',
+			);
+			const draftRows = await provider.getChildren(unfetched[0]);
+			assert.deepStrictEqual(names(draftRows), ['WorkflowDraftNode']);
+			assert.strictEqual(draftRows[0].contextValue, 'reltio.workflows.draft');
 
-			// Fully loaded.
 			provider.markWorkflowsLoaded(ENV, TENANT, [def('p1')], []);
-			const loaded = new WorkflowsFolderNode(ENV, TENANT, ADAPTER);
-			const loadedKids = await provider.getChildren(loaded);
-			const loadedDraftsIdx = loadedKids.findIndex(k => k instanceof WorkflowDraftsFolderNode);
-			const loadedRepoIdx = loadedKids.findIndex(k => k instanceof WorkflowRepoNode);
-			assert.ok(loadedDraftsIdx >= 0 && loadedRepoIdx >= 0, 'both rows must render');
-			assert.ok(loadedDraftsIdx < loadedRepoIdx,
-				'Drafts must render above Custom Workflow Repository once Workflows has been fetched');
+			const loaded = await provider.getChildren(new WorkflowsFolderNode(ENV, TENANT, ADAPTER, config));
+			const loadedNames = names(loaded);
+			assert.ok(loadedNames.indexOf('ProcessDefinitionsFolderNode') < loadedNames.indexOf('JarDeploymentsFolderNode'));
+			assert.ok(loadedNames.indexOf('JarDeploymentsFolderNode') < loadedNames.indexOf('WorkflowRepoGroupNode'),
+				'Java groups come after the two default folders');
 		}
 
-		// 6i. a repository file row sets no `resourceUri` — that opts the row into VS Code's
-		// native Problems-count badge, which reads as a deploy blocker on a BPMN mid-edit
-		// and is not one (the "Deploy to tenant" icon already covers that).
+		// 6i/6j. a draft row sets no `resourceUri` — that opts the row into VS Code's native
+		// Problems-count badge, which reads as a deploy blocker on a BPMN mid-edit and is not one.
+		// It shows the process's <process name="…"> with the id as a fallback, matching
+		// `ProcessDefinitionNode`'s own label rule; the id stays visible because Deploy keys on it.
 		{
-			const fileNode = new WorkflowRepoBpmnFileNode(
-				ENV, TENANT, vscode.Uri.file('/rfws/repo/p1.bpmn20.xml'), 'p1', undefined, undefined,
-			);
-			assert.strictEqual(fileNode.resourceUri, undefined,
-				'a repository BPMN row must not carry resourceUri, or VS Code renders a Problems badge next to it');
-			assert.ok(fileNode.iconPath, 'the icon must still be set explicitly without resourceUri to drive it');
-			assert.deepStrictEqual(fileNode.command.arguments, [fileNode.fileUri],
-				'Open BPMN must still work without resourceUri to fall back on');
-		}
+			for (const source of ['local', 'repo']) {
+				const named = new WorkflowDraftNode(ENV, TENANT, {
+					processId: 'd1', fileUri: vscode.Uri.file('/rfws/drafts/d1.bpmn20.xml'),
+					fileName: 'd1.bpmn20.xml', processName: 'Address Validation',
+				}, source);
+				assert.strictEqual(named.resourceUri, undefined,
+					'a draft or repository row must not carry resourceUri, or VS Code renders a Problems badge next to it');
+				assert.ok(named.iconPath, 'the icon must still be set explicitly without resourceUri to drive it');
+				assert.strictEqual(named.label, 'Address Validation');
+				assert.ok(String(named.description).includes('d1') && (source === 'repo' || String(named.description).includes('draft')),
+					'the id stays visible once the label shows the friendlier name');
+				assert.deepStrictEqual(named.command.arguments, [named.fileUri ?? named.command.arguments[0]],
+					'a click must still open the file');
 
-		// 6j. a Draft or Custom Workflow Repository row shows the process's <process name="…">
-		// when the BPMN has one, with the id as a fallback — matching `ProcessDefinitionNode`'s
-		// own label rule, so the same workflow does not read as "p1" on one row and
-		// "Location DCR Approval" on another depending only on which tree branch is showing it.
-		// The id must stay visible (in `description`/`tooltip`) because Deploy keys on it, not the name.
-		{
-			const named = new WorkflowRepoBpmnFileNode(
-				ENV, TENANT, vscode.Uri.file('/rfws/repo/p1.bpmn20.xml'), 'p1', 'Location DCR Approval', undefined,
-			);
-			assert.strictEqual(named.label, 'Location DCR Approval',
-				'a repository row must show the process name as its label when the BPMN has one');
-			assert.ok(String(named.description).includes('p1'),
-				'the id must still be visible once the label is showing the friendlier name');
-
-			const unnamed = new WorkflowRepoBpmnFileNode(
-				ENV, TENANT, vscode.Uri.file('/rfws/repo/p2.bpmn20.xml'), 'p2', undefined, undefined,
-			);
-			assert.strictEqual(unnamed.label, 'p2',
-				'a repository row with no process name must fall back to the id, not show "undefined"');
-
-			const namedDraft = new WorkflowDraftNode(ENV, TENANT, {
-				processId: 'd1', fileUri: vscode.Uri.file('/rfws/drafts/d1.bpmn20.xml'),
-				fileName: 'd1.bpmn20.xml', processName: 'Address Validation',
-			});
-			assert.strictEqual(namedDraft.label, 'Address Validation',
-				'a draft row must show the process name as its label when the BPMN has one');
-			assert.ok(String(namedDraft.description).includes('d1'),
-				'the id must still be visible once the draft label is showing the friendlier name');
-
-			const unnamedDraft = new WorkflowDraftNode(ENV, TENANT, {
-				processId: 'd2', fileUri: vscode.Uri.file('/rfws/drafts/d2.bpmn20.xml'),
-				fileName: 'd2.bpmn20.xml', processName: undefined,
-			});
-			assert.strictEqual(unnamedDraft.label, 'd2',
-				'a draft row with no process name must fall back to the id, not show "undefined"');
+				const unnamed = new WorkflowDraftNode(ENV, TENANT, {
+					processId: 'd2', fileUri: vscode.Uri.file('/rfws/drafts/d2.bpmn20.xml'),
+					fileName: 'd2.bpmn20.xml', processName: undefined,
+				}, source);
+				assert.strictEqual(unnamed.label, 'd2', 'no process name falls back to the id, not "undefined"');
+			}
 		}
 	}
 

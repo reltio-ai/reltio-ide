@@ -1,6 +1,6 @@
 {
 	"title": "Reltio IDE Setup Guide",
-	"subtitle": "Get started with Reltio IDE in just a few minutes. First pick a Reltio tenant or a Git repository — you cannot use both in the same workspace — then start modeling with AI-assisted authoring.",
+	"subtitle": "Get started with Reltio IDE in just a few minutes. First pick a Reltio tenant or a Git repository — you cannot use both in the same workspace — then start modeling with AI-assisted authoring and manage BPMN workflows on a tenant.",
 	"steps": [
 		{
 			"id": "addEnvironment",
@@ -42,7 +42,14 @@
 			"number": 6,
 			"icon": "cloud-upload",
 			"title": "Apply Your Changes",
-			"body": "<p>When you're connected to a tenant and ready to deploy, right-click the tenant and select <strong>Apply Configuration to Tenant</strong>.</p><p>Before applying your changes, Reltio IDE automatically compares your local configuration with the latest version in the tenant. If the remote configuration has changed since you last downloaded it, you'll be shown a comparison view to review the differences before proceeding.</p><p>This helps prevent accidental overwrites and ensures you deploy with confidence.</p><p>When you work from a Git repository, Reltio IDE hides tenant apply and history. Save your edits, then commit and push them with your editor's <strong>Source Control</strong> view.</p>"
+			"body": "<p>When you're connected to a tenant and ready to deploy, right-click the tenant and select <strong>Apply Configuration to Tenant</strong>.</p><p>Before applying your changes, Reltio IDE automatically compares your local configuration with the latest version in the tenant. If the remote configuration has changed since you last downloaded it, you'll be shown a comparison view to review the differences before proceeding.</p><p>This helps prevent accidental overwrites and ensures you deploy with confidence.</p><p>Workflows are deployed separately. See step 7.</p><p>When you work from a Git repository, Reltio IDE hides tenant apply and history. Save your edits, then commit and push them with your editor's <strong>Source Control</strong> view.</p>"
+		},
+		{
+			"id": "workflows",
+			"number": 7,
+			"icon": "git-pull-request",
+			"title": "Work with workflows",
+			"body": "<p>Reltio IDE also manages your tenant's BPMN workflows. This step applies to a tenant connection.</p><p>In the Reltio side panel, expand your tenant's <strong>Workflows</strong> folder. <strong>Process Definitions</strong> lists the workflows on your tenant, and <strong>JAR Deployments</strong> lists the Java packages registered against it.</p><ul><li>Select a workflow to open its BPMN file, and right-click it and select <strong>Show BPMN Diagram</strong> to preview it.</li><li>Right-click <strong>Process Definitions</strong> and select <strong>New Workflow...</strong>, or describe the workflow to your AI assistant. New workflows are saved as drafts.</li><li>Right-click a draft or an edited workflow and select <strong>Deploy to Tenant</strong>.</li></ul><p>If a workflow needs custom Java, right-click <strong>Workflows</strong> and select <strong>Connect Custom Workflow Repository...</strong>. The AI assistant then writes the Java in your repository and the BPMN as a draft. After you raise a pull request and Reltio builds the Java package, use <strong>Refresh JARs</strong> and <strong>Register JAR...</strong> under <strong>JAR Deployments</strong>, then deploy the workflow.</p>"
 		}
 	],
 	"footer": "You can reopen this guide at any time by clicking <strong>Open the Setup Guide</strong> from the Reltio side panel."

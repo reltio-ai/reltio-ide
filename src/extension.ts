@@ -91,10 +91,7 @@ import {
 	JarDeploymentNode,
 	UnregisteredJarNode,
 	jarModuleFileName,
-	WorkflowDraftsFolderNode,
 	WorkflowDraftNode,
-	WorkflowRepoNode,
-	WorkflowRepoBpmnFileNode,
 } from './tree/workflowNodes';
 import {
 	listJarDeployments,
@@ -116,6 +113,7 @@ import {
 	saveWorkflowAdapterUrl,
 } from './workspace/workflowAdapterConfig';
 import { BpmnContentProvider, BPMN_SCHEME } from './providers/bpmnContentProvider';
+import { planBulkDownload, runBounded } from './workspace/workflowBulkDownload';
 import {
 	bpmnBaselineFileName,
 	bpmnFileName,
@@ -161,7 +159,7 @@ import {
 	writeMultiGitSourceMarker,
 	type MultiGitSourceMarker,
 } from './workspace/gitSourceMarker';
-import { isTenantConfigPath } from './workspace/tenantFolderStructure';
+import { WORKFLOWS_DIR, isTenantConfigPath, materializeTenantTree, tenantPath } from './workspace/tenantFolderStructure';
 import {
 	bindTenantToGit,
 	createAndPublishBranch,
@@ -187,7 +185,18 @@ import {
 	toOpenableHttpsUrl,
 } from './workspace/workflowRepoConfig';
 import { cloneUrlProblem, redactUrl } from './workspace/gitConfigSource';
-import { clearGeneratedReadmeBeforeClone, restoreGeneratedReadme } from './workspace/workflowRepoConnect';
+import {
+	WORKFLOW_REPO_STAGING_DIR,
+	WorkflowRepoAdoptionConflictError,
+	adoptStagedRepository,
+	ensureBaselineExcluded,
+	prepareStagingDir,
+	removeStagingDir,
+} from './workspace/workflowRepoConnect';
+import { describeAdoptedDrafts } from './workspace/workflowRepoAdoption';
+import { describeDisconnect, describeDisconnectDetail, isRepoOriginFile, relativeToWorkflows } from './workspace/workflowRepoOrigin';
+import { inspectRepoForDisconnect, listTrackedFiles, removeRepoFiles } from './workspace/workflowRepoCleanup';
+import type { DiscoveredBpmnFile } from './workspace/workflowRepoDiscovery';
 import { describeDeploy, planDeploy, type DeployPlan } from './workspace/workflowDeployPlan';
 import { KeyedDebouncer } from './util/keyedDebouncer';
 import { extractProcessModel } from './workflow/bpmnModel';
@@ -2251,7 +2260,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		/**
 		 * reltio.connectWorkflowRepository
 		 * Clones the customer's Reltio-provisioned Custom Workflow Repository into
-		 * `Workflows/Custom Workflows/` (D1) and records the binding in
+		 * `Workflows/` (D1, via a staging clone) and records the binding in
 		 * `WorkflowRepo.reltio.json` (D3). A second, distinct remote from whatever
 		 * the tenant itself may be bound to via `reltio.connectTenantToGit` — see
 		 * `workflowRepoGitignore.ts` for how the two stay safely nested.
@@ -2262,7 +2271,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		 */
 		vscode.commands.registerCommand(
 			'reltio.connectWorkflowRepository',
-			async (arg?: WorkflowRepoNode | WorkflowCommandArgs) => {
+			async (arg?: WorkflowsFolderNode | WorkflowCommandArgs) => {
 			const args = workflowCommandArgs(arg);
 			if (!args || !environmentManager) return;
 			const loc = await resolveWorkflowTenant(args);
@@ -2288,32 +2297,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			if (!repoUrl?.trim()) return;
 
 			const repoDir = environmentManager.getWorkflowRepoDirectoryUri(environmentName, tenantId);
-			const relativePath = 'Workflows/Custom Workflows';
+			const relativePath = WORKFLOWS_DIR;
+			// `Workflows/` is never empty (generated README, `bpmn/` drafts) and `git clone` refuses a
+			// non-empty folder, so clone aside and adopt the result into `Workflows/`.
+			const stagingDir = tenantPath(
+				environmentManager.getTenantRootUri(environmentName, tenantId),
+				WORKFLOW_REPO_STAGING_DIR,
+			);
 
-			let removedReadme: string | undefined;
 			try {
 				await vscode.workspace.fs.createDirectory(repoDir);
-				// D1's placeholder folder already carries a generated README by the time anyone
-				// connects a real repository — clear it before the emptiness check, not after.
-				removedReadme = await clearGeneratedReadmeBeforeClone(repoDir);
-
 				if (await isGitRepoWithRemote(repoDir)) {
 					void vscode.window.showInformationMessage(
 						`Tenant "${tenantId}" already has a Custom Workflow Repository connected.`,
 					);
 					return;
 				}
-				if (!(await isFolderEmpty(repoDir))) {
-					void vscode.window.showErrorMessage(
-						'Workflows/Custom Workflows already has files in it. Move or remove them, then try again.',
-					);
-					return;
-				}
 
+				await prepareStagingDir(stagingDir);
 				await vscode.window.withProgress(
 					{ location: vscode.ProgressLocation.Notification, title: 'Cloning Custom Workflow Repository…' },
-					() => cloneRepository(repoUrl.trim(), repoDir),
+					() => cloneRepository(repoUrl.trim(), stagingDir),
 				);
+				const { drafts, keptLocal } = await adoptStagedRepository(repoDir, stagingDir);
+				await removeStagingDir(stagingDir);
 				await saveWorkflowRepoConfig(repoConfigUri, { repoUrl: storableRepoUrl(repoUrl.trim()), relativePath });
 
 				// D10, Order 2 (tenant already bound, repo connected second): we control this
@@ -2332,9 +2339,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				void vscode.window.showInformationMessage(
 					`Connected the Custom Workflow Repository for "${tenantId}". If it built a new JAR, use Refresh JARs to pick it up.`,
 				);
+
+				// Drafts that were already in Workflows/bpmn/ did not move, but they now sit inside
+				// the repository's working tree, so say so rather than let a later commit surprise them.
+				if (drafts.length > 0) {
+					const { message, detail } = describeAdoptedDrafts(drafts, keptLocal);
+					void vscode.window.showInformationMessage(message, { modal: true, detail });
+				}
 			} catch (e) {
-				// Nothing was cloned, so the placeholder the tenant tree seeded must still be there.
-				await restoreGeneratedReadme(repoDir, removedReadme);
+				await removeStagingDir(stagingDir);
+				if (e instanceof WorkflowRepoAdoptionConflictError) {
+					void vscode.window.showErrorMessage(e.message);
+					return;
+				}
 				if (e instanceof GitNotFoundError) {
 					void vscode.window.showErrorMessage(e.message);
 					return;
@@ -2354,7 +2371,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		 */
 		vscode.commands.registerCommand(
 			'reltio.disconnectWorkflowRepository',
-			async (arg?: WorkflowRepoNode | WorkflowCommandArgs) => {
+			async (arg?: WorkflowsFolderNode | WorkflowCommandArgs) => {
 			const args = workflowCommandArgs(arg);
 			if (!args || !environmentManager) return;
 			const loc = await resolveWorkflowTenant(args);
@@ -2364,21 +2381,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			const repoDir = environmentManager.getWorkflowRepoDirectoryUri(environmentName, tenantId);
 			const repoConfigUri = environmentManager.getWorkflowRepoConfigUri(environmentName, tenantId);
 
-			const dirty = await hasUncommittedChanges(repoDir);
-			const warning = dirty
-				? `Disconnect the Custom Workflow Repository for "${tenantId}"? It has uncommitted changes. Your files stay exactly as they are, but the repository and its local history are removed and unpushed commits are lost.`
-				: `Disconnect the Custom Workflow Repository for "${tenantId}"? Your files stay exactly as they are; the repository and its local history are removed.`;
-			const pick = await vscode.window.showWarningMessage(warning, { modal: true }, 'Disconnect');
+			// Removing the repository's files is what lets another repository be connected: a
+			// clone refuses to land on files that are already there. Only files git says came from
+			// the repository go; drafts and anything the user added or changed stay.
+			const inspection = await inspectRepoForDisconnect(repoDir);
+			const warning = describeDisconnect(
+				tenantId, inspection?.plan, inspection?.unpushedCommits ?? 0, inspection?.stashes ?? 0,
+			);
+			const pick = await vscode.window.showWarningMessage(
+				warning, { modal: true, detail: describeDisconnectDetail(inspection?.plan) }, 'Disconnect',
+			);
 			if (pick !== 'Disconnect') return;
 
 			try {
-				await disconnectFromGit(repoDir);
+				// The dialog can stay open for a while. Plan again now, so a file edited meanwhile is kept.
+				const confirmed = inspection ? await inspectRepoForDisconnect(repoDir) : undefined;
+				if (confirmed) await removeRepoFiles(repoDir, confirmed.plan);
+				// A teammate's clone has the sidecar but no `Workflows/.git`; the link is still removed.
+				const hasGitDir = await Promise.resolve(vscode.workspace.fs.stat(vscode.Uri.joinPath(repoDir, '.git')))
+					.then(() => true, () => false);
+				if (hasGitDir) await disconnectFromGit(repoDir);
 				await deleteWorkflowRepoConfig(repoConfigUri);
+				// The folder's generated README comes back, so the tenant tree is whole again.
+				await materializeTenantTree(environmentManager.getTenantRootUri(environmentName, tenantId));
 				await refreshWorkflowRepoSyncState(environmentName, tenantId);
+				treeProvider.notifyWorkflowDraftsChanged();
 				treeProvider.refresh();
 				uxBus.fire();
 				void vscode.window.showInformationMessage(
-					`Tenant "${tenantId}" is no longer connected to a Custom Workflow Repository. Its files are untouched.`,
+					inspection
+						? `Tenant "${tenantId}" is no longer connected to a Custom Workflow Repository, and its files were removed from Workflows/.`
+						: `Tenant "${tenantId}" is no longer connected to a Custom Workflow Repository. Its files were left in place.`,
 				);
 			} catch (e) {
 				void vscode.window.showErrorMessage(`Failed to disconnect: ${(e as Error).message}`);
@@ -2393,7 +2426,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		 */
 		vscode.commands.registerCommand(
 			'reltio.openWorkflowRepoFolder',
-			async (arg?: WorkflowRepoNode | WorkflowCommandArgs) => {
+			async (arg?: WorkflowsFolderNode | WorkflowCommandArgs) => {
 			const args = workflowCommandArgs(arg);
 			if (!args || !environmentManager) return;
 			const loc = await resolveWorkflowTenant(args);
@@ -2409,7 +2442,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		 */
 		vscode.commands.registerCommand(
 			'reltio.openWorkflowRepoInBrowser',
-			async (arg?: WorkflowRepoNode | WorkflowCommandArgs) => {
+			async (arg?: WorkflowsFolderNode | WorkflowCommandArgs) => {
 			const args = workflowCommandArgs(arg);
 			if (!args || !environmentManager) return;
 			const loc = await resolveWorkflowTenant(args);
@@ -2441,7 +2474,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		 */
 		vscode.commands.registerCommand(
 			'reltio.refreshWorkflowRepoSync',
-			async (arg?: WorkflowRepoNode | WorkflowCommandArgs) => {
+			async (arg?: WorkflowsFolderNode | WorkflowCommandArgs) => {
 			const args = workflowCommandArgs(arg);
 			if (!args) return;
 			const loc = await resolveWorkflowTenant(args);
@@ -2991,6 +3024,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		if (!result) return false; // withProgress was cancelled (shouldn't happen; cancellable: false)
 		const [definitions, jars] = result;
 		treeProvider.markWorkflowsLoaded(environmentName, tenantId, definitions, jars, unregisteredJars, generation);
+		// Not awaited: the list is already on screen, and the copies arrive in the background.
+		void downloadAllBpmnCopies(environmentName, tenantId, definitions);
 		await refreshWorkflowRepoSyncState(environmentName, tenantId);
 		return true;
 	}
@@ -3033,6 +3068,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 		if (!definitions) return false;
 		treeProvider.markProcessDefinitionsLoaded(environmentName, tenantId, definitions, generation);
+		void downloadAllBpmnCopies(environmentName, tenantId, definitions);
 		await refreshWorkflowRepoSyncState(environmentName, tenantId);
 		return true;
 	}
@@ -3269,7 +3305,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			// Reachable from the Workflows folder and from each of its sub-folders —
 			// looking at Process Definitions and wanting a refresh should not mean
 			// walking back up a level to find the action.
-			async (node?: WorkflowsFolderNode | ProcessDefinitionsFolderNode | JarDeploymentsFolderNode | WorkflowDraftsFolderNode) => {
+			async (node?: WorkflowsFolderNode | ProcessDefinitionsFolderNode | JarDeploymentsFolderNode) => {
 				if (!node || !environmentManager) return;
 				const configUri = environmentManager.getWorkflowAdapterConfigUri(
 					node.environmentName,
@@ -3487,9 +3523,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 		/**
 		 * reltio.openWorkflowBpmn
-		 * Opens the BPMN XML for one process type in a read-only virtual document.
-		 * The XML is fetched on demand (not at tree-load time) so large XMLs don't
-		 * slow down the initial Workflows fetch.
+		 * Opens the BPMN for one process type. Every deployed definition is downloaded in the
+		 * background when the list loads (`downloadAllBpmnCopies`), so this normally just opens the
+		 * file; it fetches on demand only when the copy is not on disk yet (still downloading, or
+		 * the download failed).
 		 */
 		vscode.commands.registerCommand(
 			'reltio.openWorkflowBpmn',
@@ -3611,6 +3648,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	 * missing token/Adapter URL that would otherwise fire on every fetch for every
 	 * tenant that has never connected one.
 	 */
+	/**
+	 * Marks each discovered BPMN as from the repository or not. The repository scan walks all of
+	 * `Workflows/`, including the drafts folder, so it also sees the user's own drafts; git's tracked
+	 * list is what tells them apart (see `isRepoOriginFile`).
+	 */
+	async function tagRepoOrigin(repoDir: vscode.Uri, files: readonly DiscoveredBpmnFile[]): Promise<DiscoveredBpmnFile[]> {
+		const tracked = await listTrackedFiles(repoDir);
+		return files.map(file => {
+			const relative = relativeToWorkflows(file.fileUri.fsPath, repoDir.fsPath);
+			return { ...file, fromRepo: relative !== undefined && isRepoOriginFile(relative, tracked) };
+		});
+	}
+
 	async function refreshWorkflowRepoSyncState(environmentName: string, tenantId: string): Promise<void> {
 		if (!environmentManager) return;
 		// Claimed up front, before any of the awaits below, so a disconnect (or another sync
@@ -3634,7 +3684,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			discoverBpmnFilesDetailed(repoDir),
 			discoverJavaSources(repoDir),
 		]);
-		const discovered = discovery.files;
+		const discovered = await tagRepoOrigin(repoDir, discovery.files);
 		noteTruncatedDiscovery(environmentName, tenantId, discovery.truncated);
 
 		const ctx = await workflowCallContext(environmentName, tenantId);
@@ -3645,7 +3695,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		const sync = new Map<string, RepoSyncState>();
 		if (ctx) {
 			for (const file of discovered) {
-				if (!definitionTypes.has(file.processId)) continue;
+				if (!file.fromRepo || !definitionTypes.has(file.processId)) continue;
 				try {
 					const [repoText, deployedXml] = await Promise.all([
 						readTextFile(file.fileUri),
@@ -3704,11 +3754,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			discoverJavaSources(repoDir),
 		]);
 		noteTruncatedDiscovery(environmentName, tenantId, discovery.truncated);
-		treeProvider.markWorkflowRepoFilesDiscovered(environmentName, tenantId, discovery.files, javaSources, generation);
+		treeProvider.markWorkflowRepoFilesDiscovered(
+			environmentName,
+			tenantId,
+			await tagRepoOrigin(repoDir, discovery.files),
+			javaSources,
+			generation,
+		);
 	}
 	treeProvider.setInvalidRepoConfigHandler((_environmentName, tenantId, reason) => {
 		void vscode.window.showWarningMessage(
 			`The Custom Workflow Repository settings for "${tenantId}" were ignored: ${reason}`,
+		);
+	});
+	/**
+	 * Loads a tenant's workflows when the tenant is opened, with the same fetch the Workflows row
+	 * runs on a click. It never asks anything: with no saved Adapter URL it uses only a host the
+	 * bundled table names unambiguously, and otherwise leaves the click-to-set-up path as it was.
+	 * It does not overwrite local BPMNs; the background download only adds missing ones.
+	 */
+	async function autoLoadWorkflows(environmentName: string, tenantId: string): Promise<void> {
+		if (!environmentManager || !tokenStore.getToken(environmentName)) return;
+		const configUri = environmentManager.getWorkflowAdapterConfigUri(environmentName, tenantId);
+		let adapterUrl = await loadWorkflowAdapterUrl(configUri);
+		if (!adapterUrl) {
+			const known = lookupWorkflowAdapterUrl(environmentName);
+			if (known?.kind !== 'url') return;
+			try {
+				adapterUrl = toHttpsBase(known.host);
+			} catch {
+				return;
+			}
+			await saveWorkflowAdapterUrl(configUri, adapterUrl);
+			treeProvider.invalidate();
+		}
+		await doFetchWorkflows(environmentName, tenantId, adapterUrl);
+	}
+	treeProvider.setWorkflowAutoLoadHandler((environmentName, tenantId) => {
+		void autoLoadWorkflows(environmentName, tenantId).catch(err =>
+			console.error('Reltio automatic workflow load failed:', err),
 		);
 	});
 	treeProvider.setWorkflowRepoDiscoveryHandler((environmentName, tenantId) => {
@@ -3773,15 +3857,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	}
 
 	/**
-	 * Write a new BPMN, open it, and reveal it in the tree.
+	 * Write a new BPMN into `Workflows/bpmn/`, open it, and reveal it in the tree.
 	 *
-	 * Routes to the connected Custom Workflow Repository instead of Drafts when the
-	 * tenant has one. Drafts exist for tenants with nowhere else to put a BPMN being
-	 * shaped — once a repository is connected, that *is* the somewhere else, and a
-	 * self-service file an agent or the user creates belongs with the rest of what the
-	 * repository already tracks, not in a side folder they would otherwise have to move
-	 * it out of by hand. Both `reltio.newWorkflowDraft` and `reltio.duplicateWorkflowDraft`
-	 * share this through a single call site, so neither can drift from the other.
+	 * One destination whether or not a Custom Workflow Repository is connected: the repository is
+	 * cloned into `Workflows/`, so its own `bpmn/` *is* the drafts folder. A connected repository
+	 * adds one check, because its BPMN is identified by content and the prompt's own collision
+	 * checks (drafts, deployed) never walk it. Both `reltio.newWorkflowDraft` and
+	 * `reltio.duplicateWorkflowDraft` share this through a single call site.
 	 */
 	async function createDraft(
 		environmentName: string,
@@ -3792,10 +3874,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		const repoConfig = await loadWorkflowRepoConfig(
 			environmentManager!.getWorkflowRepoConfigUri(environmentName, tenantId),
 		);
-		if (repoConfig) {
-			await createInConnectedRepo(environmentName, tenantId, processId, xml);
-			return;
-		}
+		if (repoConfig && !(await repoHasNoFileFor(environmentName, tenantId, processId))) return;
 		let fileUri: vscode.Uri;
 		try {
 			fileUri = await writeWorkflowDraft(
@@ -3809,6 +3888,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			);
 			return;
 		}
+		if (repoConfig) await refreshWorkflowRepoLocalState(environmentName, tenantId);
 		treeProvider.notifyWorkflowDraftsChanged();
 		const doc = await vscode.workspace.openTextDocument(fileUri);
 		await vscode.window.showTextDocument(doc, { preview: false });
@@ -3828,23 +3908,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	}
 
 	/**
-	 * `createDraft()`'s repository-connected path. Written at the repository root rather
-	 * than inside any particular Maven module: D6 already discovers BPMN by content at
-	 * any depth, including entirely outside every module, so there is no "correct" module
-	 * to guess, and placing it at the root keeps a brand-new file visible without the
-	 * module/package structure the Java side cares about but a lone BPMN does not.
+	 * True when the connected repository tracks no file for `processId` and nothing already sits at
+	 * the draft's path; otherwise tells the user why not and returns false.
 	 *
-	 * Refuses rather than overwrites when the process id already belongs to a file the
-	 * repository tracks — two files both claiming the same `<process id>` is a collision
-	 * `promptForProcessId()`'s own checks (Drafts, deployed) cannot see, since neither
-	 * walks the repository.
+	 * The first check is content-based (D6: identity is the XML's id, not the filename), so it cannot
+	 * see a file already at this exact path that carries a different id, or none at all. Writing is a
+	 * plain filesystem write with no merge, so that file would otherwise be silently replaced.
 	 */
-	async function createInConnectedRepo(
-		environmentName: string,
-		tenantId: string,
-		processId: string,
-		xml: string,
-	): Promise<void> {
+	async function repoHasNoFileFor(environmentName: string, tenantId: string, processId: string): Promise<boolean> {
 		const repoDir = environmentManager!.getWorkflowRepoDirectoryUri(environmentName, tenantId);
 		const { files: discovered } = await discoverBpmnFilesDetailed(repoDir);
 		const existing = discovered.find(f => f.processId === processId);
@@ -3852,33 +3923,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			void vscode.window.showErrorMessage(
 				`"${processId}" already exists in the connected repository at "${vscode.workspace.asRelativePath(existing.fileUri)}". Open that file instead of creating a new one.`,
 			);
-			return;
+			return false;
 		}
-		// The check above is content-based (D6: identity is the XML's id, not the filename), so it
-		// cannot see a file that already sits at this exact path but carries a different id — or
-		// none at all, e.g. something left over, hand-renamed, or not valid BPMN. Writing here is
-		// a plain filesystem write with no merge, so that file would otherwise be silently replaced.
-		const targetUri = vscode.Uri.joinPath(repoDir, bpmnFileName(processId));
+		const targetUri = vscode.Uri.joinPath(
+			environmentManager!.getWorkflowDraftsDirectoryUri(environmentName, tenantId),
+			bpmnFileName(processId),
+		);
 		if ((await readTextFile(targetUri)) !== undefined) {
 			void vscode.window.showErrorMessage(
 				`A file already exists at "${vscode.workspace.asRelativePath(targetUri)}" in the connected repository. Rename or remove it before creating "${processId}" here.`,
 			);
-			return;
+			return false;
 		}
-		const fileUri = await writeBpmnFile(repoDir, bpmnFileName(processId), xml);
-		await refreshWorkflowRepoLocalState(environmentName, tenantId);
-		const doc = await vscode.workspace.openTextDocument(fileUri);
-		await vscode.window.showTextDocument(doc, { preview: false });
-		try {
-			await treeView.reveal(
-				new WorkflowRepoBpmnFileNode(
-					environmentName, tenantId, fileUri, processId, extractProcessModel(xml).processName, undefined,
-				),
-				{ select: true },
-			);
-		} catch {
-			// Reveal is a convenience; the file is written and open either way.
-		}
+		return true;
 	}
 
 	/**
@@ -3915,6 +3972,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		if (xml === undefined) return undefined;
 
 		const dir = environmentManager!.getWorkflowDraftsDirectoryUri(environmentName, tenantId);
+		await ensureBaselineExcluded(environmentManager!.getWorkflowRepoDirectoryUri(environmentName, tenantId));
 		const fileUri = await writeBpmnFile(dir, bpmnFileName(processId), xml);
 		await writeBpmnFile(dir, bpmnBaselineFileName(processId), xml);
 		treeProvider.notifyWorkflowDraftsChanged();
@@ -4077,6 +4135,82 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		treeProvider.notifyWorkflowDraftsChanged();
 	}
 
+	/** Tenants with a bulk download running, so overlapping refreshes do not start a second one. */
+	const bulkBpmnDownloadsInFlight = new Set<string>();
+
+	/**
+	 * Downloads every deployed definition that has no local copy yet, with its baseline, so the
+	 * whole tenant is browsable without clicking each row.
+	 *
+	 * Never overwrites (see `planBulkDownload`): an existing file is left alone, which is also what
+	 * protects drafts and the connected repository's own files. Best effort by design - one failed
+	 * definition must not hide the rest - with a single summary if anything could not be fetched.
+	 */
+	async function downloadAllBpmnCopies(
+		environmentName: string,
+		tenantId: string,
+		definitions: readonly ProcessDefinition[],
+	): Promise<void> {
+		if (!environmentManager || definitions.length === 0) return;
+		const key = `${environmentName}/${tenantId}`;
+		if (bulkBpmnDownloadsInFlight.has(key)) return;
+		const token = tokenStore.getToken(environmentName);
+		if (!token || token === GIT_SOURCE_TOKEN) return;
+		bulkBpmnDownloadsInFlight.add(key);
+		try {
+			const adapterUrl = await loadWorkflowAdapterUrl(
+				environmentManager.getWorkflowAdapterConfigUri(environmentName, tenantId),
+			);
+			if (!adapterUrl) return;
+			const environmentUrl = toHttpsBase(environmentName);
+			const dir = environmentManager.getWorkflowDraftsDirectoryUri(environmentName, tenantId);
+
+			let existing: string[] = [];
+			try {
+				existing = (await vscode.workspace.fs.readDirectory(dir)).map(([name]) => name);
+			} catch {
+				/* no bpmn/ folder yet: nothing exists */
+			}
+			const plan = planBulkDownload(definitions.map(d => d.type), existing);
+			if (plan.toDownload.length === 0) return;
+
+			await ensureBaselineExcluded(environmentManager.getWorkflowRepoDirectoryUri(environmentName, tenantId));
+
+			const total = plan.toDownload.length;
+			let done = 0;
+			const result = await vscode.window.withProgress(
+				{ location: vscode.ProgressLocation.Window, title: `Downloading BPMNs for ${tenantId}…` },
+				async progress => runBounded(
+					plan.toDownload,
+					4,
+					async processId => {
+						const xml = await getProcessDefinitionXml(adapterUrl, tenantId, environmentUrl, token, processId);
+						// A draft created while this was running must not be replaced.
+						if ((await readTextFile(vscode.Uri.joinPath(dir, bpmnFileName(processId)))) === undefined) {
+							await writeBpmnFile(dir, bpmnFileName(processId), xml);
+							await writeBpmnFile(dir, bpmnBaselineFileName(processId), xml);
+						}
+						done++;
+						progress.report({ message: `${done}/${total}` });
+					},
+					{ abortAfterConsecutiveFailures: 5 },
+				),
+			);
+			treeProvider.notifyWorkflowDraftsChanged();
+			if (result.failed > 0) {
+				void vscode.window.showWarningMessage(
+					result.aborted
+						? `Stopped downloading BPMNs for "${tenantId}" after repeated failures. Check your token and refresh, or open a workflow from the tree.`
+						: `${result.failed} of ${total} BPMNs for "${tenantId}" could not be downloaded. Open one from the tree to retry it.`,
+				);
+			}
+		} catch {
+			/* best effort: the list itself loaded, and every row still opens on demand */
+		} finally {
+			bulkBpmnDownloadsInFlight.delete(key);
+		}
+	}
+
 	/** Restore a local BPMN to its baseline, discarding local edits. */
 	async function discardBpmnChanges(
 		environmentName: string,
@@ -4110,8 +4244,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		fileUri: vscode.Uri,
 		/**
 		 * D6: direct deploy, no promote-to-Draft copy. A repo-sourced file has no
-		 * baseline in `Workflows/BPMN/` before this call and must not gain one as a
-		 * side effect — its own file, untouched in `Workflows/Custom Workflows/`, is
+		 * baseline in `Workflows/bpmn/` before this call and must not gain one as a
+		 * side effect — its own file, untouched in the repository tree, is
 		 * already the record of what was deployed, and D5's sync badge (not this
 		 * baseline mechanism) is how a later edit is surfaced as `changed`.
 		 */
@@ -4512,7 +4646,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		vscode.commands.registerCommand(
 			'reltio.newWorkflowDraft',
 			async (
-				arg?: ProcessDefinitionsFolderNode | WorkflowsFolderNode | WorkflowDraftsFolderNode | WorkflowCommandArgs,
+				arg?: ProcessDefinitionsFolderNode | WorkflowsFolderNode | WorkflowCommandArgs,
 			) => {
 				if (!environmentManager) return;
 				const args = workflowCommandArgs(arg);
@@ -4522,7 +4656,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				const { environmentName, tenantId } = target;
 
 				// Not `node.definitions` — that only exists on the Process Definitions
-				// folder, and this command is also reachable from Workflows and Drafts.
+				// folder, and this command is also reachable from the Workflows row.
 				// The deployed-id collision warning has to fire from every entry point.
 				const deployed = (await ensureDeployedDefinitions(environmentName, tenantId, { silent: true })) ?? [];
 				// A supplied id is still validated and still checked for collisions —
@@ -4641,7 +4775,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		vscode.commands.registerCommand(
 			'reltio.deployWorkflow',
 			async (
-				arg?: ProcessDefinitionNode | WorkflowDraftNode | WorkflowRepoBpmnFileNode | vscode.Uri | WorkflowCommandArgs,
+				arg?: ProcessDefinitionNode | WorkflowDraftNode | vscode.Uri | WorkflowCommandArgs,
 			) => {
 				if (!environmentManager) return;
 
@@ -4671,7 +4805,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				// draft that id maps to, which is how an agent refers to a draft it has
 				// never had a Uri for.
 				const objectArgs =
-					arg instanceof WorkflowDraftNode || arg instanceof WorkflowRepoBpmnFileNode || arg instanceof vscode.Uri
+					arg instanceof WorkflowDraftNode || arg instanceof ProcessDefinitionNode || arg instanceof vscode.Uri
 						? undefined
 						: workflowCommandArgs(arg);
 
@@ -4691,11 +4825,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				} else {
 					fileUri = arg instanceof WorkflowDraftNode
 						? arg.draft.fileUri
-						: arg instanceof WorkflowRepoBpmnFileNode
-							? arg.fileUri
-							: arg instanceof vscode.Uri
-								? arg
-								: vscode.window.activeTextEditor?.document.uri;
+						: arg instanceof vscode.Uri
+							? arg
+							: vscode.window.activeTextEditor?.document.uri;
 				}
 
 				if (!fileUri) {
@@ -4706,7 +4838,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				// the sync check is a string parse. Only a miss there means checking whether
 				// the file instead lives under a connected Custom Workflow Repository (D6),
 				// where identity has to come from content, not filename.
-				const fromDraft = resolveDraftContext(fileUri.fsPath, environmentManager);
+				// A connected repository keeps its own BPMN in this same folder under its own file
+				// names, so a draft-shaped path only counts as a draft when the file's content agrees
+				// with the id its name claims. Otherwise the content is the authority (D4).
+				let fromDraft = resolveDraftContext(fileUri.fsPath, environmentManager);
+				if (fromDraft) {
+					const contentId = extractProcessModel((await readTextFile(fileUri)) ?? '').processId;
+					if (contentId && contentId !== fromDraft.processId) fromDraft = undefined;
+				}
 				const draftCtx = fromDraft ?? await resolveRepoBpmnContext(fileUri.fsPath, environmentManager);
 				if (!draftCtx) {
 					void vscode.window.showErrorMessage(
@@ -4752,7 +4891,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		vscode.commands.registerCommand(
 			'reltio.previewWorkflowDiagram',
 			async (
-				arg?: ProcessDefinitionNode | WorkflowDraftNode | WorkflowRepoBpmnFileNode | vscode.Uri | WorkflowCommandArgs,
+				arg?: ProcessDefinitionNode | WorkflowDraftNode | vscode.Uri | WorkflowCommandArgs,
 			) => {
 				let fileUri: vscode.Uri | undefined;
 
@@ -4768,14 +4907,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					}
 				} else if (
 					arg instanceof WorkflowDraftNode ||
-					arg instanceof WorkflowRepoBpmnFileNode ||
 					arg instanceof vscode.Uri
 				) {
-					fileUri = arg instanceof WorkflowDraftNode
-						? arg.draft.fileUri
-						: arg instanceof WorkflowRepoBpmnFileNode
-							? arg.fileUri
-							: arg;
+					fileUri = arg instanceof WorkflowDraftNode ? arg.draft.fileUri : arg;
 				} else {
 					const objectArgs = workflowCommandArgs(arg);
 					if (objectArgs?.processId && environmentManager) {
@@ -4894,11 +5028,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	context.subscriptions.push(
 		(() => {
 			// No tenant-folder segment in this glob: a tenant folder's name carries no
-			// identity any more (bare or legacy-suffixed), so matching on `Workflows/BPMN/`
+			// identity any more (bare or legacy-suffixed), so matching on `Workflows/bpmn/`
 			// wherever it appears in the workspace covers both without guessing the shape
 			// of whatever sits above it.
 			const watcher = vscode.workspace.createFileSystemWatcher(
-				'**/Workflows/BPMN/*.bpmn20*.xml',
+				'**/Workflows/bpmn/*.bpmn20*.xml',
 			);
 			watcher.onDidCreate(() => treeProvider.notifyWorkflowDraftsChanged());
 			watcher.onDidChange(() => treeProvider.notifyWorkflowDraftsChanged());
@@ -4910,8 +5044,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	/**
 	 * The same problem one folder over: a BPMN edited inside the connected Custom
 	 * Workflow Repository was covered by no watcher at all, because the glob above
-	 * names `Workflows/BPMN/` and the repository is cloned into
-	 * `Workflows/Custom Workflows/`. Its sync badge therefore went on asserting
+	 * names only `Workflows/bpmn/` drafts, while the repository is cloned into
+	 * `Workflows/` and holds files anywhere beneath it. Its sync badge therefore went on asserting
 	 * `synced` against content that had since changed.
 	 *
 	 * Invalidates, never recomputes — see `invalidateWorkflowRepoSync()`.
@@ -4926,7 +5060,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	context.subscriptions.push(
 		(() => {
 			const watcher = vscode.workspace.createFileSystemWatcher(
-				'**/Workflows/Custom Workflows/**/*.xml',
+				'**/Workflows/**/*.xml',
 			);
 			const samePath = (a: string, b: string): boolean =>
 				process.platform === 'win32'
@@ -4955,7 +5089,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			};
 			watcher.onDidCreate(rediscover);
 			watcher.onDidDelete(rediscover);
-			const javaWatcher = vscode.workspace.createFileSystemWatcher('**/Workflows/Custom Workflows/**/*.java');
+			const javaWatcher = vscode.workspace.createFileSystemWatcher('**/Workflows/**/*.java');
 			javaWatcher.onDidCreate(rediscover);
 			javaWatcher.onDidDelete(rediscover);
 			return { dispose: () => { watcher.dispose(); javaWatcher.dispose(); repoRediscovery.dispose(); } };

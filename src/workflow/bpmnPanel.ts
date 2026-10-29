@@ -25,6 +25,7 @@ import {
 } from './bpmnDiagram';
 import { layoutProcess } from './bpmnLayout';
 import { flowLabelText, nodeDetailText, nodeLabelText } from './bpmnLabels';
+import { findXmlProblem } from './bpmnWellFormed';
 
 const DEBOUNCE_MS = 500;
 
@@ -86,6 +87,7 @@ export class BpmnPanelManager {
 		this.panels.set(key, panel);
 
 		const subs: vscode.Disposable[] = [];
+		let latest: DiagramPayload | undefined;
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		// Registered before the first await. Layout can throw, and a panel that is in `panels` with no
 		// dispose handler can never be removed: the next Show BPMN Diagram would `reveal()` a dead entry.
@@ -109,7 +111,8 @@ export class BpmnPanelManager {
 		panel.webview.html = getHtml(panel.webview, scriptUri, styleUri, nonce);
 
 		try {
-			postDiagram(panel, await buildDiagramView(document.getText()));
+			latest = await buildDiagramPayload(document.getText());
+			postDiagram(panel, latest);
 		} catch (e) {
 			void vscode.window.showErrorMessage(`Could not draw the diagram: ${(e as Error).message}`);
 			panel.dispose();
@@ -123,6 +126,8 @@ export class BpmnPanelManager {
 				if (msg.type === 'revealOffset' && typeof msg.offset === 'number') {
 					await revealOffset(document, msg.offset);
 				}
+				// The first post can beat the webview's script; re-send once it says it is listening.
+				if (msg.type === 'ready' && latest) postDiagram(panel, latest);
 			}),
 		);
 
@@ -131,14 +136,15 @@ export class BpmnPanelManager {
 				if (e.document.uri.toString() !== key) return;
 				if (timer) clearTimeout(timer);
 				timer = setTimeout(async () => {
-					let view: DiagramView | undefined;
+					let view: DiagramPayload;
 					try {
-						view = await buildDiagramView(e.document.getText());
+						view = await buildDiagramPayload(e.document.getText());
 					} catch (err) {
 						// A half-typed edit can be unlayoutable; show the "nothing to draw" state, not a stale or dead panel.
 						console.error('Reltio BPMN diagram update failed:', err);
-						view = undefined;
+						view = { diagram: undefined, message: undefined };
 					}
+					latest = view;
 					// Re-check: the panel can be disposed while the layout is awaited.
 					if (this.panels.has(key)) postDiagram(panel, view);
 				}, DEBOUNCE_MS);
@@ -160,6 +166,28 @@ export class BpmnPanelManager {
  * definition authored before diagram interchange was written into drafts still
  * renders instead of appearing empty.
  */
+/** What the webview is sent: a drawing, or the reason there is none. */
+interface DiagramPayload {
+	readonly diagram: DiagramView | undefined;
+	readonly message: string | undefined;
+}
+
+/**
+ * A broken file is told apart from an empty one. `extractProcessModel` believes the document is
+ * well-formed and returns a thin model for a broken one, so without this check "cannot be drawn"
+ * and "is malformed" look the same: a blank canvas.
+ */
+async function buildDiagramPayload(text: string): Promise<DiagramPayload> {
+	const problem = findXmlProblem(text);
+	if (problem) {
+		return {
+			diagram: undefined,
+			message: `This BPMN is not valid XML, so it cannot be drawn. Line ${problem.line}: ${problem.message} Fix the XML and the diagram will update.`,
+		};
+	}
+	return { diagram: await buildDiagramView(text), message: undefined };
+}
+
 async function buildDiagramView(text: string): Promise<DiagramView | undefined> {
 	const model = extractProcessModel(text);
 	if (!model.processId || model.nodes.length === 0) return undefined;
@@ -240,8 +268,12 @@ function getNonce(): string {
 	return crypto.randomBytes(16).toString('hex');
 }
 
-function postDiagram(panel: vscode.WebviewPanel, view: DiagramView | undefined): void {
-	void panel.webview.postMessage({ type: 'setDiagram', diagram: view ?? null });
+function postDiagram(panel: vscode.WebviewPanel, payload: DiagramPayload): void {
+	void panel.webview.postMessage({
+		type: 'setDiagram',
+		diagram: payload.diagram ?? null,
+		message: payload.message,
+	});
 }
 
 function getHtml(

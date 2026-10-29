@@ -48,6 +48,8 @@ const SCRIPTS = [
 	'test-workflow-repo-java-discovery.cjs',
 	'test-workflow-skills-library.cjs',
 	'test-workflow-skills-sync.cjs',
+	'test-workflow-tree-redesign.cjs',
+	'test-workflow-bulk-download.cjs',
 	'test-workflow-input-trust.cjs',
 	'test-workflow-review-fixes.cjs',
 ];

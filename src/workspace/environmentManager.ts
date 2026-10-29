@@ -7,6 +7,8 @@ import {
 	LAYOUT_FILE,
 	materializeTenantTree,
 	tenantPath,
+	WORKFLOWS_DIR,
+	WORKFLOW_BPMN_DIR,
 } from './tenantFolderStructure';
 import {
 	ensureMarkerGitignored,
@@ -220,20 +222,18 @@ export class EnvironmentManager {
 	}
 
 	/**
-	 * `{tenant}/Workflows/BPMN` — local BPMN drafts not yet deployed. Naming and
+	 * `{tenant}/Workflows/bpmn` — local BPMN drafts not yet deployed. Naming and
 	 * parsing rules live in `workflowDrafts.ts`; this only supplies the URI.
 	 *
-	 * Previously `{tenant}/workflows`, flat. Moved to sit inside `tenantFolderStructure.ts`'s
-	 * `Workflows/BPMN` component-tree leaf (self-service Drafts alongside Java-backed custom
-	 * workflows in the sibling `Workflows/Custom Workflows/`), with no migration step: Part 2
-	 * had not shipped to any customer when this moved, so there was no on-disk data at the old
-	 * path to preserve. A brand new path segment, not a rename of data.
+	 * Lowercase on purpose: it is the same folder as a connected Custom Workflow Repository's
+	 * own `bpmn/`, because the repository is cloned directly into `{tenant}/Workflows/`.
+	 * There is no migration from the earlier `Workflows/BPMN` path; nothing had shipped.
 	 */
 	getWorkflowDraftsDirectoryUri(environment: string, tenantId: string): vscode.Uri {
-		return vscode.Uri.joinPath(this.tenantUri(environment, tenantId), 'Workflows', 'BPMN');
+		return vscode.Uri.joinPath(this.tenantUri(environment, tenantId), ...WORKFLOW_BPMN_DIR.split('/'));
 	}
 
-	/** One draft inside `{tenant}/Workflows/BPMN`. `fileName` comes from `draftFileName()`. */
+	/** One draft inside `{tenant}/Workflows/bpmn`. `fileName` comes from `draftFileName()`. */
 	getWorkflowDraftUri(environment: string, tenantId: string, fileName: string): vscode.Uri {
 		return vscode.Uri.joinPath(this.getWorkflowDraftsDirectoryUri(environment, tenantId), fileName);
 	}
@@ -249,17 +249,15 @@ export class EnvironmentManager {
 	}
 
 	/**
-	 * `{tenant}/Workflows/Custom Workflows` — Snehil's reserved component-tree leaf,
-	 * reused (D1) as the clone target for the Custom Workflow Repository. Distinct
-	 * from `getWorkflowDraftsDirectoryUri()`'s `Workflows/BPMN`: this is Java-backed,
-	 * customer-authored content, not a self-service draft.
+	 * `{tenant}/Workflows` — the Custom Workflow Repository's working tree. The repository
+	 * is cloned directly into this folder, so its own `bpmn/` is `getWorkflowDraftsDirectoryUri()`.
 	 */
 	getWorkflowRepoDirectoryUri(environment: string, tenantId: string): vscode.Uri {
-		return vscode.Uri.joinPath(this.tenantUri(environment, tenantId), 'Workflows', 'Custom Workflows');
+		return vscode.Uri.joinPath(this.tenantUri(environment, tenantId), WORKFLOWS_DIR);
 	}
 
 	/**
-	 * `{tenant}/Workflows/BPMN/{processId}.bpmn20.xml` — the editable local copy of a
+	 * `{tenant}/Workflows/bpmn/{processId}.bpmn20.xml` — the editable local copy of a
 	 * process definition, and its baseline sibling. Same relationship as
 	 * `L3.reltio.json` to `L3.remote-baseline.reltio.json`.
 	 */

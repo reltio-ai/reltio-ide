@@ -1,7 +1,7 @@
 {
   "name": "reltio-ide",
   "displayName": "Reltio IDE",
-  "description": "Use the Reltio IDE to review and update the business configuration of your Reltio tenant.",
+  "description": "Use the Reltio IDE to review and update the business configuration and BPMN workflows of your Reltio tenant.",
   "version": "1.0.28",
   "publisher": "Reltio",
   "icon": "resources/icons/reltio-icon.png",
@@ -862,12 +862,12 @@
         },
         {
           "command": "reltio.refreshWorkflows",
-          "when": "view == reltioConfigTree && viewItem == reltio.workflows.folder",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.folder(\\.repo)?$/",
           "group": "1_refresh@1"
         },
         {
           "command": "reltio.refreshWorkflows",
-          "when": "view == reltioConfigTree && viewItem == reltio.workflows.folder",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.folder(\\.repo)?$/",
           "group": "inline@2"
         },
         {
@@ -966,21 +966,6 @@
           "group": "inline@1"
         },
         {
-          "command": "reltio.refreshProcessDefinitions",
-          "when": "view == reltioConfigTree && viewItem == reltio.workflows.drafts.folder",
-          "group": "1_refresh@1"
-        },
-        {
-          "command": "reltio.newWorkflowDraft",
-          "when": "view == reltioConfigTree && viewItem == reltio.workflows.drafts.folder",
-          "group": "5_insert@01"
-        },
-        {
-          "command": "reltio.newWorkflowDraft",
-          "when": "view == reltioConfigTree && viewItem == reltio.workflows.drafts.folder",
-          "group": "inline@1"
-        },
-        {
           "command": "reltio.deployWorkflow",
           "when": "view == reltioConfigTree && viewItem == reltio.workflows.draft",
           "group": "4_deploy@01"
@@ -988,6 +973,16 @@
         {
           "command": "reltio.deployWorkflow",
           "when": "view == reltioConfigTree && viewItem == reltio.workflows.draft",
+          "group": "inline@1"
+        },
+        {
+          "command": "reltio.deployWorkflow",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.draft.repo",
+          "group": "4_deploy@01"
+        },
+        {
+          "command": "reltio.deployWorkflow",
+          "when": "view == reltioConfigTree && viewItem == reltio.workflows.draft.repo",
           "group": "inline@1"
         },
         {
@@ -997,7 +992,7 @@
         },
         {
           "command": "reltio.previewWorkflowDiagram",
-          "when": "view == reltioConfigTree && viewItem == reltio.workflows.draft",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.draft(\\.repo)?$/",
           "group": "navigation@1"
         },
         {
@@ -1007,58 +1002,33 @@
         },
         {
           "command": "reltio.connectWorkflowRepository",
-          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.notConnected",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.folder(\\.noUrl)?$/",
           "group": "5_insert@01"
         },
         {
           "command": "reltio.connectWorkflowRepository",
-          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.notConnected",
-          "group": "inline@1"
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.folder(\\.noUrl)?$/",
+          "group": "inline@3"
         },
         {
           "command": "reltio.refreshWorkflowRepoSync",
-          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.connected",
-          "group": "1_refresh@01"
-        },
-        {
-          "command": "reltio.refreshWorkflowRepoSync",
-          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.connected",
-          "group": "inline@1"
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.folder(\\.noUrl)?\\.repo$/",
+          "group": "1_refresh@02"
         },
         {
           "command": "reltio.openWorkflowRepoFolder",
-          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.connected",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.folder(\\.noUrl)?\\.repo$/",
           "group": "2_config@01"
         },
         {
-          "command": "reltio.openWorkflowRepoFolder",
-          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.connected",
-          "group": "inline@2"
-        },
-        {
           "command": "reltio.openWorkflowRepoInBrowser",
-          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.connected",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.folder(\\.noUrl)?\\.repo$/",
           "group": "2_config@02"
         },
         {
           "command": "reltio.disconnectWorkflowRepository",
-          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.connected",
+          "when": "view == reltioConfigTree && viewItem =~ /^reltio\\.workflows\\.folder(\\.noUrl)?\\.repo$/",
           "group": "9_delete@01"
-        },
-        {
-          "command": "reltio.deployWorkflow",
-          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.file",
-          "group": "4_deploy@01"
-        },
-        {
-          "command": "reltio.deployWorkflow",
-          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.file",
-          "group": "inline@1"
-        },
-        {
-          "command": "reltio.previewWorkflowDiagram",
-          "when": "view == reltioConfigTree && viewItem == reltio.workflows.customRepo.file",
-          "group": "navigation@1"
         }
       ],
       "explorer/context": [
@@ -1073,7 +1043,7 @@
       {
         "id": "reltio.gettingStarted",
         "title": "Get Started with Reltio IDE",
-        "description": "Connect to your Reltio tenant or a Git repository, open your business configuration, and start modeling with AI-assisted authoring.",
+        "description": "Connect to your Reltio tenant or a Git repository, open your business configuration, start modeling with AI-assisted authoring, and manage BPMN workflows.",
         "featuredFor": [
           "**/*.reltio.json",
           "**/BusinessConfig.json",
@@ -1124,6 +1094,14 @@
             "id": "applyChanges",
             "title": "Step 6: Apply Your Changes",
             "description": "When connected to a tenant, right-click the tenant and select **Apply Configuration to Tenant**. Reltio IDE compares your local configuration against the latest remote version and shows you a diff before deploying. For a Git repository that contains your BusinessConfig, commit and push with Source Control instead.",
+            "completionEvents": [
+              "onCommand:reltio.never_fired"
+            ]
+          },
+          {
+            "id": "workflows",
+            "title": "Step 7: Work with workflows",
+            "description": "For a tenant connection, expand the **Workflows** folder to browse, preview, create and deploy BPMN workflows. Right-click **Process Definitions** and select **New Workflow...**, or describe the workflow to your AI assistant. For a workflow that needs custom Java, select **Connect Custom Workflow Repository...**, raise a pull request, then use **Refresh JARs** and **Register JAR...** before you deploy.",
             "completionEvents": [
               "onCommand:reltio.never_fired"
             ]

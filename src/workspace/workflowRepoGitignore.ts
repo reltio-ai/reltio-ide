@@ -1,12 +1,12 @@
 /**
  * D10 — the nested-repository `.gitignore` safeguard.
  *
- * Cloning the Custom Workflow Repository into `Workflows/Custom Workflows/`
+ * Cloning the Custom Workflow Repository into `Workflows/`
  * (D1) makes that folder a second git repository whenever the tenant folder is
  * *also* bound via `reltio.connectTenantToGit` — a repository nested inside a
  * repository. Left alone, the outer repository's `git add` would record the
  * inner `.git` as a gitlink (a commit pointer, not the files), so anyone who
- * clones the outer repository elsewhere gets an empty `Custom Workflows`
+ * clones the outer repository elsewhere gets an empty `Workflows`
  * folder — silent data loss for the customer's Java-backed workflow code.
  *
  * This has to be correct in **both** connection orders, and it has to get
@@ -14,7 +14,7 @@
  *
  *   - Workflow repo connected first, tenant bound second: Snehil's
  *     `reltio.connectTenantToGit` writes its own `.gitignore` entries and has
- *     no idea `Workflows/Custom Workflows/` exists.
+ *     no idea `Workflows/` exists.
  *   - Tenant bound first, workflow repo connected second: the connect command
  *     controls the moment and can gitignore it immediately.
  *
@@ -31,7 +31,7 @@ import { loadWorkflowRepoConfig } from './workflowRepoConfig';
 import type { EnvironmentManager } from './environmentManager';
 
 /**
- * Ensures `Workflows/Custom Workflows/` (or whatever `relativePath` the sidecar
+ * Ensures `Workflows/` (or whatever `relativePath` the sidecar
  * actually records) is excluded from an *outer* tenant repository's tracking,
  * for one tenant.
  *

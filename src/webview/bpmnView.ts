@@ -110,13 +110,17 @@ function init(): void {
 	svgEl.addEventListener('wheel', onWheel, { passive: false });
 
 	window.addEventListener('message', onMessage);
+	// The host's first diagram can be posted before this script has loaded, and a message sent
+	// to a webview that is not listening yet is dropped: the panel would stay blank. Telling the
+	// host we are ready lets it re-send.
+	vscode.postMessage({ type: 'ready' });
 }
 
 function onMessage(event: MessageEvent): void {
 	if (!isTrustedMessageOrigin(event.origin, trustedOrigin)) return;
-	const data = event.data as { type?: string; diagram?: Diagram | null };
+	const data = event.data as { type?: string; diagram?: Diagram | null; message?: string };
 	if (data.type !== 'setDiagram') return;
-	render(data.diagram ?? null);
+	render(data.diagram ?? null, typeof data.message === 'string' ? data.message : undefined);
 }
 
 /**
@@ -146,12 +150,14 @@ function buildArrowMarker(): SVGDefsElement {
 
 // ═══ Rendering ═══════════════════════════════════════════════════════════════
 
-function render(diagram: Diagram | null): void {
+function render(diagram: Diagram | null, message?: string): void {
 	rootGroup.replaceChildren();
 	renderHeader(diagram);
 
 	if (!diagram) {
-		showStatus('No process definition to draw. A BPMN needs a <process> element with at least one flow element.');
+		showStatus(
+			message ?? 'No process definition to draw. A BPMN needs a <process> element with at least one flow element.',
+		);
 		return;
 	}
 	hideStatus();
