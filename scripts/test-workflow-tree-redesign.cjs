@@ -383,6 +383,21 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 		await mem3.writeFile(mgr.getWorkflowRepoConfigUri('e.reltio.com', 'T'), enc(JSON.stringify(config)));
 		const connected = await provider.getChildren(new WorkflowsFolderNode('e.reltio.com', 'T', 'https://a-workflow.reltio.com', config));
 		assert.ok(!connected.some(n => n.constructor.name === 'WorkflowConnectRepoActionNode'), 'gone once connected');
+
+		// Opening a tenant loads its workflows without a click, once per tenant per session.
+		const { TenantNode } = importDist('tree/multiTenantNodes');
+		const asked = [];
+		provider.setWorkflowAutoLoadHandler((env, tenant) => asked.push(`${env}/${tenant}`));
+		const tenantNode = new TenantNode('e.reltio.com', 'T', true, false, true, 'T_READY');
+		await provider.getChildren(tenantNode);
+		await provider.getChildren(tenantNode);
+		assert.deepStrictEqual(asked, ['e.reltio.com/T'], 'asked once, however often the tenant is rendered');
+		provider.clearWorkflowCache('e.reltio.com', 'T');
+		await provider.getChildren(tenantNode);
+		assert.strictEqual(asked.length, 2, 'asked again after the tenant is removed and re-added');
+		provider.markWorkflowsLoaded('e.reltio.com', 'U', [], []);
+		await provider.getChildren(new TenantNode('e.reltio.com', 'U', true, false, true, 'T_READY'));
+		assert.strictEqual(asked.length, 2, 'not asked when the workflows are already loaded');
 	}
 
 	// ── 11. Diagram preview says why it cannot draw ──────────────────────────

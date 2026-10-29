@@ -3767,6 +3767,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			`The Custom Workflow Repository settings for "${tenantId}" were ignored: ${reason}`,
 		);
 	});
+	/**
+	 * Loads a tenant's workflows when the tenant is opened, with the same fetch the Workflows row
+	 * runs on a click. It never asks anything: with no saved Adapter URL it uses only a host the
+	 * bundled table names unambiguously, and otherwise leaves the click-to-set-up path as it was.
+	 * It does not overwrite local BPMNs; the background download only adds missing ones.
+	 */
+	async function autoLoadWorkflows(environmentName: string, tenantId: string): Promise<void> {
+		if (!environmentManager || !tokenStore.getToken(environmentName)) return;
+		const configUri = environmentManager.getWorkflowAdapterConfigUri(environmentName, tenantId);
+		let adapterUrl = await loadWorkflowAdapterUrl(configUri);
+		if (!adapterUrl) {
+			const known = lookupWorkflowAdapterUrl(environmentName);
+			if (known?.kind !== 'url') return;
+			try {
+				adapterUrl = toHttpsBase(known.host);
+			} catch {
+				return;
+			}
+			await saveWorkflowAdapterUrl(configUri, adapterUrl);
+			treeProvider.invalidate();
+		}
+		await doFetchWorkflows(environmentName, tenantId, adapterUrl);
+	}
+	treeProvider.setWorkflowAutoLoadHandler((environmentName, tenantId) => {
+		void autoLoadWorkflows(environmentName, tenantId).catch(err =>
+			console.error('Reltio automatic workflow load failed:', err),
+		);
+	});
 	treeProvider.setWorkflowRepoDiscoveryHandler((environmentName, tenantId) => {
 		void refreshWorkflowRepoLocalState(environmentName, tenantId).catch(err =>
 			console.error('Reltio repository discovery failed:', err),

@@ -608,6 +608,7 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 	clearWorkflowCache(environmentName: string, tenantId: string): void {
 		this.workflowCache.delete(`${environmentName}/${tenantId}`);
 		this.repoDiscoveryRequested.delete(`${environmentName}/${tenantId}`);
+		this.autoLoadRequested.delete(`${environmentName}/${tenantId}`);
 	}
 
 	/**
@@ -640,6 +641,27 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 		this.invalidRepoConfigHandler?.(environmentName, tenantId, reason);
 	}
 	private readonly repoDiscoveryRequested = new Set<string>();
+
+	/**
+	 * Loads a tenant's workflows (process definitions and JARs) without a click. The provider only
+	 * asks: whoever owns the Adapter URL, the token and the fetch does the work.
+	 */
+	setWorkflowAutoLoadHandler(handler: ((environmentName: string, tenantId: string) => void) | undefined): void {
+		this.autoLoadHandler = handler;
+	}
+
+	private autoLoadHandler: ((environmentName: string, tenantId: string) => void) | undefined;
+	private readonly autoLoadRequested = new Set<string>();
+
+	/** Once per tenant per session, the first time the tenant is opened with nothing loaded. */
+	private requestWorkflowAutoLoadOnce(environmentName: string, tenantId: string): void {
+		if (!this.autoLoadHandler) return;
+		if (this.hasFetchedProcessDefinitions(environmentName, tenantId)) return;
+		const key = `${environmentName}/${tenantId}`;
+		if (this.autoLoadRequested.has(key)) return;
+		this.autoLoadRequested.add(key);
+		this.autoLoadHandler(environmentName, tenantId);
+	}
 
 	private requestRepoDiscoveryOnce(environmentName: string, tenantId: string): void {
 		if (!this.repoDiscoveryHandler) return;
@@ -1222,6 +1244,8 @@ export class MultiTenantTreeProvider implements vscode.TreeDataProvider<MultiTen
 					element.tenantId,
 				);
 				const savedAdapterUrl = await loadWorkflowAdapterUrl(configUri);
+				// Opening a tenant loads its workflows, so no click on the Workflows row is needed.
+				this.requestWorkflowAutoLoadOnce(element.environmentName, element.tenantId);
 				children.push(
 					new WorkflowsFolderNode(
 						element.environmentName,
