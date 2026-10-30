@@ -2,7 +2,7 @@
   "name": "reltio-ide",
   "displayName": "Reltio IDE",
   "description": "Use the Reltio IDE to review and update the business configuration and BPMN workflows of your Reltio tenant.",
-  "version": "1.0.28",
+  "version": "1.0.29",
   "publisher": "Reltio",
   "icon": "resources/icons/reltio-icon.png",
   "license": "SEE LICENSE IN LICENSE",
@@ -580,19 +580,58 @@
     },
     "menus": {
       "commandPalette": [
-        { "command": "reltio.fetchWorkflows", "when": "false" },
-        { "command": "reltio.refreshWorkflows", "when": "false" },
-        { "command": "reltio.refreshProcessDefinitions", "when": "false" },
-        { "command": "reltio.refreshJarDeployments", "when": "false" },
-        { "command": "reltio.copyJarModulePath", "when": "false" },
-        { "command": "reltio.openWorkflowBpmn", "when": "false" },
-        { "command": "reltio.discardWorkflowBpmnChanges", "when": "false" },
-        { "command": "reltio.compareWorkflowBpmn", "when": "false" },
-        { "command": "reltio.deleteWorkflowDraft", "when": "false" },
-        { "command": "reltio.disconnectWorkflowRepository", "when": "false" },
-        { "command": "reltio.refreshWorkflowRepoSync", "when": "false" },
-        { "command": "reltio.openWorkflowRepoFolder", "when": "false" },
-        { "command": "reltio.openWorkflowRepoInBrowser", "when": "false" }
+        {
+          "command": "reltio.fetchWorkflows",
+          "when": "false"
+        },
+        {
+          "command": "reltio.refreshWorkflows",
+          "when": "false"
+        },
+        {
+          "command": "reltio.refreshProcessDefinitions",
+          "when": "false"
+        },
+        {
+          "command": "reltio.refreshJarDeployments",
+          "when": "false"
+        },
+        {
+          "command": "reltio.copyJarModulePath",
+          "when": "false"
+        },
+        {
+          "command": "reltio.openWorkflowBpmn",
+          "when": "false"
+        },
+        {
+          "command": "reltio.discardWorkflowBpmnChanges",
+          "when": "false"
+        },
+        {
+          "command": "reltio.compareWorkflowBpmn",
+          "when": "false"
+        },
+        {
+          "command": "reltio.deleteWorkflowDraft",
+          "when": "false"
+        },
+        {
+          "command": "reltio.disconnectWorkflowRepository",
+          "when": "false"
+        },
+        {
+          "command": "reltio.refreshWorkflowRepoSync",
+          "when": "false"
+        },
+        {
+          "command": "reltio.openWorkflowRepoFolder",
+          "when": "false"
+        },
+        {
+          "command": "reltio.openWorkflowRepoInBrowser",
+          "when": "false"
+        }
       ],
       "view/title": [
         {
