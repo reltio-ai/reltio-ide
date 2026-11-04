@@ -1464,7 +1464,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 	}
 
-	/** `'none'` means the tenant has no RDM configured — a normal outcome, reported silently. */
+	/**
+	 * `'none'` means the tenant has no RDM configured, or the user's account may not read the
+	 * tenant physical configuration (HTTP 403). Both are normal outcomes, reported silently.
+	 */
 	type RdmWriteResult = 'written' | 'none' | '401' | 'error';
 
 	/**
@@ -1494,6 +1497,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		} catch (e) {
 			if (e instanceof ReltioApiError && e.statusCode === 401) {
 				return '401';
+			}
+			// The physical configuration is the only place the RDM service is found, and some
+			// accounts may not read it (RP-195788 saw the tenant list refuse users outside
+			// *.reltio.com). This chain runs on every fetch and connect, so a 403 is treated
+			// like a tenant without RDM: silent, rather than an error on each of them.
+			if (e instanceof ReltioApiError && e.statusCode === 403) {
+				return 'none';
 			}
 			void vscode.window.showErrorMessage(
 				`RDM configuration was not fetched: ${(e as Error).message}`,
@@ -1639,9 +1649,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			if (e instanceof ReltioApiError && e.statusCode === 401) {
 				return '401';
 			}
-			void vscode.window.showErrorMessage(
-				`Could not resolve the RDM service for "${tenantId}": ${(e as Error).message}`,
-			);
+			// The user asked for this, so unlike the fetch chain a 403 is explained here.
+			const reason =
+				e instanceof ReltioApiError && e.statusCode === 403
+					? "your account can't read the tenant's physical configuration (HTTP 403), which is where the RDM service is found"
+					: (e as Error).message;
+			void vscode.window.showErrorMessage(`Could not resolve the RDM service for "${tenantId}": ${reason}`);
 			return undefined;
 		}
 		const { serviceUri } = extractRdmConfig(physical);

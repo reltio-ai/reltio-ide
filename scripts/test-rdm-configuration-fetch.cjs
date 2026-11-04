@@ -249,4 +249,43 @@ assert.ok(
 	'.vscodeignore must whitelist schemas/ so the RDM schema ships',
 );
 
-console.log('test-rdm-configuration-fetch: OK');
+// ---------------------------------------------------------------------------
+// HTTP 403 from the physical configuration (RP-195788 saw /reltio/tenants refuse
+// accounts outside *.reltio.com; whether this per-tenant endpoint does is open)
+// ---------------------------------------------------------------------------
+
+// Tier B: the fetch chain runs on every Get Configuration and every connect flow, so a 403
+// must end it quietly, like a tenant without RDM, before any error message is shown.
+const extSource = fs.readFileSync(path.join(repoRoot, 'src', 'extension.ts'), 'utf8');
+const sliceFn = (name, end) => {
+	const start = extSource.indexOf(`async function ${name}(`);
+	assert.ok(start >= 0, `${name} must exist`);
+	return extSource.slice(start, extSource.indexOf(end, start));
+};
+const chain = sliceFn('writeRdmFromApi', 'extractRdmConfig(physical)');
+const forbidden = chain.search(/statusCode === 403\)\s*\{\s*return 'none';/);
+assert.ok(forbidden >= 0, "writeRdmFromApi treats a 403 as 'none'");
+assert.ok(forbidden < chain.indexOf('showErrorMessage'), 'the 403 returns before any error message');
+
+// The resolver serves commands the user ran (Get Lookup Values, Add Value, Apply RDM), so it explains a 403.
+const resolver = sliceFn('resolveRdmServiceUri', 'extractRdmConfig(physical)');
+assert.ok(/statusCode === 403/.test(resolver) && /HTTP 403/.test(resolver), 'resolveRdmServiceUri explains a 403');
+
+// Tier A: the client reports a 403 as a ReltioApiError carrying the status, which both checks rely on.
+(async () => {
+	const { fetchTenantPhysicalConfiguration, ReltioApiError } = importDist('api/reltioClient');
+	const original = globalThis.fetch;
+	globalThis.fetch = async () => ({ status: 403, ok: false, json: async () => ({}), text: async () => '{}' });
+	try {
+		await assert.rejects(
+			() => fetchTenantPhysicalConfiguration('na-dev-1.cloud.reltio.com', 'tenantAlpha', 'tok-1'),
+			e => e instanceof ReltioApiError && e.statusCode === 403,
+		);
+	} finally {
+		globalThis.fetch = original;
+	}
+	console.log('test-rdm-configuration-fetch: OK');
+})().catch(e => {
+	console.error(e);
+	process.exit(1);
+});
