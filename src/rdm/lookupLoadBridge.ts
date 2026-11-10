@@ -7,17 +7,18 @@ import {
 	UntrustedHostError,
 } from '../api/reltioClient';
 import { GIT_SOURCE_TOKEN } from '../api/tokenStore';
-import { MAX_LOOKUP_VALUES_PER_REQUEST, planLookupValues } from './lookupValueDraft';
+import { MAX_LOOKUP_VALUES_PER_REQUEST, planLookupValues, type LookupValuesPlan } from './lookupValueDraft';
 import {
 	chunk,
 	countOutcomes,
 	loadOutcomes,
 	planWarnings,
 	readLookupCsv,
-	resolveLookupType,
+	resolveLookupTypes,
 	unknownSourceWarnings,
 	type CsvFinding,
 	type LoadOutcome,
+	type LookupCsvType,
 } from './lookupCsv';
 
 /**
@@ -26,10 +27,11 @@ import {
  * the user in a modal dialog the agent cannot answer.
  *
  * As with the match verification bridge, the agent never holds the session.
- * It writes `request.json` naming two workspace files, the CSV and the
- * tenant's RDM configuration; the extension works out the environment,
- * tenant, RDM tenant and lookup type from those files, calls the RDM service,
- * and writes `result.json`.
+ * It writes `request.json` naming two workspace files, the CSV (as RDM exports
+ * it) and the tenant's RDM configuration; the extension works out the
+ * environment, tenant and RDM tenant from the configuration's path and the
+ * lookup types from the CSV's `type` column, calls the RDM service, and writes
+ * `result.json`.
  */
 export const RDM_LOOKUP_LOAD_SEGMENTS = ['.reltio', 'reltio-agent', 'rdm-lookup-load'] as const;
 export const REQUEST_FILE = 'request.json';
@@ -54,7 +56,8 @@ export interface LoadApproval {
 	environmentName: string;
 	tenantId: string;
 	rdmTenantId: string;
-	lookupType: string;
+	/** The lookup types the load writes to: those with a code to add or append to. */
+	lookupTypes: string[];
 	csvFile: string;
 	newCount: number;
 	/** Existing codes that get mappings appended, and how many mappings in all. */
@@ -70,19 +73,20 @@ type ClassCounts = Record<Classification, number>;
 interface Target {
 	tenant: { environment: string; tenantId: string };
 	rdmTenantId: string;
-	lookupType: string;
+	/** Every lookup type in the CSV, in order of first appearance. */
+	lookupTypes: string[];
 }
 
 export type LookupLoadResult =
 	| ({ requestId: string; status: 'planned'; message: string; completedAt: string } & Target & {
-			codes: Array<{ code: string; lines: number[]; classification: Classification }>;
+			codes: Array<{ lookupType: string; code: string; lines: number[]; classification: Classification }>;
 			counts: ClassCounts;
 			appendMappingCount: number;
 			errors: CsvFinding[];
 			warnings: CsvFinding[];
 	  })
 	| ({ requestId: string; status: 'loaded'; message: string; completedAt: string } & Target & {
-			codes: Array<{ code: string; lines: number[]; outcome: LoadOutcome }>;
+			codes: Array<{ lookupType: string; code: string; lines: number[]; outcome: LoadOutcome }>;
 			counts: Record<LoadOutcome, number>;
 			warnings: CsvFinding[];
 			error?: LoadError;
@@ -159,9 +163,11 @@ function toLoadError(e: unknown): LoadError {
 
 export function approvalText(a: LoadApproval): { message: string; detail: string } {
 	const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+	const several = a.lookupTypes.length > 1;
 	return {
-		message: `Load into ${a.lookupType}?`,
+		message: several ? `Load into ${a.lookupTypes.length} lookup types?` : `Load into ${a.lookupTypes[0]}?`,
 		detail:
+			(several ? `${a.lookupTypes.join(', ')}. ` : '') +
 			`${plural(a.newCount, 'new code')}, and ${plural(a.appendMappingCount, 'new mapping')} for ${plural(a.appendCount, 'existing code')}. ` +
 			'Nothing stored is changed or removed. ' +
 			`Tenant ${a.tenantId} on ${a.environmentName}, RDM tenant ${a.rdmTenantId}, from ${a.csvFile}. ` +
@@ -223,8 +229,6 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 	} catch {
 		return invalid(`"${body.rdmConfigFile}" could not be read.`);
 	}
-	const lookupType = resolveLookupType(baseName(csvUri), configuration);
-	if ('error' in lookupType) return failed(requestId, { kind: 'unknown-lookup-type', message: lookupType.error });
 
 	let csvBytes: Uint8Array;
 	try {
@@ -233,13 +237,26 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 		return invalid(`"${body.csvFile}" could not be read.`);
 	}
 	const csv = readLookupCsv(new TextDecoder().decode(csvBytes), csvBytes.byteLength);
-	const target: Target = { tenant: { environment: environmentName, tenantId }, rdmTenantId, lookupType: lookupType.name };
 	const csvFile = relativeTo(deps.workspaceRoot, csvUri);
-	log(`[${now()}] ${requestId}: ${mode} ${csvFile} → ${environmentName}/${tenantId} RDM ${rdmTenantId} ${lookupType.name}`);
 
 	if (mode === 'load' && csv.errors.length > 0) {
 		return failed(requestId, { kind: 'invalid-csv', message: `${csvFile} has ${csv.errors.length} error(s); nothing was sent.` }, csv.errors);
 	}
+	// The lookup types come from the CSV's `type` column, each checked against the configuration.
+	const { resolved, errors: typeErrors } = resolveLookupTypes(csv, configuration);
+	if (typeErrors.length > 0) {
+		return failed(requestId, { kind: 'unknown-lookup-type', message: typeErrors.map(e => e.message).join(' ') }, typeErrors);
+	}
+	const target: Target = { tenant: { environment: environmentName, tenantId }, rdmTenantId, lookupTypes: csv.types.map(t => t.name) };
+	const typesText = target.lookupTypes.join(', ');
+	log(`[${now()}] ${requestId}: ${mode} ${csvFile} → ${environmentName}/${tenantId} RDM ${rdmTenantId} ${typesText || '(no lookup type)'}`);
+
+	// An export is named after the RDM tenant it came from. Loading it into another one (Dev to Prod) is allowed, and said.
+	const exportedFrom = /^(.+)_lookups_\d+\.csv$/i.exec(baseName(csvUri))?.[1];
+	const fileWarnings: CsvFinding[] =
+		exportedFrom && exportedFrom !== rdmTenantId
+			? [{ lines: [1], message: `${baseName(csvUri)} was exported from RDM tenant ${exportedFrom}; it loads into ${rdmTenantId}.` }]
+			: [];
 
 	// ── The session: never written anywhere ────────────────────────────────
 	const signedOut = notRun(requestId, 'signed-out', `Not signed in to ${environmentName}. Sign in from the Reltio view, then try again.`);
@@ -273,36 +290,53 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 	if (!serviceUri) return notRun(requestId, 'no-rdm-service', `No RDM service is configured for ${tenantId}.`);
 	const service = serviceUri;
 
-	// ── Plan: always against a fresh fetch ─────────────────────────────────
-	let current: unknown;
-	try {
-		const fetched = await withSession(t => fetchValues(service, rdmTenantId, lookupType.name, t));
-		if (fetched === 'signed-out') return signedOut;
-		current = fetched;
-	} catch (e) {
-		return failed(requestId, toLoadError(e));
+	// ── Plan: every lookup type against a fresh fetch of its own ───────────
+	interface TypePlan {
+		group: LookupCsvType;
+		current: unknown;
+		plan: LookupValuesPlan;
 	}
-	// Existing codes get their missing mappings appended to the stored value; nothing stored changes.
-	const lookupTarget = { rdmTenantId, lookupTypeName: lookupType.name, lookupTypeUri: lookupType.uri };
-	const plan = planLookupValues(csv.values, current, lookupTarget);
-	const warnings = [...csv.warnings, ...unknownSourceWarnings(csv, current, configuration), ...planWarnings(plan, csv)];
-	const lines = (code: string) => csv.linesByCode[code] ?? [];
+	const typePlans: TypePlan[] = [];
+	for (const group of csv.types) {
+		const lookupType = resolved.get(group.name)!;
+		try {
+			const fetched = await withSession(t => fetchValues(service, rdmTenantId, lookupType.name, t));
+			if (fetched === 'signed-out') return signedOut;
+			// Existing codes get their missing mappings appended to the stored value; nothing stored changes.
+			const lookupTarget = { rdmTenantId, lookupTypeName: lookupType.name, lookupTypeUri: lookupType.uri };
+			typePlans.push({ group, current: fetched, plan: planLookupValues(group.values, fetched, lookupTarget) });
+		} catch (e) {
+			return failed(requestId, toLoadError(e));
+		}
+	}
+	const warnings = [
+		...fileWarnings,
+		...csv.warnings,
+		...typePlans.flatMap(tp => [...unknownSourceWarnings(tp.group, tp.current, configuration), ...planWarnings(tp.plan, tp.group)]),
+	];
+	const lines = (tp: TypePlan, code: string) => tp.group.linesByCode[code] ?? [];
 	const counts: ClassCounts = { new: 0, append: 0, unchanged: 0 };
-	for (const i of plan.items) counts[i.kind]++;
-	const appendMappingCount = plan.items.filter(i => i.kind === 'append').reduce((n, i) => n + i.expect.length, 0);
-	const toSend = plan.items.filter(i => i.element);
+	let appendMappingCount = 0;
+	for (const tp of typePlans) {
+		for (const i of tp.plan.items) {
+			counts[i.kind]++;
+			if (i.kind === 'append') appendMappingCount += i.expect.length;
+		}
+	}
 
 	if (mode === 'plan') {
 		const message = csv.errors.length > 0
 			? `${csv.errors.length} error(s) must be fixed before loading.`
-			: `${counts.new} new code(s) and ${appendMappingCount} new mapping(s) for ${counts.append} existing code(s) to load into ${lookupType.name}; ` +
+			: `${counts.new} new code(s) and ${appendMappingCount} new mapping(s) for ${counts.append} existing code(s) to load into ${typesText}; ` +
 				`${counts.unchanged} code(s) already stored. Nothing stored is changed or removed.`;
 		log(`  planned: ${counts.new} new, ${counts.append} append, ${counts.unchanged} unchanged, ${csv.errors.length} errors, ${warnings.length} warnings`);
 		return {
 			requestId,
 			status: 'planned',
 			...target,
-			codes: plan.items.map(i => ({ code: i.draft.code, lines: lines(i.draft.code), classification: i.kind })),
+			codes: typePlans.flatMap(tp =>
+				tp.plan.items.map(i => ({ lookupType: tp.group.name, code: i.draft.code, lines: lines(tp, i.draft.code), classification: i.kind })),
+			),
 			counts,
 			appendMappingCount,
 			errors: csv.errors,
@@ -312,10 +346,20 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 		};
 	}
 
-	// ── Load: approved by the user, then sent in chunks ────────────────────
-	const finish = (sent: string[], createResponses: unknown[], refetched: unknown | undefined, error?: LoadError): LookupLoadResult => {
-		const outcomes = loadOutcomes({ items: plan.items, sent, createResponses, refetched });
-		const outcomeCounts = countOutcomes(outcomes);
+	// ── Load: approved by the user, then sent per lookup type in chunks ────
+	// Kept per lookup type: the same code in two lookup types must never confirm the other.
+	const sentByType = new Map<string, string[]>();
+	const responsesByType = new Map<string, unknown[]>();
+	const finish = (refetched: Map<string, unknown>, error?: LoadError): LookupLoadResult => {
+		const codes = typePlans.flatMap(tp =>
+			loadOutcomes({
+				items: tp.plan.items,
+				sent: sentByType.get(tp.group.name) ?? [],
+				createResponses: responsesByType.get(tp.group.name) ?? [],
+				refetched: refetched.get(tp.group.name),
+			}).map(o => ({ lookupType: tp.group.name, code: o.code, lines: lines(tp, o.code), outcome: o.outcome })),
+		);
+		const outcomeCounts = countOutcomes(codes);
 		const message =
 			`${outcomeCounts.added} added, ${outcomeCounts.appended} appended to, ${outcomeCounts.unchanged} unchanged` +
 			(outcomeCounts['not-stored'] ? `, ${outcomeCounts['not-stored']} not stored` : '') +
@@ -327,7 +371,7 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 			requestId,
 			status: 'loaded',
 			...target,
-			codes: outcomes.map(o => ({ code: o.code, lines: lines(o.code), outcome: o.outcome })),
+			codes,
 			counts: outcomeCounts,
 			warnings,
 			...(error ? { error } : {}),
@@ -336,13 +380,14 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 		};
 	};
 
-	if (toSend.length === 0) return finish([], [], current);
+	const sending = typePlans.filter(tp => tp.plan.items.some(i => i.element));
+	if (sending.length === 0) return finish(new Map(typePlans.map(tp => [tp.group.name, tp.current])));
 
 	const approved = await deps.approve({
 		environmentName,
 		tenantId,
 		rdmTenantId,
-		lookupType: lookupType.name,
+		lookupTypes: sending.map(tp => tp.group.name),
 		csvFile,
 		newCount: counts.new,
 		appendCount: counts.append,
@@ -362,37 +407,49 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 		};
 	}
 
-	const sent: string[] = [];
-	const createResponses: unknown[] = [];
 	let error: LoadError | undefined;
-	const chunks = chunk(toSend, MAX_LOOKUP_VALUES_PER_REQUEST);
-	for (const [i, part] of chunks.entries()) {
-		try {
-			const created = await withSession(t => postValues(service, rdmTenantId, part.map(p => p.element), t));
-			if (created === 'signed-out') {
-				error = { kind: 'api-error', message: `The session for ${environmentName} expired; codes from chunk ${i + 1} on were not sent.`, httpStatus: 401 };
-				break;
+	send: for (const tp of sending) {
+		const name = tp.group.name;
+		const sent: string[] = [];
+		const responses: unknown[] = [];
+		sentByType.set(name, sent);
+		responsesByType.set(name, responses);
+		const chunks = chunk(tp.plan.items.filter(i => i.element), MAX_LOOKUP_VALUES_PER_REQUEST);
+		for (const [i, part] of chunks.entries()) {
+			try {
+				const created = await withSession(t => postValues(service, rdmTenantId, part.map(p => p.element), t));
+				if (created === 'signed-out') {
+					error = {
+						kind: 'api-error',
+						message: `The session for ${environmentName} expired; ${name} codes from chunk ${i + 1} on, and any later lookup type, were not sent.`,
+						httpStatus: 401,
+					};
+					break send;
+				}
+				sent.push(...part.map(p => p.draft.code));
+				responses.push(created);
+				log(`  ${name} chunk ${i + 1}/${chunks.length}: ${part.length} code(s) sent`);
+			} catch (e) {
+				// A failed or timed-out request may still have stored some of its codes.
+				sent.push(...part.map(p => p.draft.code));
+				error = toLoadError(e);
+				log(`  ${name} chunk ${i + 1}/${chunks.length}: failed (${error.kind}${error.httpStatus ? ` ${error.httpStatus}` : ''}) ${error.message}`);
+				break send;
 			}
-			sent.push(...part.map(p => p.draft.code));
-			createResponses.push(created);
-			log(`  chunk ${i + 1}/${chunks.length}: ${part.length} code(s) sent`);
-		} catch (e) {
-			// A failed or timed-out request may still have stored some of its codes.
-			sent.push(...part.map(p => p.draft.code));
-			error = toLoadError(e);
-			log(`  chunk ${i + 1}/${chunks.length}: failed (${error.kind}${error.httpStatus ? ` ${error.httpStatus}` : ''}) ${error.message}`);
-			break;
 		}
 	}
 
-	let refetched: unknown | undefined;
-	try {
-		const fetched = await withSession(t => fetchValues(service, rdmTenantId, lookupType.name, t));
-		refetched = fetched === 'signed-out' ? undefined : fetched;
-	} catch {
-		refetched = undefined;
+	const refetched = new Map<string, unknown>();
+	for (const tp of sending) {
+		if (!sentByType.get(tp.group.name)?.length) continue;
+		try {
+			const fetched = await withSession(t => fetchValues(service, rdmTenantId, tp.group.name, t));
+			if (fetched !== 'signed-out') refetched.set(tp.group.name, fetched);
+		} catch {
+			// Not re-fetched: sent codes the create responses don't show are reported unconfirmed.
+		}
 	}
-	return finish(sent, createResponses, refetched, error);
+	return finish(refetched, error);
 }
 
 /**

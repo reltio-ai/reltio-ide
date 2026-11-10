@@ -624,44 +624,61 @@ function formatRdmLookupUpdateFailureMessage(httpStatus: number, bodyText: strin
  *   - an entry with no source mappings still yields a row, so the code itself
  *     is visible.
  * Row order follows the response, which is how Reltio itself presents them.
+ *
+ * Every row also carries its code's canonical value and the source that
+ * contributes it: the first mapping value with `canonicalValue: true`. Both are
+ * empty when the code has no canonical mapping.
  */
 export function flattenRdmLookupValues(response: unknown): RdmLookupValueRow[] {
 	if (!Array.isArray(response)) {
 		return [];
 	}
 	const asText = (v: unknown): string => (typeof v === 'string' ? v : '');
+	const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object';
 	const rows: RdmLookupValueRow[] = [];
 
 	for (const entry of response) {
-		if (!entry || typeof entry !== 'object') {
+		if (!isObject(entry)) {
 			continue;
 		}
-		const code = asText((entry as Record<string, unknown>).code);
-		const mappings = (entry as Record<string, unknown>).sourceMappings;
+		const code = asText(entry.code);
+		const mappings = Array.isArray(entry.sourceMappings) ? entry.sourceMappings.filter(isObject) : [];
 
-		if (!Array.isArray(mappings) || mappings.length === 0) {
-			rows.push({ code, source: '', valueAtSource: '' });
+		let canonicalValue = '';
+		let canonicalSource = '';
+		find: for (const mapping of mappings) {
+			for (const value of Array.isArray(mapping.values) ? mapping.values.filter(isObject) : []) {
+				if (value.canonicalValue === true) {
+					canonicalValue = asText(value.value);
+					canonicalSource = asText(mapping.source);
+					break find;
+				}
+			}
+		}
+		const row = (source: string, valueAtSource: string): RdmLookupValueRow => ({
+			code,
+			canonicalValue,
+			canonicalSource,
+			source,
+			valueAtSource,
+		});
+
+		if (!Array.isArray(entry.sourceMappings) || entry.sourceMappings.length === 0) {
+			rows.push(row('', ''));
 			continue;
 		}
 		for (const mapping of mappings) {
-			if (!mapping || typeof mapping !== 'object') {
-				continue;
-			}
-			const source = asText((mapping as Record<string, unknown>).source);
-			const values = (mapping as Record<string, unknown>).values;
+			const source = asText(mapping.source);
+			const values = mapping.values;
 			if (!Array.isArray(values) || values.length === 0) {
-				rows.push({ code, source, valueAtSource: '' });
+				rows.push(row(source, ''));
 				continue;
 			}
 			for (const value of values) {
-				if (!value || typeof value !== 'object') {
+				if (!isObject(value)) {
 					continue;
 				}
-				rows.push({
-					code,
-					source,
-					valueAtSource: asText((value as Record<string, unknown>).value),
-				});
+				rows.push(row(source, asText(value.value)));
 			}
 		}
 	}

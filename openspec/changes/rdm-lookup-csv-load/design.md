@@ -67,6 +67,8 @@ So a request can only choose files in the user's own workspace. The token reache
 
 ### D4: CSV format and what each column sets
 
+> Superseded by D13 (Change Round 2): the CSV is now RDM's export format. Parsing, limits and defaults below still hold.
+
 - **Parsing** follows RFC 4180: comma separator, `"` quoting with `""` escapes, commas and line breaks inside quoted fields, CRLF or LF. A UTF-8 byte-order mark is dropped and blank lines are ignored. The first line is the header.
 - **Columns** are matched by name, ignoring case and surrounding spaces, in any order. Required: `Code`, `Source`, `Value at Source`. Optional: `Code at Source`, `Canonical`, `Downstream Default`. Other columns are ignored and reported as a warning.
 - **Grouping.** Rows with the same `Code` form one lookup value, in order of first appearance; its mappings keep row order. Every field is trimmed.
@@ -183,6 +185,17 @@ It is shown whenever anything is new or appended. When every code is `unchanged`
 **Rerun safety still holds.** A second load of the same file finds everything already present and sends nothing.
 
 **Risk — lost update** on an appended code, as in Add Value D9: the merge is taken from a fetch made just before the post, the fetched `version` is sent back, and the window is one request per chunk.
+
+### D13: RDM's export format, and lookup types from the `type` column (Change Round 2)
+
+The team loads lookup values from files exported from RDM, not hand-made ones, so the CSV is now RDM's export: `code`, `type`, `enabled`, `startDate`, `endDate`, `parents`, `sourceMappings.{source,code,value,enabled,canonicalValue,downStreamDefaultValue}`, `localizations.{languageCode,value}`, `attributes.{name,value}`. Each row carries one part of a lookup value: a code row with its own fields, or one source mapping.
+
+- **Lookup type from `type`, not the file name.** An export is named `<rdmTenantId>_lookups_<timestamp>.csv`, so the name cannot name the lookup type. Every `type` is resolved against the configuration exactly, as the file name was; an export can hold several lookup types, so the plan, the approval and the result list them, and every code carries its lookup type. A name naming another RDM tenant is a warning, not an error: Dev to Prod is a normal use.
+- **Code and value at the source are separate columns**, as RDM stores them; a blank one takes the other.
+- **Code fields** (`enabled`, dates) apply to new codes. An existing code keeps what is stored, as everything stored is kept (D12); a difference is a line-numbered warning.
+- **Parents, localizations and attributes are not loaded.** The IDE has never sent them and has no sample of how RDM takes them; each row setting them is a warning, so nothing is dropped silently. Adding them is a follow-up once an export containing them confirms the shape.
+- **Per lookup type, everything else as before:** each type is fetched, planned, posted in its own chunks and re-fetched; outcomes are judged per type so the same code in two types never confirms the other. The first failing request still stops the load.
+- **The earlier layout is refused** with a message naming the new columns, rather than read: the feature is unreleased, and two formats would double what the skill must explain.
 
 ## Risks / Trade-offs
 

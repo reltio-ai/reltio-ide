@@ -61,9 +61,24 @@ assert.deepStrictEqual(
 
 // Every row is fully populated strings — the panel escapes, it does not guard.
 for (const r of rows) {
-	assert.strictEqual(typeof r.code, 'string');
-	assert.strictEqual(typeof r.source, 'string');
-	assert.strictEqual(typeof r.valueAtSource, 'string');
+	for (const key of ['code', 'canonicalValue', 'canonicalSource', 'source', 'valueAtSource']) {
+		assert.strictEqual(typeof r[key], 'string', `${key} is a string`);
+	}
+}
+
+// Each row carries its code's canonical value and the source contributing it, derived from the fixture.
+for (const entry of fixture) {
+	let canonical = { value: '', source: '' };
+	for (const sm of entry.sourceMappings || []) {
+		const v = (sm.values || []).find(x => x.canonicalValue === true);
+		if (v) {
+			canonical = { value: v.value, source: sm.source };
+			break;
+		}
+	}
+	for (const r of rows.filter(x => x.code === entry.code)) {
+		assert.deepStrictEqual([r.canonicalValue, r.canonicalSource], [canonical.value, canonical.source], `canonical of ${entry.code}`);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -77,21 +92,39 @@ const multi = flattenRdmLookupValues([
 		sourceMappings: [{ source: 'SAP', values: [{ value: 'BILL' }, { value: 'B' }] }],
 	},
 ]);
+const none = { canonicalValue: '', canonicalSource: '' };
 assert.deepStrictEqual(multi, [
-	{ code: 'Billing', source: 'SAP', valueAtSource: 'BILL' },
-	{ code: 'Billing', source: 'SAP', valueAtSource: 'B' },
+	{ code: 'Billing', ...none, source: 'SAP', valueAtSource: 'BILL' },
+	{ code: 'Billing', ...none, source: 'SAP', valueAtSource: 'B' },
 ]);
+
+// The canonical value is the first value marked canonical, wherever it sits; every row of the code shows it.
+assert.deepStrictEqual(
+	flattenRdmLookupValues([
+		{
+			code: 'B',
+			sourceMappings: [
+				{ source: 'SAP', values: [{ code: 'B', value: 'Biz', canonicalValue: false }] },
+				{ source: 'BvD', values: [{ code: 'B', value: 'Business', canonicalValue: true }] },
+			],
+		},
+	]),
+	[
+		{ code: 'B', canonicalValue: 'Business', canonicalSource: 'BvD', source: 'SAP', valueAtSource: 'Biz' },
+		{ code: 'B', canonicalValue: 'Business', canonicalSource: 'BvD', source: 'BvD', valueAtSource: 'Business' },
+	],
+);
 
 // Mapped but unpopulated: still a row, so the state is visible.
 assert.deepStrictEqual(
 	flattenRdmLookupValues([{ code: 'Billing', sourceMappings: [{ source: 'SAP', values: [] }] }]),
-	[{ code: 'Billing', source: 'SAP', valueAtSource: '' }],
+	[{ code: 'Billing', ...none, source: 'SAP', valueAtSource: '' }],
 );
 
 // No source mappings at all: the code is still visible.
 for (const entry of [{ code: 'Orphan' }, { code: 'Orphan', sourceMappings: [] }]) {
 	assert.deepStrictEqual(flattenRdmLookupValues([entry]), [
-		{ code: 'Orphan', source: '', valueAtSource: '' },
+		{ code: 'Orphan', ...none, source: '', valueAtSource: '' },
 	]);
 }
 
@@ -106,7 +139,7 @@ assert.deepStrictEqual(flattenRdmLookupValues([null, 'x', 7]), []);
 // A non-string value is rendered as empty rather than "undefined".
 assert.deepStrictEqual(
 	flattenRdmLookupValues([{ code: 'A', sourceMappings: [{ source: 'S', values: [{ value: 5 }] }] }]),
-	[{ code: 'A', source: 'S', valueAtSource: '' }],
+	[{ code: 'A', ...none, source: 'S', valueAtSource: '' }],
 );
 
 // ---------------------------------------------------------------------------
@@ -176,16 +209,39 @@ for (const tag of html.match(/<(style|script)\b[^>]*>/g) || []) {
 }
 
 // Untrusted content is escaped, not rendered.
-const nasty = [{ code: `<script>alert(1)</script>`, source: `a"b`, valueAtSource: `it's <b>bold</b>` }];
+const nasty = [
+	{ code: `<script>alert(1)</script>`, canonicalValue: '', canonicalSource: '', source: `a"b`, valueAtSource: `it's <b>bold</b>` },
+	{ code: `x"><b>`, canonicalValue: `<i>canon</i>`, canonicalSource: `<u>src</u>`, source: 'S', valueAtSource: 'v' },
+];
 const nastyHtml = renderLookupValuesHtml(nasty, nasty, ctx);
 assert.ok(!nastyHtml.includes('<script>alert(1)</script>'), 'markup in a value must not stay live');
 assert.ok(nastyHtml.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), 'it appears escaped instead');
 assert.ok(nastyHtml.includes('a&quot;b'), 'quotes are escaped');
 assert.ok(nastyHtml.includes('&#39;'), 'apostrophes are escaped');
+for (const live of ['<i>canon</i>', '<u>src</u>', 'x"><b>']) {
+	assert.ok(!nastyHtml.includes(live), `canonical value, source and the code in its title stay inert: ${live}`);
+}
+assert.ok(nastyHtml.includes('title="Code: x&quot;&gt;&lt;b&gt;"'), 'the code on hover is escaped');
 
-// The three requested columns, and the raw response kept reachable.
-for (const header of ['Code', 'Source', 'Value at Source']) {
+// The canonical value and its source replace the Code column; the raw response stays reachable.
+for (const header of ['Canonical Value', 'Canonical Source', 'Source', 'Value at Source']) {
 	assert.ok(html.includes(`<th>${header}</th>`), `table has a ${header} column`);
+}
+assert.ok(!html.includes('<th>Code</th>'), 'the code is no longer a column');
+{
+	const shown = renderLookupValuesHtml(
+		[
+			{ code: 'B', canonicalValue: 'Business', canonicalSource: 'BvD', source: 'SAP', valueAtSource: 'Business' },
+			{ code: 'Bankrupt', canonicalValue: '', canonicalSource: '', source: '', valueAtSource: '' },
+		],
+		[],
+		ctx,
+	);
+	assert.ok(shown.includes('<td title="Code: B">Business</td><td>BvD</td><td>SAP</td>'), 'canonical value and source, the code on hover');
+	assert.ok(
+		shown.includes('<td class="no-canonical" title="Code: Bankrupt">Bankrupt (no canonical value)</td><td>&mdash;</td>'),
+		'a code with no canonical value is shown by its code, marked',
+	);
 }
 assert.ok(html.includes('<summary>Raw response</summary>'), 'raw response stays inspectable');
 

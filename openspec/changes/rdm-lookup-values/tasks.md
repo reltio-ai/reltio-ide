@@ -71,3 +71,12 @@
 - [ ] 9.9 Manual QA: reload the window, then run the command without fetching first, and confirm rediscovery works
 - [ ] 9.10 Manual QA: confirm Get Configuration still issues no lookups request
 - [x] 9.11 `npx openspec validate rdm-lookup-values --strict`
+
+## Change Round 1 — canonical value and source instead of the code
+
+Requested: Get Lookup Values shows each value's canonical value and its contributing source instead of the code. Decided with the requester: keep one row per mapping value. See design D8.
+
+- [x] C1.1 `flattenRdmLookupValues` adds `canonicalValue` and `canonicalSource` to every row: the first mapping value with `canonicalValue` true, and its source
+- [x] C1.2 The table's columns become Canonical Value, Canonical Source, Source, Value at Source; the code moves to hover text, and stands in, marked, when there is no canonical value
+- [x] C1.3 Update `spec.md`, `ARCHITECTURE.md`, `scripts/test-rdm-lookup-values.cjs` and `scripts/test-rdm-lookup-value-authoring.cjs`; `npm test`, compile
+- [ ] C1.4 Manual QA: Get Lookup Values on a lookup type with canonical and non-canonical codes; hover shows the code; a code without mappings reads "no canonical value"

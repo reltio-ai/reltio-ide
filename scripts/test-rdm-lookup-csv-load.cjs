@@ -2,12 +2,13 @@
 'use strict';
 /**
  * OpenSpec change: rdm-lookup-csv-load
- * Tier A: CSV parsing, conversion to lookup values, checks with line numbers,
- *         lookup type from the file name, chunking and per-code outcomes.
+ * Tier A: CSV parsing, conversion of RDM's export format to lookup values grouped
+ *         by lookup type, checks with line numbers, lookup types from the `type`
+ *         column, chunking and per-code outcomes.
  * Tier B: the bridge with injected dependencies — identity from workspace
  *         files only, plan never writes, load only after approval, existing
- *         codes appended to and never replaced, chunks, failures, no token in results; the bundled
- *         skill and the manifest.
+ *         codes appended to and never replaced, several lookup types per file,
+ *         chunks, failures, no token in results; the bundled skill and the manifest.
  * Tier C (manual): live tenant in Claude Code and Cursor — see design.md.
  */
 const assert = require('node:assert');
@@ -21,26 +22,60 @@ const read = p => fs.readFileSync(path.join(repoRoot, p), 'utf8');
 const vscode = require('./lib/vscode-stub.cjs');
 const csvLib = importDist('rdm/lookupCsv');
 const bridge = importDist('rdm/lookupLoadBridge');
+const { buildLookupValuesCreateBody } = importDist('rdm/lookupValueDraft');
 const { ReltioApiError, UntrustedHostError } = importDist('api/reltioClient');
 const { GIT_SOURCE_TOKEN } = importDist('api/tokenStore');
 
-const { parseCsvRecords, readLookupCsv, unknownSourceWarnings, resolveLookupType, chunk, loadOutcomes, countOutcomes } = csvLib;
+const { parseCsvRecords, readLookupCsv, unknownSourceWarnings, resolveLookupTypes, chunk, loadOutcomes, countOutcomes } = csvLib;
 const csv = text => readLookupCsv(text, Buffer.byteLength(text));
 
-// A synthetic sample in the shape the user supplied.
-const SAMPLE = [
-	'Code,Source,Value at Source',
-	'Single,Reltio,S',
-	'Single,BvD,Unmarried',
-	'Single,ReltioCleanser,Never married',
-	'Married,Reltio,M',
-	'Married,BvD,Spouse present',
-	'Married,ReltioCleanser,Legally wed',
-	'Divorced,Reltio,D',
-	'Divorced,BvD,Marriage dissolved',
-	'Unknown,BvD,Not disclosed',
-	'Unknown,ReltioCleanser,Not specified',
-].join('\n');
+// RDM's export header, exactly as the user supplied it.
+const HEADER =
+	'code,type,enabled,startDate,endDate,parents,sourceMappings.source,sourceMappings.code,sourceMappings.value,' +
+	'sourceMappings.enabled,sourceMappings.canonicalValue,sourceMappings.downStreamDefaultValue,' +
+	'localizations.languageCode,localizations.value,attributes.name,attributes.value';
+const COLS = HEADER.split(',');
+const ORG = 'rdm/lookupTypes/OrganizationStatuses';
+const ADDR = 'rdm/lookupTypes/AddressTypes';
+
+/** One row from named fields, every other column blank, as RDM exports it. */
+const row = fields => COLS.map(c => fields[c] ?? '').join(',');
+const codeRow = (code, type = ORG, extra = {}) => row({ code, type, enabled: 'true', startDate: '0', endDate: '0', ...extra });
+const mapRow = (code, source, atSource, value, canonical, type = ORG, extra = {}) =>
+	row({
+		code,
+		type,
+		'sourceMappings.source': source,
+		'sourceMappings.code': atSource,
+		'sourceMappings.value': value,
+		'sourceMappings.enabled': 'true',
+		'sourceMappings.canonicalValue': canonical,
+		'sourceMappings.downStreamDefaultValue': 'true',
+		...extra,
+	});
+const file = (...rows) => [HEADER, ...rows].join('\n');
+
+// Rows from the export the user supplied. Line numbers on the right.
+const SAMPLE = file(
+	codeRow('A'), // 2
+	mapRow('A', 'BvD', 'A', 'Acquired', 'false'), // 3
+	codeRow('B'), // 4
+	mapRow('B', 'BvD', 'B', 'Business', 'true'), // 5
+	mapRow('B', 'SAP', 'B', 'Business', 'false'), // 6
+	codeRow('Bankrupt'), // 7
+	codeRow('C'), // 8
+	mapRow('C', 'BvD', 'COMPANY', 'Company', 'true'), // 9
+	mapRow('C', 'SAP', 'COMP', 'Comp', 'false'), // 10
+);
+const mapping = (source, code, value, canonicalValue, extra = {}) => ({
+	source,
+	code,
+	value,
+	canonicalValue,
+	downStreamDefaultValue: true,
+	enabled: true,
+	...extra,
+});
 
 // ---------------------------------------------------------------------------
 // Tier A — RFC 4180 parsing
@@ -59,48 +94,100 @@ const SAMPLE = [
 }
 
 // ---------------------------------------------------------------------------
-// Tier A — the sample becomes lookup values
+// Tier A — the export becomes lookup values
 // ---------------------------------------------------------------------------
 
 {
 	const out = csv(SAMPLE);
 	assert.deepStrictEqual(out.errors, []);
 	assert.deepStrictEqual(out.warnings, []);
-	assert.deepStrictEqual(out.values.map(v => v.code), ['Single', 'Married', 'Divorced', 'Unknown'], 'first-appearance order');
-	assert.deepStrictEqual(out.linesByCode.Single, [2, 3, 4]);
-	assert.deepStrictEqual(out.values[0].mappings, [
-		{ source: 'Reltio', code: 'S', value: 'S', canonicalValue: true, downStreamDefaultValue: true },
-		{ source: 'BvD', code: 'Unmarried', value: 'Unmarried', canonicalValue: false, downStreamDefaultValue: true },
-		{ source: 'ReltioCleanser', code: 'Never married', value: 'Never married', canonicalValue: false, downStreamDefaultValue: true },
-	], 'Value at Source is the source code and value; only the first row is canonical');
-	// A code whose first row is not Reltio still gets its first row as canonical.
-	assert.deepStrictEqual(out.values[3].mappings.map(m => m.canonicalValue), [true, false]);
+	assert.deepStrictEqual(out.types.map(t => t.name), ['OrganizationStatuses'], 'the lookup type comes from the type column');
+	const [org] = out.types;
+	assert.deepStrictEqual(org.values.map(v => v.code), ['A', 'B', 'Bankrupt', 'C'], 'first-appearance order');
+	assert.deepStrictEqual(org.linesByCode.B, [4, 5, 6]);
+	assert.deepStrictEqual(org.mappingLines.B, [5, 6]);
+	assert.strictEqual(org.fieldLine.B, 4);
+	assert.deepStrictEqual(org.values[1], {
+		code: 'B',
+		mappings: [mapping('BvD', 'B', 'Business', true), mapping('SAP', 'B', 'Business', false)],
+		enabled: true,
+		startDate: 0,
+		endDate: 0,
+	});
+	assert.deepStrictEqual(org.values[2], { code: 'Bankrupt', mappings: [], enabled: true, startDate: 0, endDate: 0 }, 'a code with no mappings is still a value');
+	assert.deepStrictEqual(org.values[3].mappings, [mapping('BvD', 'COMPANY', 'Company', true), mapping('SAP', 'COMP', 'Comp', false)], 'code and value at the source are separate');
 }
 
-// BOM, CRLF, blank lines, header in another order and case, an extra column.
+// BOM, CRLF, blank lines, columns in another order and case, an extra column.
 {
-	const text = '﻿value at source , SOURCE,Notes,code\r\n\r\nS,Reltio,x,Single\r\n';
+	const text = '\uFEFFTYPE, Code ,sourceMappings.VALUE,sourceMappings.code,SourceMappings.Source,Notes\r\n\r\nrdm/lookupTypes/OrganizationStatuses,B,Business,B,BvD,x\r\n';
 	const out = csv(text);
 	assert.deepStrictEqual(out.errors, []);
-	assert.deepStrictEqual(out.values, [{ code: 'Single', mappings: [{ source: 'Reltio', code: 'S', value: 'S', canonicalValue: true, downStreamDefaultValue: true }] }]);
-	assert.deepStrictEqual(out.linesByCode.Single, [3], 'blank lines still count');
+	assert.deepStrictEqual(out.types[0].values, [{ code: 'B', mappings: [mapping('BvD', 'B', 'Business', true)] }]);
+	assert.deepStrictEqual(out.types[0].linesByCode.B, [3], 'blank lines still count');
 	assert.strictEqual(out.warnings.length, 1);
 	assert.match(out.warnings[0].message, /ignored column "Notes"/);
 }
 
-// Optional columns: Code at Source, Canonical, Downstream Default, every boolean spelling.
+// Blanks fall back, every boolean spelling, a bare type name, and two codes at one source.
 {
-	const out = csv([
-		'Code,Source,Value at Source,Code at Source,Canonical,Downstream Default',
-		'Single,SAP,Single person,S1,no,',
-		'Single,Reltio,S,,YES,0',
-		'Married,SAP,M,,TRUE,false',
-		'Married,BvD,Mar,,1,No',
-	].join('\n'));
+	const out = csv(file(
+		row({ code: 'X', type: 'OrganizationStatuses', 'sourceMappings.source': 'SAP', 'sourceMappings.value': 'Single person' }),
+		row({
+			code: 'X', type: ORG, 'sourceMappings.source': 'SAP', 'sourceMappings.code': 'S1',
+			'sourceMappings.canonicalValue': 'YES', 'sourceMappings.downStreamDefaultValue': '0', 'sourceMappings.enabled': 'no',
+		}),
+		codeRow('Y', ORG, { enabled: 'FALSE', startDate: '1700000000000', endDate: '' }),
+	));
 	assert.deepStrictEqual(out.errors, []);
-	assert.deepStrictEqual(out.values[0].mappings[0], { source: 'SAP', code: 'S1', value: 'Single person', canonicalValue: false, downStreamDefaultValue: true });
-	assert.deepStrictEqual(out.values[0].mappings[1], { source: 'Reltio', code: 'S', value: 'S', canonicalValue: true, downStreamDefaultValue: false });
-	assert.deepStrictEqual(out.values[1].mappings.map(m => [m.canonicalValue, m.downStreamDefaultValue]), [[true, false], [true, false]]);
+	assert.strictEqual(out.types.length, 1, 'rdm/lookupTypes/X and a bare X are one lookup type');
+	const [x, y] = out.types[0].values;
+	assert.deepStrictEqual(x.mappings, [
+		mapping('SAP', 'Single person', 'Single person', true),
+		mapping('SAP', 'S1', 'S1', true, { downStreamDefaultValue: false, enabled: false }),
+	], 'a blank code or value takes the other; a blank canonical means the first mapping only');
+	assert.deepStrictEqual(y, { code: 'Y', mappings: [], enabled: false, startDate: 1700000000000 }, 'a blank endDate is left unset');
+
+	// One source with two codes becomes one source mapping with two values.
+	const [body] = buildLookupValuesCreateBody([x], { rdmTenantId: 'RdmT', lookupTypeName: 'OrganizationStatuses', lookupTypeUri: ORG });
+	assert.deepStrictEqual(body.sourceMappings.map(m => [m.source, m.values.map(v => v.code)]), [['SAP', ['Single person', 'S1']]]);
+	assert.deepStrictEqual([body.enabled, body.startDate, body.endDate], [true, 0, 0], 'a value without code fields is created enabled and unbounded');
+	assert.strictEqual(body.sourceMappings[0].values[1].enabled, false, 'a mapping keeps its enabled flag');
+}
+
+// Several lookup types in one file: grouped, in order; the same code in two types is two values.
+{
+	const out = csv(file(
+		codeRow('A'),
+		codeRow('Billing', ADDR),
+		mapRow('A', 'BvD', 'A', 'Acquired', 'true'),
+		mapRow('A', 'BvD', 'A', 'Billing address', 'true', ADDR),
+	));
+	assert.deepStrictEqual(out.errors, []);
+	assert.deepStrictEqual(out.types.map(t => [t.name, t.values.map(v => v.code)]), [
+		['OrganizationStatuses', ['A']],
+		['AddressTypes', ['Billing', 'A']],
+	]);
+	assert.deepStrictEqual(out.types[1].linesByCode.A, [5]);
+}
+
+// Parents, localizations and attributes: reported with their lines, never loaded.
+{
+	const out = csv(file(
+		codeRow('A', ORG, { parents: 'rdm/lookupTypes/Parent/P' }),
+		row({ code: 'A', type: ORG, 'localizations.languageCode': 'fr', 'localizations.value': 'Acquis' }),
+		row({ code: 'A', type: ORG, 'attributes.name': 'n', 'attributes.value': 'v' }),
+		row({ code: 'B', type: ORG, 'localizations.languageCode': 'de', 'localizations.value': 'Geschäft' }),
+	));
+	assert.deepStrictEqual(out.errors, []);
+	assert.deepStrictEqual(out.warnings.map(w => w.lines), [[2], [3, 5], [4]]);
+	assert.match(out.warnings[0].message, /^Line 2: parents are not loaded\. Only codes and their source mappings load from a CSV/);
+	assert.match(out.warnings[1].message, /^Lines 3, 5: localizations are not loaded/);
+	assert.match(out.warnings[2].message, /^Line 4: attributes are not loaded/);
+	assert.deepStrictEqual(out.types[0].values, [
+		{ code: 'A', mappings: [], enabled: true, startDate: 0, endDate: 0 },
+		{ code: 'B', mappings: [] },
+	], 'the codes still load; the unsupported parts do not');
 }
 
 // ---------------------------------------------------------------------------
@@ -109,71 +196,92 @@ const SAMPLE = [
 
 const errorsOf = text => csv(text).errors;
 
-assert.match(errorsOf('Code,Source\nA,B')[0].message, /^Line 1: missing column "Value at Source"/);
-assert.deepStrictEqual(errorsOf('Code,Source\nA,B')[0].lines, [1]);
-assert.match(errorsOf('Source\nB')[0].message, /missing columns "Code", "Value at Source"/);
-assert.match(errorsOf('Code,Source,Value at Source')[0].message, /no data rows/);
+assert.match(errorsOf('Code,Source,Value at Source\nSingle,Reltio,S')[0].message, /earlier Code, Source, Value at Source layout/);
+assert.match(errorsOf(`code,type\nA,${ORG}`)[0].message, /^Line 1: missing columns "sourceMappings.source", "sourceMappings.code", "sourceMappings.value"/);
+assert.deepStrictEqual(errorsOf(`code,type\nA,${ORG}`)[0].lines, [1]);
+assert.match(errorsOf(HEADER)[0].message, /no data rows/);
 assert.match(errorsOf('')[0].message, /empty/);
 
 {
-	const errs = errorsOf('Code,Source,Value at Source\n,Reltio,S\nA/B,Reltio,S\nC,,S\nD,Reltio,\nE,Reltio,X\n');
-	assert.deepStrictEqual(errs.map(e => e.lines[0]), [2, 3, 4, 5]);
-	assert.match(errs[0].message, /^Line 2: "Code" is empty/);
-	assert.match(errs[1].message, /^Line 3: a code cannot contain "\/"/);
-	assert.match(errs[2].message, /^Line 4: "Source" is empty/);
-	assert.match(errs[3].message, /^Line 5: "Value at Source" is empty/);
+	const errs = errorsOf(file(
+		codeRow(''), // 2
+		codeRow('A/B'), // 3
+		codeRow('A', ''), // 4
+		codeRow('A', 'rdm/entityTypes/X'), // 5
+		codeRow('A', ORG, { enabled: 'maybe' }), // 6
+		codeRow('A', ORG, { startDate: '2024-01-01' }), // 7
+		mapRow('A', '', 'x', 'x', 'true'), // 8
+		mapRow('A', 'BvD', '', '', 'true'), // 9
+		mapRow('A', 'BvD', 'A', 'A', 'perhaps'), // 10
+	));
+	assert.deepStrictEqual(errs.map(e => e.lines[0]), [2, 3, 4, 5, 6, 7, 8, 9, 10]);
+	const expected = [
+		/^Line 2: "code" is empty/,
+		/^Line 3: a code cannot contain "\/"/,
+		/^Line 4: "type" is empty/,
+		/^Line 5: "type" must name a lookup type/,
+		/^Line 6: "enabled" must be/,
+		/^Line 7: "startDate" must be a whole number/,
+		/^Line 8: "sourceMappings.source" is empty/,
+		/^Line 9: "sourceMappings.code" and "sourceMappings.value" are both empty/,
+		/^Line 10: "sourceMappings.canonicalValue" must be/,
+	];
+	errs.forEach((e, i) => assert.match(e.message, expected[i]));
 }
 {
-	const errs = errorsOf('Code,Source,Value at Source\nSingle,BvD,U\nSingle,Reltio,S\nSingle,BvD,X');
-	assert.strictEqual(errs.length, 1);
-	assert.deepStrictEqual(errs[0].lines, [2, 4], 'both lines of a duplicate source are named');
+	const errs = errorsOf(file(codeRow('A'), mapRow('A', 'BvD', 'A', 'x', 'true'), codeRow('A'), mapRow('A', 'BvD', 'A', 'y', 'false')));
+	assert.deepStrictEqual(errs.map(e => e.lines), [[2, 4], [3, 5]], 'both lines of a duplicate are named');
+	assert.match(errs[0].message, /code "A" of OrganizationStatuses has enabled, startDate or endDate on two rows/);
+	assert.match(errs[1].message, /code "A" of OrganizationStatuses maps BvD code "A" twice/);
 }
-assert.match(errorsOf('Code,Source,Value at Source,Canonical\nA,B,C,maybe')[0].message, /^Line 2: "Canonical" must be/);
-assert.match(errorsOf('Code,Source,Value at Source,Downstream Default\nA,B,C,2')[0].message, /^Line 2: "Downstream Default" must be/);
-assert.match(errorsOf('Code,Source,Value at Source\n"A,B,C')[0].message, /never closed/);
+assert.match(errorsOf(`${HEADER}\n"A,B,C`)[0].message, /never closed/);
 
 // Limits.
 {
-	const rows = Array.from({ length: csvLib.MAX_CSV_ROWS + 1 }, (_, i) => `C${i},Reltio,V${i}`);
-	assert.match(errorsOf(['Code,Source,Value at Source', ...rows].join('\n'))[0].message, /limit is 10000/);
-	assert.match(readLookupCsv('Code,Source,Value at Source\nA,B,C', csvLib.MAX_CSV_BYTES + 1).errors[0].message, /larger than 2 MB/);
-}
-
-// No canonical mapping is a warning, not an error.
-{
-	const out = csv('Code,Source,Value at Source,Canonical\nA,Reltio,a,no\nA,BvD,b,no');
-	assert.deepStrictEqual(out.errors, []);
-	assert.match(out.warnings[0].message, /Code "A" has no canonical mapping/);
-	assert.deepStrictEqual(out.warnings[0].lines, [2, 3]);
+	const rows = Array.from({ length: csvLib.MAX_CSV_ROWS + 1 }, (_, i) => codeRow(`C${i}`));
+	assert.match(errorsOf(file(...rows))[0].message, /limit is 10000/);
+	assert.match(readLookupCsv(SAMPLE, csvLib.MAX_CSV_BYTES + 1).errors[0].message, /larger than 2 MB/);
 }
 
 // Unknown sources: neither declared (by abbreviation) nor used by the lookup type.
 {
-	const out = csv('Code,Source,Value at Source\nA,Reltio,a\nA,BVD,b\nB,BVD,c\nB,SAP,d');
+	const out = csv(file(
+		mapRow('A', 'Reltio', 'a', 'a', 'true'),
+		mapRow('A', 'BVD', 'b', 'b', 'false'),
+		mapRow('B', 'BVD', 'c', 'c', 'true'),
+		mapRow('B', 'SAP', 'd', 'd', 'false'),
+	));
 	const config = { sources: [{ uri: 'rdm/sources/Reltio', abbreviation: 'Reltio' }, { uri: 'rdm/sources/DnB', abbreviation: 'BvD' }] };
 	const current = [{ code: 'X', sourceMappings: [{ source: 'SAP' }] }];
-	const warnings = unknownSourceWarnings(out, current, config);
+	const warnings = unknownSourceWarnings(out.types[0], current, config);
 	assert.strictEqual(warnings.length, 1, 'SAP is used by the lookup type; Reltio is declared');
 	assert.deepStrictEqual(warnings[0].lines, [3, 4]);
-	assert.match(warnings[0].message, /Source "BVD"/);
+	assert.match(warnings[0].message, /source "BVD" is not declared in the RDM configuration or used by OrganizationStatuses/);
 }
 
 // ---------------------------------------------------------------------------
-// Tier A — lookup type from the file name
+// Tier A — lookup types from the type column
 // ---------------------------------------------------------------------------
 
 const CONFIG = {
-	lookupTypes: [{ uri: 'rdm/lookupTypes/MaritalStatuses' }, { uri: 'rdm/lookupTypes/AddressTypes' }],
+	lookupTypes: [{ uri: 'rdm/lookupTypes/OrganizationStatuses' }, { uri: 'rdm/lookupTypes/AddressTypes' }],
 	sources: [
 		{ uri: 'rdm/sources/Reltio', abbreviation: 'Reltio' },
 		{ uri: 'rdm/sources/BvD', abbreviation: 'BvD' },
-		{ uri: 'rdm/sources/ReltioCleanser', abbreviation: 'ReltioCleanser' },
+		{ uri: 'rdm/sources/SAP', abbreviation: 'SAP' },
 	],
 };
-assert.deepStrictEqual(resolveLookupType('MaritalStatuses.csv', CONFIG), { name: 'MaritalStatuses', uri: 'rdm/lookupTypes/MaritalStatuses' });
-assert.match(resolveLookupType('maritalstatuses.csv', CONFIG).error, /Did you mean "MaritalStatuses"\? Rename the file to "MaritalStatuses.csv"/);
-assert.match(resolveLookupType('Genders.csv', CONFIG).error, /no lookup type "Genders"/);
-assert.ok('error' in resolveLookupType('MaritalStatuses.csv', null));
+{
+	const { resolved, errors } = resolveLookupTypes(csv(SAMPLE), CONFIG);
+	assert.deepStrictEqual(errors, []);
+	assert.deepStrictEqual(resolved.get('OrganizationStatuses'), { name: 'OrganizationStatuses', uri: ORG });
+
+	const near = resolveLookupTypes(csv(file(codeRow('A', 'rdm/lookupTypes/organizationstatuses'))), CONFIG).errors;
+	assert.deepStrictEqual(near[0].lines, [2]);
+	assert.match(near[0].message, /Did you mean "OrganizationStatuses"\? Correct the type column to rdm\/lookupTypes\/OrganizationStatuses/);
+	assert.match(resolveLookupTypes(csv(file(codeRow('A', 'Genders'))), CONFIG).errors[0].message, /no lookup type "Genders"\. Add it/);
+	assert.strictEqual(resolveLookupTypes(csv(SAMPLE), null).errors.length, 1);
+}
 
 // ---------------------------------------------------------------------------
 // Tier A — chunking and outcomes
@@ -224,12 +332,19 @@ assert.deepStrictEqual(chunk([], 100), []);
 const TOKEN = 'SECRET-TOKEN-1234';
 const ROOT = vscode.Uri.file('/ws');
 const CONFIG_REL = 'dev/T1/RDM/RdmT/config.json';
-const CSV_REL = 'data/MaritalStatuses.csv';
+const CSV_REL = 'data/RdmT_lookups_1793868681973.csv';
 
 function makeDeps(over = {}, files = {}) {
 	const calls = { fetch: [], post: [], approve: [], read: [] };
 	const copy = v => JSON.parse(JSON.stringify(v));
-	const server = new Map((over.serverValues ?? []).map(v => [v.code, copy(v)]));
+	// What the RDM tenant holds, per lookup type.
+	const server = new Map();
+	const put = v => {
+		const name = v.type.split('/').pop();
+		if (!server.has(name)) server.set(name, new Map());
+		server.get(name).set(v.code, copy(v));
+	};
+	(over.serverValues ?? []).forEach(put);
 	const store = {
 		[`/ws/${CONFIG_REL}`]: JSON.stringify(CONFIG),
 		[`/ws/${CSV_REL}`]: SAMPLE,
@@ -255,11 +370,11 @@ function makeDeps(over = {}, files = {}) {
 		},
 		fetchValues: async (service, rdmTenantId, type, token) => {
 			calls.fetch.push({ service, rdmTenantId, type, token });
-			return [...server.values()].map(copy);
+			return [...(server.get(type)?.values() ?? [])].map(copy);
 		},
 		postValues: async (service, rdmTenantId, body, token) => {
 			calls.post.push({ service, rdmTenantId, body, token });
-			for (const v of body) server.set(v.code, copy(v));
+			body.forEach(put);
 			return body.map(v => ({ uri: `${rdmTenantId}/${v.type.split('/').pop()}/${v.code}`, value: v }));
 		},
 		...over,
@@ -267,18 +382,19 @@ function makeDeps(over = {}, files = {}) {
 	return { deps, calls, server };
 }
 
-/** Single as stored: one canonical Reltio mapping, and fields the merge must carry back. */
-const singleStored = () => ({
+/** B as stored: one canonical BvD mapping, and fields the merge must carry back. */
+const bStored = () => ({
 	tenantId: 'RdmT',
-	type: 'rdm/lookupTypes/MaritalStatuses',
-	code: 'Single',
+	type: ORG,
+	code: 'B',
 	enabled: true,
-	sourceMappings: [{ source: 'Reltio', values: [{ code: 'S', value: 'S', enabled: true, canonicalValue: true, downStreamDefaultValue: true }] }],
+	sourceMappings: [{ source: 'BvD', values: [{ code: 'B', value: 'Business', enabled: true, canonicalValue: true, downStreamDefaultValue: true }] }],
 	startDate: 0,
 	endDate: 0,
 	updatedBy: 'someone@example.com',
 	version: 7,
 });
+const NO_CANONICAL_A = 'Code "A" of OrganizationStatuses has no canonical mapping.';
 
 const request = over => ({ requestId: 'r1', mode: 'plan', csvFile: CSV_REL, rdmConfigFile: CONFIG_REL, ...over });
 const run = (raw, over, files) => {
@@ -335,47 +451,62 @@ async function testGates() {
 	assert.deepStrictEqual([r.result.error.kind, r.result.error.httpStatus], ['api-error', 500]);
 }
 
-async function testIdentityAndLookupType() {
+async function testIdentityAndLookupTypes() {
 	// Identity fields in the request are ignored.
 	const r = await run(request({ tenantId: 'Other', rdmTenantId: 'Evil', lookupType: 'AddressTypes', environment: 'prod' }));
 	assert.strictEqual(r.result.status, 'planned');
 	assert.deepStrictEqual(r.result.tenant, { environment: 'dev', tenantId: 'T1' });
 	assert.strictEqual(r.result.rdmTenantId, 'RdmT');
-	assert.strictEqual(r.result.lookupType, 'MaritalStatuses');
-	assert.deepStrictEqual(r.calls.fetch.map(f => [f.rdmTenantId, f.type]), [['RdmT', 'MaritalStatuses']]);
+	assert.deepStrictEqual(r.result.lookupTypes, ['OrganizationStatuses']);
+	assert.deepStrictEqual(r.calls.fetch.map(f => [f.rdmTenantId, f.type]), [['RdmT', 'OrganizationStatuses']]);
 
-	const near = await run(request({ csvFile: 'data/maritalstatuses.csv' }), {}, { '/ws/data/maritalstatuses.csv': SAMPLE });
+	// A type the configuration lacks: named, with lines, before anything is fetched.
+	const near = await run(request(), {}, { [`/ws/${CSV_REL}`]: file(codeRow('A', 'rdm/lookupTypes/organizationstatuses')) });
 	assert.strictEqual(near.result.error.kind, 'unknown-lookup-type');
-	assert.match(near.result.error.message, /MaritalStatuses/);
+	assert.match(near.result.error.message, /Did you mean "OrganizationStatuses"/);
+	assert.deepStrictEqual(near.result.errors[0].lines, [2]);
 	assert.strictEqual(near.calls.fetch.length, 0);
+
+	// The file name doesn't decide anything, but an export from another RDM tenant is said.
+	const other = 'data/OtherRdm_lookups_1700000000000.csv';
+	const moved = await run(request({ csvFile: other }), {}, { [`/ws/${other}`]: SAMPLE });
+	assert.strictEqual(moved.result.status, 'planned');
+	assert.match(moved.result.warnings[0].message, /was exported from RDM tenant OtherRdm; it loads into RdmT/);
+	const plain = await run(request({ csvFile: 'data/statuses.csv' }), {}, { '/ws/data/statuses.csv': SAMPLE });
+	assert.deepStrictEqual(plain.result.warnings.map(w => w.message), [NO_CANONICAL_A], 'any name works');
 }
 
 async function testPlan() {
-	const r = await run(request(), { serverValues: [singleStored()] });
+	const r = await run(request(), { serverValues: [bStored()] });
 	assert.strictEqual(r.result.status, 'planned');
 	assert.deepStrictEqual(r.result.counts, { new: 3, append: 1, unchanged: 0 });
-	assert.strictEqual(r.result.appendMappingCount, 2, 'BvD and ReltioCleanser are added to Single; Reltio is already there');
-	assert.deepStrictEqual(r.result.codes[0], { code: 'Single', lines: [2, 3, 4], classification: 'append' });
-	assert.deepStrictEqual(r.result.codes.slice(1).map(c => c.classification), ['new', 'new', 'new']);
+	assert.strictEqual(r.result.appendMappingCount, 1, 'SAP is added to B; BvD is already there');
+	assert.deepStrictEqual(r.result.codes[1], { lookupType: 'OrganizationStatuses', code: 'B', lines: [4, 5, 6], classification: 'append' });
+	assert.deepStrictEqual(r.result.codes.map(c => c.classification), ['new', 'append', 'new', 'new']);
+	assert.deepStrictEqual(r.result.warnings.map(w => [w.lines, w.message]), [[[2, 3], NO_CANONICAL_A]], 'a new code with mappings but none canonical');
 	assert.strictEqual(r.calls.post.length, 0, 'a plan never writes');
 	assert.strictEqual(r.calls.approve.length, 0, 'a plan never prompts');
 
-	// A conflicting row and a canonical flag the stored value keeps: warnings with lines, never errors.
-	const conflicts = await run(request(), { serverValues: [singleStored()] }, {
-		[`/ws/${CSV_REL}`]: 'Code,Source,Value at Source,Code at Source,Canonical\nSingle,Reltio,Solo,S,\nSingle,BvD,Unmarried,,yes',
+	// A conflicting row, a canonical flag and an enabled flag the stored value keeps: warnings with lines, never errors.
+	const kept = await run(request(), { serverValues: [bStored()] }, {
+		[`/ws/${CSV_REL}`]: file(
+			codeRow('B', ORG, { enabled: 'false' }),
+			mapRow('B', 'BvD', 'B', 'Biz', 'true'),
+			mapRow('B', 'SAP', 'B', 'Business', 'true'),
+		),
 	});
-	assert.deepStrictEqual(conflicts.result.errors, []);
-	assert.deepStrictEqual(conflicts.result.codes.map(c => c.classification), ['append']);
-	const [conflict, flag] = conflicts.result.warnings;
-	assert.deepStrictEqual(conflict.lines, [2]);
-	assert.match(conflict.message, /Single already maps Reltio code "S" to "S", not "Solo"\. The stored value is kept/);
-	assert.deepStrictEqual(flag.lines, [3]);
-	assert.match(flag.message, /already has a canonical value, so BvD is added as non-canonical/);
+	assert.deepStrictEqual(kept.result.errors, []);
+	assert.deepStrictEqual(kept.result.codes.map(c => c.classification), ['append']);
+	const [conflict, flag, field] = kept.result.warnings;
+	assert.deepStrictEqual([conflict.lines, flag.lines, field.lines], [[3], [4], [2]]);
+	assert.match(conflict.message, /B already maps BvD code "B" to "Business", not "Biz"\. The stored value is kept/);
+	assert.match(flag.message, /already has a canonical value, so SAP is added as non-canonical/);
+	assert.match(field.message, /B is stored with enabled true, not false\. Stored values are never changed/);
 
-	const unchanged = await run(request(), { serverValues: [singleStored()] }, { [`/ws/${CSV_REL}`]: 'Code,Source,Value at Source\nSingle,Reltio,S' });
+	const unchanged = await run(request(), { serverValues: [bStored()] }, { [`/ws/${CSV_REL}`]: file(mapRow('B', 'BvD', 'B', 'Business', 'true')) });
 	assert.deepStrictEqual(unchanged.result.counts, { new: 0, append: 0, unchanged: 1 });
 
-	const bad = await run(request(), {}, { [`/ws/${CSV_REL}`]: 'Code,Source,Value at Source\nSingle,BvD,U\nSingle,BvD,X' });
+	const bad = await run(request(), {}, { [`/ws/${CSV_REL}`]: file(mapRow('B', 'BvD', 'B', 'x', 'true'), mapRow('B', 'BvD', 'B', 'y', 'true')) });
 	assert.strictEqual(bad.result.status, 'planned');
 	assert.strictEqual(bad.result.errors.length, 1);
 	assert.match(bad.result.message, /must be fixed/);
@@ -383,57 +514,97 @@ async function testPlan() {
 
 async function testLoad() {
 	// Errors: refused before any dialog or post.
-	let r = await run(request({ mode: 'load' }), {}, { [`/ws/${CSV_REL}`]: 'Code,Source,Value at Source\nSingle,,U' });
+	let r = await run(request({ mode: 'load' }), {}, { [`/ws/${CSV_REL}`]: file(mapRow('B', '', 'B', 'x', 'true')) });
 	assert.strictEqual(r.result.error.kind, 'invalid-csv');
 	assert.strictEqual(r.result.errors.length, 1);
 	assert.strictEqual(r.calls.approve.length + r.calls.post.length, 0);
 
 	// Not approved: nothing written.
-	r = await run(request({ mode: 'load' }), { serverValues: [singleStored()], approved: false });
+	r = await run(request({ mode: 'load' }), { serverValues: [bStored()], approved: false });
 	assert.strictEqual(r.result.status, 'cancelled');
 	assert.deepStrictEqual(r.result.counts, { new: 3, append: 1, unchanged: 0 });
 	assert.strictEqual(r.calls.post.length, 0);
 	assert.deepStrictEqual(r.calls.approve, [{
-		environmentName: 'dev', tenantId: 'T1', rdmTenantId: 'RdmT', lookupType: 'MaritalStatuses', csvFile: CSV_REL,
-		newCount: 3, appendCount: 1, appendMappingCount: 2, unchangedCount: 0, warningCount: 0,
+		environmentName: 'dev', tenantId: 'T1', rdmTenantId: 'RdmT', lookupTypes: ['OrganizationStatuses'], csvFile: CSV_REL,
+		newCount: 3, appendCount: 1, appendMappingCount: 1, unchangedCount: 0, warningCount: 1,
 	}]);
 
-	// Approved: one request, in CSV order — Single merged, the rest created.
-	r = await run(request({ mode: 'load' }), { serverValues: [singleStored()] });
+	// Approved: one request, in CSV order — B merged, the rest created.
+	r = await run(request({ mode: 'load' }), { serverValues: [bStored()] });
 	assert.strictEqual(r.result.status, 'loaded');
 	assert.strictEqual(r.calls.post.length, 1);
 	const body = r.calls.post[0].body;
-	assert.deepStrictEqual(body.map(v => v.code), ['Single', 'Married', 'Divorced', 'Unknown']);
-	const { sourceMappings, ...singleRest } = body[0];
-	const { sourceMappings: storedMappings, ...storedRest } = singleStored();
-	assert.deepStrictEqual(singleRest, storedRest, 'the existing value is sent back as fetched, version included');
-	assert.deepStrictEqual(sourceMappings[0], storedMappings[0], 'the stored Reltio mapping is not changed');
-	assert.deepStrictEqual(sourceMappings.slice(1).map(m => [m.source, m.values[0].code, m.values[0].canonicalValue]), [
-		['BvD', 'Unmarried', false],
-		['ReltioCleanser', 'Never married', false],
-	], 'only the missing mappings are appended');
-	assert.ok(body.slice(1).every(v => v.tenantId === 'RdmT' && v.type === 'rdm/lookupTypes/MaritalStatuses' && v.enabled === true));
-	assert.deepStrictEqual(body[1].sourceMappings[1], {
-		source: 'BvD',
-		values: [{ code: 'Spouse present', value: 'Spouse present', enabled: true, canonicalValue: false, downStreamDefaultValue: true }],
-	});
+	assert.deepStrictEqual(body.map(v => v.code), ['A', 'B', 'Bankrupt', 'C']);
+	const { sourceMappings, ...bRest } = body[1];
+	const { sourceMappings: storedMappings, ...storedRest } = bStored();
+	assert.deepStrictEqual(bRest, storedRest, 'the existing value is sent back as fetched, version included');
+	assert.deepStrictEqual(sourceMappings[0], storedMappings[0], 'the stored BvD mapping is not changed');
+	assert.deepStrictEqual(sourceMappings[1], {
+		source: 'SAP',
+		values: [{ code: 'B', value: 'Business', enabled: true, canonicalValue: false, downStreamDefaultValue: true }],
+	}, 'only the missing mapping is appended');
+	for (const v of [body[0], body[2], body[3]]) {
+		assert.deepStrictEqual([v.tenantId, v.type, v.enabled, v.startDate, v.endDate], ['RdmT', ORG, true, 0, 0]);
+	}
+	assert.deepStrictEqual(body[2].sourceMappings, [], 'a code with no mappings is created as it is');
+	assert.deepStrictEqual(body[3].sourceMappings, [
+		{ source: 'BvD', values: [{ code: 'COMPANY', value: 'Company', enabled: true, canonicalValue: true, downStreamDefaultValue: true }] },
+		{ source: 'SAP', values: [{ code: 'COMP', value: 'Comp', enabled: true, canonicalValue: false, downStreamDefaultValue: true }] },
+	]);
 	assert.deepStrictEqual(r.result.counts, { added: 3, appended: 1, unchanged: 0, 'not-stored': 0, 'not-sent': 0, unconfirmed: 0 });
-	assert.strictEqual(r.result.codes[0].outcome, 'appended');
-	assert.strictEqual(r.server.get('Single').sourceMappings.length, 3);
+	assert.deepStrictEqual(r.result.codes[1], { lookupType: 'OrganizationStatuses', code: 'B', lines: [4, 5, 6], outcome: 'appended' });
+	assert.strictEqual(r.server.get('OrganizationStatuses').get('B').sourceMappings.length, 2);
 
 	// A load without a plan still fetches first, then asks.
 	assert.ok(r.calls.fetch.length >= 1 && r.calls.approve.length === 1);
 
 	// Rerun against what was stored: every code unchanged, no dialog, nothing sent.
-	r = await run(request({ mode: 'load' }), { serverValues: [...r.server.values()] });
+	r = await run(request({ mode: 'load' }), { serverValues: [...r.server.get('OrganizationStatuses').values()] });
 	assert.strictEqual(r.result.status, 'loaded');
 	assert.strictEqual(r.calls.approve.length, 0);
 	assert.strictEqual(r.calls.post.length, 0);
 	assert.strictEqual(r.result.counts.unchanged, 4);
 }
 
+async function testSeveralLookupTypes() {
+	const files = {
+		[`/ws/${CSV_REL}`]: file(
+			codeRow('A'),
+			mapRow('A', 'BvD', 'A', 'Acquired', 'true'),
+			codeRow('A', ADDR, { enabled: 'false', startDate: '1700000000000' }),
+			mapRow('A', 'SAP', 'A', 'Alternate', 'true', ADDR),
+		),
+	};
+	let r = await run(request({ mode: 'load' }), {}, files);
+	assert.strictEqual(r.result.status, 'loaded');
+	assert.deepStrictEqual(r.result.lookupTypes, ['OrganizationStatuses', 'AddressTypes']);
+	assert.deepStrictEqual(r.calls.approve[0].lookupTypes, ['OrganizationStatuses', 'AddressTypes']);
+	assert.deepStrictEqual(r.calls.post.map(p => p.body.map(v => [v.type, v.code])), [[[ORG, 'A']], [[ADDR, 'A']]], 'one request per lookup type');
+	assert.deepStrictEqual([r.calls.post[1].body[0].enabled, r.calls.post[1].body[0].startDate], [false, 1700000000000]);
+	assert.deepStrictEqual(r.result.codes.map(c => [c.lookupType, c.code, c.outcome]), [
+		['OrganizationStatuses', 'A', 'added'],
+		['AddressTypes', 'A', 'added'],
+	]);
+	assert.deepStrictEqual(r.calls.fetch.map(f => f.type), ['OrganizationStatuses', 'AddressTypes', 'OrganizationStatuses', 'AddressTypes'], 'planned and re-fetched per type');
+
+	// The second type fails: its A is not confirmed by the first type's A.
+	r = await run(request({ mode: 'load' }), {
+		postValues: async (service, id, body) => {
+			if (body[0].type === ADDR) throw new ReltioApiError('HTTP 400: Invalid source', 400);
+			return body.map(v => ({ uri: `x/${v.code}`, value: v }));
+		},
+	}, files);
+	assert.deepStrictEqual(r.result.codes.map(c => c.outcome), ['added', 'not-stored']);
+	assert.strictEqual(r.result.error.httpStatus, 400);
+
+	// A type with nothing to add is not named in the dialog.
+	const aStored = { tenantId: 'RdmT', type: ORG, code: 'A', enabled: true, sourceMappings: [{ source: 'BvD', values: [{ code: 'A', value: 'Acquired', canonicalValue: true }] }] };
+	r = await run(request({ mode: 'load' }), { serverValues: [aStored], approved: false }, files);
+	assert.deepStrictEqual(r.calls.approve[0].lookupTypes, ['AddressTypes']);
+}
+
 async function testChunksAndFailures() {
-	const big = ['Code,Source,Value at Source', ...Array.from({ length: 250 }, (_, i) => `C${i},Reltio,V${i}`)].join('\n');
+	const big = file(...Array.from({ length: 250 }, (_, i) => mapRow(`C${i}`, 'Reltio', `V${i}`, `V${i}`, 'true')));
 	const files = { [`/ws/${CSV_REL}`]: big };
 
 	let r = await run(request({ mode: 'load' }), {}, files);
@@ -499,15 +670,19 @@ async function testNoTokenInResults() {
 
 // The approval dialog states everything the extension resolved.
 {
-	const t = bridge.approvalText({
-		environmentName: 'dev', tenantId: 'T1', rdmTenantId: 'RdmT', lookupType: 'MaritalStatuses',
+	const approval = {
+		environmentName: 'dev', tenantId: 'T1', rdmTenantId: 'RdmT', lookupTypes: ['OrganizationStatuses'],
 		csvFile: CSV_REL, newCount: 1, appendCount: 2, appendMappingCount: 3, unchangedCount: 0, warningCount: 1,
-	});
-	assert.strictEqual(t.message, 'Load into MaritalStatuses?');
+	};
+	const t = bridge.approvalText(approval);
+	assert.strictEqual(t.message, 'Load into OrganizationStatuses?');
 	assert.strictEqual(
 		t.detail,
 		`1 new code, and 3 new mappings for 2 existing codes. Nothing stored is changed or removed. Tenant T1 on dev, RDM tenant RdmT, from ${CSV_REL}. 0 codes already stored. 1 warning.`,
 	);
+	const several = bridge.approvalText({ ...approval, lookupTypes: ['OrganizationStatuses', 'AddressTypes'] });
+	assert.strictEqual(several.message, 'Load into 2 lookup types?');
+	assert.ok(several.detail.startsWith('OrganizationStatuses, AddressTypes. 1 new code'), 'every lookup type is named');
 }
 
 // ---------------------------------------------------------------------------
@@ -534,6 +709,8 @@ async function testNoTokenInResults() {
 		assert.ok(skill.includes(`\`${token}\``), `the skill must say what to do for \`${token}\``);
 	}
 	assert.ok(/Never ask for, read or pass on a token/.test(skill), 'the skill keeps the agent away from the session');
+	assert.ok(skill.includes('sourceMappings.canonicalValue') && skill.includes('`type`'), 'the skill documents the export format');
+	assert.ok(!/named after the lookup type/.test(skill), 'the file name no longer names the lookup type');
 
 	const assets = JSON.parse(read('resources/reltio-agent-assets.json'));
 	assert.ok(Number(assets.skillsBundleVersion) >= 23, 'the bundle version is raised so workspaces receive the skill');
@@ -557,9 +734,10 @@ async function testNoTokenInResults() {
 
 (async () => {
 	await testGates();
-	await testIdentityAndLookupType();
+	await testIdentityAndLookupTypes();
 	await testPlan();
 	await testLoad();
+	await testSeveralLookupTypes();
 	await testChunksAndFailures();
 	await testNoTokenInResults();
 	console.log('test-rdm-lookup-csv-load: OK');

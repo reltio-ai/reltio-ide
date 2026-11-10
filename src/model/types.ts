@@ -1377,6 +1377,10 @@ export interface RdmLookupValue {
 /** One table row: the nested lookup response flattened to (code, source, value). */
 export interface RdmLookupValueRow {
   code: string;
+  /** The value of the code's canonical mapping; empty when it has none. */
+  canonicalValue: string;
+  /** The source that contributes the canonical value; empty when there is none. */
+  canonicalSource: string;
   source: string;
   valueAtSource: string;
 }

@@ -415,7 +415,7 @@ assert.deepStrictEqual(sourceSuggestions('x', { sources: 'x' }), []);
 // ---------------------------------------------------------------------------
 
 const ctx = { rdmTenantId: 'RdmSampleTenant', lookupTypeName: 'AddressTypes' };
-const rows = [{ code: 'Billing', source: 'DnB', valueAtSource: 'Billing' }];
+const rows = [{ code: 'Billing', canonicalValue: 'Billing', canonicalSource: 'DnB', source: 'DnB', valueAtSource: 'Billing' }];
 const html = renderLookupValuesHtml(rows, [], ctx, { renderToken: 'abc123', sourceSuggestions: ['DnB', 'SAP'] });
 
 const csp = /<meta http-equiv="Content-Security-Policy" content="([^"]*)">/.exec(html)[1];
@@ -448,8 +448,8 @@ assert.ok(/<form id="addForm" hidden/.test(markup), 'the form starts hidden');
 assert.ok(markup.includes('<body data-render="abc123">'), 'the render token is on the page');
 assert.ok(markup.includes('<option value="DnB"></option><option value="SAP"></option>'), 'suggestions offered');
 
-// The existing read-only view is unchanged.
-for (const header of ['Code', 'Source', 'Value at Source']) {
+// The read-only view is still there: canonical value and source, then each mapping.
+for (const header of ['Canonical Value', 'Canonical Source', 'Source', 'Value at Source']) {
 	assert.ok(markup.includes(`<th>${header}</th>`));
 }
 assert.ok(markup.includes('<summary>Raw response</summary>'));
@@ -457,7 +457,10 @@ assert.ok(markup.includes('<summary>Raw response</summary>'));
 // Markup in lookup data and suggestions stays inert.
 const evil = `<img src=x onerror=alert(1)>`;
 const evilHtml = renderLookupValuesHtml(
-	[{ code: evil, source: `a"b`, valueAtSource: evil }],
+	[
+		{ code: evil, canonicalValue: evil, canonicalSource: evil, source: `a"b`, valueAtSource: evil },
+		{ code: evil, canonicalValue: '', canonicalSource: '', source: '', valueAtSource: '' },
+	],
 	[{ code: evil }],
 	ctx,
 	{ sourceSuggestions: [`"><img src=x onerror=alert(1)>`, evil] },

@@ -15,11 +15,20 @@ export interface LookupValueMappingDraft {
 	value: string;
 	canonicalValue: boolean;
 	downStreamDefaultValue: boolean;
+	/** From a CSV's `sourceMappings.enabled`; absent (the panel) means enabled. */
+	enabled?: boolean;
 }
 
 export interface LookupValueDraft {
 	code: string;
 	mappings: LookupValueMappingDraft[];
+	/**
+	 * Set only when a CSV gives them. A new value is otherwise created enabled, with 0
+	 * (no bound) for both dates. An existing value always keeps what is stored.
+	 */
+	enabled?: boolean;
+	startDate?: number;
+	endDate?: number;
 }
 
 /** Identifiers the extension recorded when it rendered the panel — never taken from a message. */
@@ -151,29 +160,36 @@ export function validateLookupValues(values: LookupValueDraft[]): string[] {
  *
  * `updatedBy`, `updateDate` and `version` are left out. They describe a prior
  * revision, which a new value does not have, and the server owns them.
+ *
+ * Mappings of one source become one source mapping with several values, in
+ * order, as RDM stores them. (The panel allows one mapping per source; a CSV
+ * may give a source several codes.)
  */
 export function buildLookupValuesCreateBody(values: LookupValueDraft[], target: LookupValueTarget): unknown[] {
-	return values.map(v => ({
-		tenantId: target.rdmTenantId,
-		type: target.lookupTypeUri,
-		code: v.code,
-		enabled: true,
-		sourceMappings: v.mappings.map(m => ({
-			source: m.source,
-			values: [
-				{
-					code: m.code || v.code,
-					value: m.value,
-					enabled: true,
-					canonicalValue: m.canonicalValue,
-					downStreamDefaultValue: m.downStreamDefaultValue,
-				},
-			],
-		})),
-		// 0 is how stored values report "no bound"; the team's working request sends it too.
-		startDate: 0,
-		endDate: 0,
-	}));
+	return values.map(v => {
+		const bySource = new Map<string, Array<Record<string, unknown>>>();
+		for (const m of v.mappings) {
+			const list = bySource.get(m.source) ?? [];
+			list.push({
+				code: m.code || v.code,
+				value: m.value,
+				enabled: m.enabled ?? true,
+				canonicalValue: m.canonicalValue,
+				downStreamDefaultValue: m.downStreamDefaultValue,
+			});
+			bySource.set(m.source, list);
+		}
+		return {
+			tenantId: target.rdmTenantId,
+			type: target.lookupTypeUri,
+			code: v.code,
+			enabled: v.enabled ?? true,
+			sourceMappings: [...bySource].map(([source, values]) => ({ source, values })),
+			// 0 is how stored values report "no bound"; the team's working request sends it too.
+			startDate: v.startDate ?? 0,
+			endDate: v.endDate ?? 0,
+		};
+	});
 }
 
 /**
@@ -232,6 +248,8 @@ export interface PlannedValue {
 	element?: Record<string, unknown>;
 	/** The mappings the post must store: all of a new code's, the appended ones of an existing code. */
 	expect: MappingKey[];
+	/** The value as fetched, for an existing code. Never sent as is; the merge carries it. */
+	stored?: Record<string, unknown>;
 }
 
 export interface LookupValuesPlan {
@@ -299,7 +317,7 @@ export function mergeLookupValue(
 		const downstream = m.downStreamDefaultValue && !sourceHasDownstream;
 		if (m.downStreamDefaultValue && !downstream) result.flagsDropped.push({ ...note, flag: 'downstream default' });
 
-		const value = { code, value: m.value, enabled: true, canonicalValue: canonical, downStreamDefaultValue: downstream };
+		const value = { code, value: m.value, enabled: m.enabled ?? true, canonicalValue: canonical, downStreamDefaultValue: downstream };
 		if (target) {
 			(target.values as unknown[]).push(value);
 		} else {
@@ -338,8 +356,8 @@ export function planLookupValues(values: LookupValueDraft[], current: unknown, t
 		plan.flagsDropped.push(...merge.flagsDropped);
 		plan.items.push(
 			merge.merged
-				? { draft, kind: 'append', element: merge.merged, expect: merge.appended }
-				: { draft, kind: 'unchanged', expect: [] },
+				? { draft, kind: 'append', element: merge.merged, expect: merge.appended, stored }
+				: { draft, kind: 'unchanged', expect: [], stored },
 		);
 	}
 	return plan;

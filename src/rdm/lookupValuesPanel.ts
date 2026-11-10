@@ -211,6 +211,7 @@ export function renderLookupValuesHtml(
 		}
 		tbody tr:hover { background: var(--vscode-list-hoverBackground); }
 		.empty { color: var(--vscode-descriptionForeground); font-style: italic; }
+		td.no-canonical { color: var(--vscode-descriptionForeground); font-style: italic; }
 		details { margin-top: 10px; }
 		summary { cursor: pointer; color: var(--vscode-descriptionForeground); }
 		pre {
@@ -471,16 +472,26 @@ function rowSummary(rows: RdmLookupValueRow[]): string {
 	return `${codes} code${codes === 1 ? '' : 's'}, ${rows.length} row${rows.length === 1 ? '' : 's'}`;
 }
 
+/**
+ * One row per source mapping value. The code itself is not a column: its canonical value and
+ * the source contributing it are, as RDM presents a lookup value. The code stays on hover, and
+ * stands in, marked, for a code with no canonical value.
+ */
 function renderTable(rows: RdmLookupValueRow[]): string {
 	const body = rows
-		.map(
-			r =>
-				`<tr><td>${escapeHtml(r.code)}</td><td>${escapeHtml(r.source)}</td><td>${escapeHtml(
-					r.valueAtSource,
-				)}</td></tr>`,
-		)
+		.map(r => {
+			const codeTitle = ` title="Code: ${escapeHtml(r.code)}"`;
+			const canonical = r.canonicalValue
+				? `<td${codeTitle}>${escapeHtml(r.canonicalValue)}</td>`
+				: `<td class="no-canonical"${codeTitle}>${escapeHtml(r.code)} (no canonical value)</td>`;
+			const canonicalSource = r.canonicalSource ? escapeHtml(r.canonicalSource) : '&mdash;';
+			return `<tr>${canonical}<td>${canonicalSource}</td><td>${escapeHtml(r.source)}</td><td>${escapeHtml(r.valueAtSource)}</td></tr>`;
+		})
 		.join('');
-	return `<table><thead><tr><th>Code</th><th>Source</th><th>Value at Source</th></tr></thead><tbody>${body}</tbody></table>`;
+	return (
+		'<table><thead><tr><th>Canonical Value</th><th>Canonical Source</th><th>Source</th><th>Value at Source</th></tr></thead>' +
+		`<tbody>${body}</tbody></table>`
+	);
 }
 
 function escapeHtml(value: string): string {

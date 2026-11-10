@@ -64,3 +64,17 @@ Reported: loading a CSV into a lookup type that already has values should add th
 - [x] B1.5 Skill: describe appending (never replacing), the new classifications and outcomes, and conflicts; raise `skillsBundleVersion` to `24` and update the pinned version and hash
 - [x] B1.6 Update `spec.md`, `proposal.md`, `ARCHITECTURE.md` and `scripts/test-rdm-lookup-csv-load.cjs`; `npm test`, compile, build, package; `openspec validate --strict`
 - [ ] B1.7 Manual QA: a CSV adding a new source to existing codes — appended, stored mappings unchanged; rerun — everything `unchanged`, no dialog; a conflicting row — warning, stored value kept
+
+## Change Round 2 — RDM's export format, several lookup types per file
+
+Requested: load the CSV that RDM exports (`<rdmTenantId>_lookups_<timestamp>.csv`, columns `code`, `type`, `enabled`, `startDate`, `endDate`, `parents`, `sourceMappings.*`, `localizations.*`, `attributes.*`) instead of the Code / Source / Value at Source layout. Decided with the requester: several lookup types per file; parents, localizations and attributes reported, not loaded. See design D13.
+
+- [x] C2.1 `readLookupCsv` reads the export: required `code`, `type`, `sourceMappings.{source,code,value}`; rows grouped by lookup type, then code; code rows set `enabled` / dates; mapping rows add a mapping, a blank code or value taking the other; the earlier layout refused with a message naming the new columns (design D13)
+- [x] C2.2 Line-numbered errors for the new columns (type, booleans, dates, empty mapping fields, a code's fields twice, a mapping twice) and warnings for parents, localizations and attributes, which are not loaded
+- [x] C2.3 `resolveLookupTypes` replaces the file-name rule: every `type` must be in the configuration exactly, a near match named; a name exporting from another RDM tenant is a warning
+- [x] C2.4 Bridge plans, approves, posts and re-fetches per lookup type; outcomes judged per type; `lookupTypes` on every result and the approval, `lookupType` on every code
+- [x] C2.5 New codes get the CSV's `enabled` and dates; existing codes keep theirs, with a warning when the CSV differs; one source with several codes becomes one source mapping with several values; the no-canonical warning moves to new codes only
+- [x] C2.6 Skill rewritten for the export format; `skillsBundleVersion` raised to `29` with the pinned version and hash updated; setting description updated
+- [x] C2.7 Update `spec.md`, `proposal.md`, `design.md`, `ARCHITECTURE.md` and `scripts/test-rdm-lookup-csv-load.cjs`; `npm test`, compile
+- [ ] C2.8 Manual QA: load an export of one lookup type into a tenant that has some of its codes — new codes added, existing ones appended to, stored fields unchanged; rerun — everything `unchanged`
+- [ ] C2.9 Manual QA: an export holding two lookup types; an export from another RDM tenant (warning); a row with a localization (warning, not sent)

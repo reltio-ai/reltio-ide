@@ -1,11 +1,16 @@
 /**
  * Pure logic behind loading RDM lookup values from a CSV: parsing, turning
- * rows into lookup values, the checks (each with its CSV line), resolving the
- * lookup type from the file name, and the per-code outcome of a load. No
- * `vscode` import, so the test harness exercises it directly.
+ * rows into lookup values grouped by lookup type, the checks (each with its CSV
+ * line), resolving lookup types against the RDM configuration, and the per-code
+ * outcome of a load. No `vscode` import, so the test harness exercises it
+ * directly.
  *
- * The CSV has the columns Get Lookup Values shows — Code, Source, Value at
- * Source — one row per source mapping; rows sharing a Code are one value.
+ * The CSV is the one RDM exports (`{rdmTenantId}_lookups_{timestamp}.csv`).
+ * Every row names a `code` and its lookup `type`, and carries one item of that
+ * lookup value: the code's own fields (`enabled`, `startDate`, `endDate`), one
+ * source mapping (`sourceMappings.*`), or a parent, localization or attribute.
+ * Codes and source mappings load; parents, localizations and attributes are
+ * reported as warnings and not loaded.
  */
 import {
 	sourceSuggestions,
@@ -26,10 +31,22 @@ export interface CsvFinding {
 	message: string;
 }
 
-export interface LookupCsv {
+/** The values of one lookup type in the file, in order of first appearance. */
+export interface LookupCsvType {
+	/** The lookup type's name: the last segment of `type`, e.g. `OrganizationStatuses`. */
+	name: string;
 	values: LookupValueDraft[];
-	/** CSV lines of each code's rows, keyed by code. */
+	/** Every CSV line of each code, keyed by code. */
 	linesByCode: Record<string, number[]>;
+	/** The CSV line of each of a code's mappings, in the order of its `mappings`. */
+	mappingLines: Record<string, number[]>;
+	/** The line that set a code's `enabled`, `startDate` or `endDate`, when one did. */
+	fieldLine: Record<string, number>;
+}
+
+export interface LookupCsv {
+	/** Lookup types in order of first appearance in the file. */
+	types: LookupCsvType[];
 	errors: CsvFinding[];
 	warnings: CsvFinding[];
 }
@@ -96,26 +113,44 @@ export function parseCsvRecords(text: string): { records: CsvRecord[]; error?: C
 	return { records };
 }
 
+/** The columns of RDM's export, by their names as written there. Matched ignoring case. */
 const COLUMNS = {
 	code: 'code',
-	source: 'source',
-	valueAtSource: 'value at source',
-	codeAtSource: 'code at source',
-	canonical: 'canonical',
-	downstreamDefault: 'downstream default',
+	type: 'type',
+	enabled: 'enabled',
+	startDate: 'startDate',
+	endDate: 'endDate',
+	parents: 'parents',
+	mappingSource: 'sourceMappings.source',
+	mappingCode: 'sourceMappings.code',
+	mappingValue: 'sourceMappings.value',
+	mappingEnabled: 'sourceMappings.enabled',
+	mappingCanonical: 'sourceMappings.canonicalValue',
+	mappingDownstream: 'sourceMappings.downStreamDefaultValue',
+	localizationLanguage: 'localizations.languageCode',
+	localizationValue: 'localizations.value',
+	attributeName: 'attributes.name',
+	attributeValue: 'attributes.value',
 } as const;
 type ColumnKey = keyof typeof COLUMNS;
-const REQUIRED: ColumnKey[] = ['code', 'source', 'valueAtSource'];
-const HEADER_NAMES: Record<ColumnKey, string> = {
-	code: 'Code',
-	source: 'Source',
-	valueAtSource: 'Value at Source',
-	codeAtSource: 'Code at Source',
-	canonical: 'Canonical',
-	downstreamDefault: 'Downstream Default',
-};
+const COLUMN_KEYS = Object.keys(COLUMNS) as ColumnKey[];
+const REQUIRED: ColumnKey[] = ['code', 'type', 'mappingSource', 'mappingCode', 'mappingValue'];
+const MAPPING_KEYS: ColumnKey[] = [
+	'mappingSource',
+	'mappingCode',
+	'mappingValue',
+	'mappingEnabled',
+	'mappingCanonical',
+	'mappingDownstream',
+];
+/** Read so they are reported, never loaded: the IDE has not yet confirmed how RDM takes them. */
+const UNLOADED: ReadonlyArray<{ keys: ColumnKey[]; noun: string }> = [
+	{ keys: ['parents'], noun: 'parents' },
+	{ keys: ['localizationLanguage', 'localizationValue'], noun: 'localizations' },
+	{ keys: ['attributeName', 'attributeValue'], noun: 'attributes' },
+];
 
-const normalizeHeader = (h: string): string => h.trim().replace(/\s+/g, ' ').toLowerCase();
+const normalizeHeader = (h: string): string => h.trim().toLowerCase();
 
 /** `undefined` for blank, `null` for anything unreadable. */
 function parseBoolean(raw: string): boolean | undefined | null {
@@ -126,18 +161,37 @@ function parseBoolean(raw: string): boolean | undefined | null {
 	return null;
 }
 
+/** `undefined` for blank, `null` for anything but a whole number of milliseconds since 1970. */
+function parseDate(raw: string): number | undefined | null {
+	const v = raw.trim();
+	if (v === '') return undefined;
+	return /^\d+$/.test(v) ? Number(v) : null;
+}
+
+/** `rdm/lookupTypes/X`, as RDM exports it, or a bare `X`, gives `X`. Anything else is not a lookup type. */
+export function lookupTypeName(raw: string): string | undefined {
+	return /^(?:rdm\/lookupTypes\/)?([^/\s]+)$/.exec(raw.trim())?.[1];
+}
+
+/** "Line 4" or "Lines 2, 3 and 5 more" — a long list is cut short so a message stays readable. */
+function linesText(lines: number[]): string {
+	if (lines.length === 1) return `Line ${lines[0]}`;
+	const shown = lines.length > 8 ? `${lines.slice(0, 8).join(', ')} and ${lines.length - 8} more` : lines.join(', ');
+	return `Lines ${shown}`;
+}
+
 /**
- * Turns the CSV into lookup values, with every error and warning that does
- * not need the tenant. Source warnings need the tenant's sources and come
- * from `unknownSourceWarnings`.
+ * Turns the CSV into lookup values, grouped by lookup type, with every error
+ * and warning that does not need the tenant. Lookup types are checked against
+ * the RDM configuration by `resolveLookupTypes`; sources against the tenant by
+ * `unknownSourceWarnings`.
  *
- * Value at Source sets the mapping's value **and** its code: RDM transcodes
- * source data by the source's code, so `Single,BvD,Unmarried` makes BvD data
- * sending "Unmarried" transcode to Single. A non-empty Code at Source sets
- * the code instead.
+ * A mapping's `sourceMappings.code` is the source's code, which RDM transcodes
+ * by; `sourceMappings.value` is how it reads. When one of the two is blank, the
+ * other stands in for it.
  */
 export function readLookupCsv(text: string, byteLength: number): LookupCsv {
-	const empty = (finding: CsvFinding): LookupCsv => ({ values: [], linesByCode: {}, errors: [finding], warnings: [] });
+	const empty = (finding: CsvFinding): LookupCsv => ({ types: [], errors: [finding], warnings: [] });
 	if (byteLength > MAX_CSV_BYTES) {
 		return empty({ lines: [1], message: `The file is larger than ${MAX_CSV_BYTES / (1024 * 1024)} MB.` });
 	}
@@ -151,10 +205,20 @@ export function readLookupCsv(text: string, byteLength: number): LookupCsv {
 	const warnings: CsvFinding[] = [];
 	const [header, ...rows] = records;
 
+	const names = header.fields.map(normalizeHeader);
+	if (names.includes('value at source') && !names.includes(normalizeHeader(COLUMNS.mappingSource))) {
+		return empty({
+			lines: [header.line],
+			message:
+				`Line ${header.line}: this is the earlier Code, Source, Value at Source layout. Lookup values now load from ` +
+				'the CSV that RDM exports, with the columns code, type, sourceMappings.source, sourceMappings.code and sourceMappings.value.',
+		});
+	}
+
 	const index: Partial<Record<ColumnKey, number>> = {};
 	const ignored: string[] = [];
 	header.fields.forEach((name, i) => {
-		const key = (Object.keys(COLUMNS) as ColumnKey[]).find(k => COLUMNS[k] === normalizeHeader(name));
+		const key = COLUMN_KEYS.find(k => normalizeHeader(COLUMNS[k]) === normalizeHeader(name));
 		if (key && index[key] === undefined) index[key] = i;
 		else if (name.trim()) ignored.push(name.trim());
 	});
@@ -162,77 +226,177 @@ export function readLookupCsv(text: string, byteLength: number): LookupCsv {
 	if (missing.length > 0) {
 		return empty({
 			lines: [header.line],
-			message: `Line ${header.line}: missing column${missing.length === 1 ? '' : 's'} ${missing.map(k => `"${HEADER_NAMES[k]}"`).join(', ')}.`,
+			message: `Line ${header.line}: missing column${missing.length === 1 ? '' : 's'} ${missing.map(k => `"${COLUMNS[k]}"`).join(', ')}.`,
 		});
 	}
 	if (ignored.length > 0) {
 		warnings.push({ lines: [header.line], message: `Line ${header.line}: ignored column${ignored.length === 1 ? '' : 's'} ${ignored.map(c => `"${c}"`).join(', ')}.` });
 	}
-	if (rows.length === 0) return { values: [], linesByCode: {}, errors: [{ lines: [header.line], message: 'The file has no data rows.' }], warnings };
+	if (rows.length === 0) return { types: [], errors: [{ lines: [header.line], message: 'The file has no data rows.' }], warnings };
 	if (rows.length > MAX_CSV_ROWS) {
-		return { values: [], linesByCode: {}, errors: [{ lines: [1], message: `The file has ${rows.length} data rows; the limit is ${MAX_CSV_ROWS}.` }], warnings };
+		return { types: [], errors: [{ lines: [1], message: `The file has ${rows.length} data rows; the limit is ${MAX_CSV_ROWS}.` }], warnings };
 	}
 
 	const cell = (r: CsvRecord, k: ColumnKey): string => {
 		const i = index[k];
 		return i === undefined ? '' : (r.fields[i] ?? '').trim();
 	};
+	const has = (r: CsvRecord, k: ColumnKey): boolean => cell(r, k) !== '';
 
-	const values: LookupValueDraft[] = [];
-	const byCode = new Map<string, LookupValueDraft>();
-	const linesByCode: Record<string, number[]> = Object.create(null);
-	const firstLineOf = new Map<string, number>();
+	const types: LookupCsvType[] = [];
+	const byName = new Map<string, { type: LookupCsvType; byCode: Map<string, LookupValueDraft> }>();
+	const mappingAt = new Map<string, number>();
+	const unloaded = new Map<string, number[]>();
 
 	for (const r of rows) {
-		const at = `Line ${r.line}`;
-		const code = cell(r, 'code');
-		const source = cell(r, 'source');
-		const valueAtSource = cell(r, 'valueAtSource');
 		const before = errors.length;
-		if (!code) errors.push({ lines: [r.line], message: `${at}: "Code" is empty.` });
-		else if (code.includes('/')) errors.push({ lines: [r.line], message: `${at}: a code cannot contain "/" ("${code}").` });
-		if (!source) errors.push({ lines: [r.line], message: `${at}: "Source" is empty.` });
-		if (!valueAtSource) errors.push({ lines: [r.line], message: `${at}: "Value at Source" is empty.` });
-		const canonical = parseBoolean(cell(r, 'canonical'));
-		const downstream = parseBoolean(cell(r, 'downstreamDefault'));
-		if (canonical === null) errors.push({ lines: [r.line], message: `${at}: "Canonical" must be true/false, yes/no, 1/0 or blank.` });
-		if (downstream === null) {
-			errors.push({ lines: [r.line], message: `${at}: "Downstream Default" must be true/false, yes/no, 1/0 or blank.` });
-		}
-		if (!code || !source) continue;
+		const fail = (message: string) => errors.push({ lines: [r.line], message: `Line ${r.line}: ${message}` });
 
-		const pairKey = `${code}\u0000${source}`;
-		const earlier = firstLineOf.get(pairKey);
-		if (earlier !== undefined) {
-			errors.push({ lines: [earlier, r.line], message: `Lines ${earlier} and ${r.line}: code "${code}" has source "${source}" twice.` });
-			continue;
-		}
-		firstLineOf.set(pairKey, r.line);
-		if (errors.length > before) continue;
+		const code = cell(r, 'code');
+		const rawType = cell(r, 'type');
+		const name = lookupTypeName(rawType);
+		if (!code) fail('"code" is empty.');
+		else if (code.includes('/')) fail(`a code cannot contain "/" ("${code}").`);
+		if (!rawType) fail('"type" is empty.');
+		else if (!name) fail(`"type" must name a lookup type, such as rdm/lookupTypes/OrganizationStatuses ("${rawType}").`);
 
-		let value = byCode.get(code);
-		if (!value) {
-			value = { code, mappings: [] };
-			byCode.set(code, value);
-			values.push(value);
-			linesByCode[code] = [];
+		const enabled = parseBoolean(cell(r, 'enabled'));
+		const startDate = parseDate(cell(r, 'startDate'));
+		const endDate = parseDate(cell(r, 'endDate'));
+		if (enabled === null) fail('"enabled" must be true/false, yes/no, 1/0 or blank.');
+		if (startDate === null) fail('"startDate" must be a whole number (milliseconds since 1970) or blank.');
+		if (endDate === null) fail('"endDate" must be a whole number (milliseconds since 1970) or blank.');
+
+		const isMapping = MAPPING_KEYS.some(k => has(r, k));
+		const source = cell(r, 'mappingSource');
+		const atSource = cell(r, 'mappingCode');
+		const value = cell(r, 'mappingValue');
+		const mappingEnabled = parseBoolean(cell(r, 'mappingEnabled'));
+		const canonical = parseBoolean(cell(r, 'mappingCanonical'));
+		const downstream = parseBoolean(cell(r, 'mappingDownstream'));
+		if (isMapping) {
+			if (!source) fail('"sourceMappings.source" is empty.');
+			if (!atSource && !value) fail('"sourceMappings.code" and "sourceMappings.value" are both empty.');
+			for (const [flag, parsedFlag] of [
+				['enabled', mappingEnabled],
+				['canonicalValue', canonical],
+				['downStreamDefaultValue', downstream],
+			] as const) {
+				if (parsedFlag === null) fail(`"sourceMappings.${flag}" must be true/false, yes/no, 1/0 or blank.`);
+			}
 		}
-		linesByCode[code].push(r.line);
-		value.mappings.push({
-			source,
-			code: cell(r, 'codeAtSource') || valueAtSource,
-			value: valueAtSource,
-			canonicalValue: canonical ?? value.mappings.length === 0,
-			downStreamDefaultValue: downstream ?? true,
+		for (const u of UNLOADED) {
+			if (u.keys.some(k => has(r, k))) unloaded.set(u.noun, [...(unloaded.get(u.noun) ?? []), r.line]);
+		}
+		if (errors.length > before || !code || !name) continue;
+
+		let group = byName.get(name);
+		if (!group) {
+			group = {
+				type: { name, values: [], linesByCode: Object.create(null), mappingLines: Object.create(null), fieldLine: Object.create(null) },
+				byCode: new Map(),
+			};
+			byName.set(name, group);
+			types.push(group.type);
+		}
+		const t = group.type;
+		let draft = group.byCode.get(code);
+		if (!draft) {
+			draft = { code, mappings: [] };
+			group.byCode.set(code, draft);
+			t.values.push(draft);
+			t.linesByCode[code] = [];
+			t.mappingLines[code] = [];
+		}
+		t.linesByCode[code].push(r.line);
+
+		if (has(r, 'enabled') || has(r, 'startDate') || has(r, 'endDate')) {
+			const earlier = t.fieldLine[code];
+			if (earlier !== undefined) {
+				errors.push({
+					lines: [earlier, r.line],
+					message: `Lines ${earlier} and ${r.line}: code "${code}" of ${name} has enabled, startDate or endDate on two rows.`,
+				});
+				continue;
+			}
+			t.fieldLine[code] = r.line;
+			// A null (unreadable) value was already an error, which skipped this row.
+			if (enabled != null) draft.enabled = enabled;
+			if (startDate != null) draft.startDate = startDate;
+			if (endDate != null) draft.endDate = endDate;
+		}
+
+		if (isMapping) {
+			const codeAtSource = atSource || value;
+			const key = [name, code, source, codeAtSource].join('\u0000');
+			const earlier = mappingAt.get(key);
+			if (earlier !== undefined) {
+				errors.push({
+					lines: [earlier, r.line],
+					message: `Lines ${earlier} and ${r.line}: code "${code}" of ${name} maps ${source} code "${codeAtSource}" twice.`,
+				});
+				continue;
+			}
+			mappingAt.set(key, r.line);
+			draft.mappings.push({
+				source,
+				code: codeAtSource,
+				value: value || atSource,
+				// Blank: only the code's first mapping is canonical.
+				canonicalValue: canonical ?? draft.mappings.length === 0,
+				downStreamDefaultValue: downstream ?? true,
+				enabled: mappingEnabled ?? true,
+			});
+			t.mappingLines[code].push(r.line);
+		}
+	}
+
+	for (const [noun, lines] of unloaded) {
+		warnings.push({
+			lines,
+			message: `${linesText(lines)}: ${noun} are not loaded. Only codes and their source mappings load from a CSV; add ${noun} in RDM.`,
 		});
 	}
+	return { types, errors, warnings };
+}
 
-	for (const v of values) {
-		if (!v.mappings.some(m => m.canonicalValue)) {
-			warnings.push({ lines: linesByCode[v.code], message: `Code "${v.code}" has no canonical mapping.` });
+/**
+ * The lookup type each group of the file loads into: the RDM configuration's
+ * lookup type with the same name. Exact only; a match ignoring case is named so
+ * the user can correct the `type` column.
+ */
+export function resolveLookupTypes(
+	csv: LookupCsv,
+	rdmConfiguration: unknown,
+): { resolved: Map<string, { name: string; uri: string }>; errors: CsvFinding[] } {
+	const known: Array<{ name: string; uri: string }> = [];
+	const config = rdmConfiguration as { lookupTypes?: unknown } | null;
+	if (config && typeof config === 'object' && Array.isArray(config.lookupTypes)) {
+		for (const t of config.lookupTypes) {
+			const uri = (t as { uri?: unknown } | null)?.uri;
+			if (typeof uri === 'string' && uri) known.push({ name: uri.slice(uri.lastIndexOf('/') + 1), uri });
 		}
 	}
-	return { values, linesByCode, errors, warnings };
+	const resolved = new Map<string, { name: string; uri: string }>();
+	const errors: CsvFinding[] = [];
+	for (const t of csv.types) {
+		const exact = known.find(k => k.name === t.name);
+		if (exact) {
+			resolved.set(t.name, exact);
+			continue;
+		}
+		const lines = Object.values(t.linesByCode).flat().sort((a, b) => a - b);
+		const near = known.find(k => k.name.toLowerCase() === t.name.toLowerCase());
+		errors.push({
+			lines,
+			message: near
+				? `${linesText(lines)}: the RDM configuration has no lookup type "${t.name}". Did you mean "${near.name}"? ` +
+					`Correct the type column to rdm/lookupTypes/${near.name}.`
+				: `${linesText(lines)}: the RDM configuration has no lookup type "${t.name}". ` +
+					'Add it (Add a new Lookup Type, then Apply RDM Configuration) before loading values into it.',
+		});
+	}
+	return { resolved, errors };
 }
 
 /**
@@ -240,49 +404,21 @@ export function readLookupCsv(text: string, byteLength: number): LookupCsv {
  * (by abbreviation) nor used by the lookup type already. Warnings only — the
  * configuration on disk may be out of date, and the service decides.
  */
-export function unknownSourceWarnings(csv: LookupCsv, lookupsResponse: unknown, rdmConfiguration: unknown): CsvFinding[] {
+export function unknownSourceWarnings(type: LookupCsvType, lookupsResponse: unknown, rdmConfiguration: unknown): CsvFinding[] {
 	const known = new Set(sourceSuggestions(lookupsResponse, rdmConfiguration));
 	const linesBySource = new Map<string, number[]>();
-	for (const v of csv.values) {
+	for (const v of type.values) {
 		v.mappings.forEach((m, i) => {
 			if (known.has(m.source)) return;
 			const lines = linesBySource.get(m.source) ?? [];
-			lines.push(csv.linesByCode[v.code][i]);
+			lines.push(type.mappingLines[v.code][i]);
 			linesBySource.set(m.source, lines);
 		});
 	}
 	return [...linesBySource].map(([source, lines]) => ({
 		lines,
-		message: `Source "${source}" is not declared in the RDM configuration or used by this lookup type (line${lines.length === 1 ? '' : 's'} ${lines.join(', ')}).`,
+		message: `${linesText(lines)}: source "${source}" is not declared in the RDM configuration or used by ${type.name}.`,
 	}));
-}
-
-/**
- * The lookup type a CSV loads into: its file name, without `.csv`, equal to
- * the trailing segment of a lookup type URI in the configuration. Exact only;
- * a match ignoring case is reported by name so the user can rename the file.
- */
-export function resolveLookupType(
-	fileName: string,
-	rdmConfiguration: unknown,
-): { name: string; uri: string } | { error: string } {
-	const name = fileName.replace(/\.csv$/i, '');
-	const types: Array<{ name: string; uri: string }> = [];
-	const config = rdmConfiguration as { lookupTypes?: unknown } | null;
-	if (config && typeof config === 'object' && Array.isArray(config.lookupTypes)) {
-		for (const t of config.lookupTypes) {
-			const uri = (t as { uri?: unknown } | null)?.uri;
-			if (typeof uri === 'string' && uri) types.push({ name: uri.slice(uri.lastIndexOf('/') + 1), uri });
-		}
-	}
-	const exact = types.find(t => t.name === name);
-	if (exact) return exact;
-	const near = types.find(t => t.name.toLowerCase() === name.toLowerCase());
-	return {
-		error: near
-			? `"${fileName}" does not name a lookup type exactly. Did you mean "${near.name}"? Rename the file to "${near.name}.csv".`
-			: `The RDM configuration has no lookup type "${name}". The file must be named after the lookup type it loads.`,
-	};
 }
 
 export function chunk<T>(items: T[], size: number): T[][] {
@@ -291,14 +427,23 @@ export function chunk<T>(items: T[], size: number): T[][] {
 	return out;
 }
 
+const CODE_FIELDS = ['enabled', 'startDate', 'endDate'] as const;
+/** What a stored value without the field means: enabled, and no bound. */
+const FIELD_DEFAULTS = { enabled: true, startDate: 0, endDate: 0 } as const;
+
 /**
- * Rows the stored values decide against, as line-numbered warnings: a
- * conflicting value (the stored one is kept) and a flag the stored value
- * already gives to another mapping. Neither stops the file.
+ * Rows the stored values decide against, as line-numbered warnings. None stops
+ * the file:
+ *
+ * - a conflicting mapping value: the stored one is kept;
+ * - a flag the stored value already gives to another mapping;
+ * - `enabled`, `startDate` or `endDate` that differ from an existing code's:
+ *   the stored ones are kept;
+ * - a new code with mappings but none canonical.
  */
-export function planWarnings(plan: LookupValuesPlan, csv: LookupCsv): CsvFinding[] {
-	const lineOf = (n: MappingNote) => csv.linesByCode[n.valueCode]?.[n.index] ?? 1;
-	return [
+export function planWarnings(plan: LookupValuesPlan, type: LookupCsvType): CsvFinding[] {
+	const lineOf = (n: MappingNote) => type.mappingLines[n.valueCode]?.[n.index] ?? 1;
+	const findings: CsvFinding[] = [
 		...plan.conflicts.map(c => ({
 			lines: [lineOf(c)],
 			message:
@@ -313,6 +458,30 @@ export function planWarnings(plan: LookupValuesPlan, csv: LookupCsv): CsvFinding
 					: `Line ${lineOf(f)}: ${f.source} already has a downstream default for ${f.valueCode}, so this row is added without one.`,
 		})),
 	];
+
+	for (const item of plan.items) {
+		const { draft, stored } = item;
+		if (!stored) continue;
+		const line = type.fieldLine[draft.code] ?? type.linesByCode[draft.code]?.[0] ?? 1;
+		for (const field of CODE_FIELDS) {
+			const wanted = draft[field];
+			const kept = stored[field] ?? FIELD_DEFAULTS[field];
+			if (wanted === undefined || wanted === kept) continue;
+			findings.push({
+				lines: [line],
+				message: `Line ${line}: ${draft.code} is stored with ${field} ${String(kept)}, not ${String(wanted)}. Stored values are never changed, so it stays ${String(kept)}.`,
+			});
+		}
+	}
+
+	for (const item of plan.items) {
+		if (item.kind !== 'new' || item.draft.mappings.length === 0 || item.draft.mappings.some(m => m.canonicalValue)) continue;
+		findings.push({
+			lines: type.linesByCode[item.draft.code] ?? [1],
+			message: `Code "${item.draft.code}" of ${type.name} has no canonical mapping.`,
+		});
+	}
+	return findings;
 }
 
 export const LOAD_OUTCOMES = ['added', 'appended', 'unchanged', 'not-stored', 'not-sent', 'unconfirmed'] as const;
@@ -323,6 +492,9 @@ export type LoadOutcome = (typeof LOAD_OUTCOMES)[number];
  * response or the re-fetch holds it with every mapping it asked for
  * (`storedCodes`); without a re-fetch (`refetched` undefined) a sent code the
  * responses do not show is `unconfirmed` rather than `not-stored`.
+ *
+ * Called once per lookup type, with only that type's responses: the same code
+ * in two lookup types must never confirm the other.
  */
 export function loadOutcomes(input: {
 	items: PlannedValue[];

@@ -71,6 +71,8 @@ One panel instance is reused and its title set to the lookup type name, exactly 
 
 ### D5: The table shows three columns; the raw response stays available
 
+> Revised by D8 (Change Round 1): the Code column is replaced by Canonical Value and Canonical Source.
+
 Code, Source and Value at Source are the table. `enabled`, `canonicalValue` and `downStreamDefaultValue` are real but secondary, and adding three more columns would dilute the one the user asked for.
 
 They are not discarded: the panel includes the pretty-printed raw JSON in a collapsed `<details>`, the same affordance `entityDetailPanel` provides. Anyone needing a flag can see it without another tool, and the table stays readable.
@@ -86,6 +88,14 @@ Rendering an empty table for a failed call is the specific outcome to avoid: it 
 The new panel copies that module's structure — nonce generation, the `default-src 'none'` CSP, `escapeHtml` on every interpolation, VS Code theme variables for styling.
 
 **Alternative considered — extracting a shared panel/table helper first:** rejected for now. Two panels with similar scaffolding is not yet duplication worth a shared abstraction, and factoring `entityDetailPanel` apart would put a working, recently-hardened module at risk for no behavioural gain. Worth revisiting at a third panel.
+
+### D8: Canonical value and its source instead of the code (Change Round 1)
+
+Requested: show each lookup value as RDM does, by its canonical value and the source contributing it, rather than by its code. The canonical value is the first mapping value with `canonicalValue: true`; its source is that mapping's. The table is still one row per mapping value, so every mapping stays visible, and the two columns repeat on each row of a code.
+
+- **The code is not lost.** It is the cell's hover text, so a user who needs it (Add Value is keyed by code) can find it without the raw response.
+- **No canonical value** — a code with no mappings, or none marked canonical — shows the code, marked "no canonical value", instead of a blank that would look like missing data. The canonical source shows an em dash.
+- `flattenRdmLookupValues` carries the two fields on every row, so the rendering stays a pure projection of the rows.
 
 ## Risks / Trade-offs
 

@@ -77,7 +77,17 @@ The extension SHALL resolve the service URI from an in-memory value recorded whe
 
 ### Requirement: The response is flattened to one row per code, source and value
 
-The extension SHALL present the response as rows of **Code**, **Source** and **Value at Source**, produced by taking each entry's `code`, each of its `sourceMappings[].source`, and each of that mapping's `values[].value`. Row order SHALL follow the order of the response.
+The extension SHALL present the response as rows of **Canonical Value**, **Canonical Source**, **Source** and **Value at Source**, produced by taking each entry's canonical value — the `value` of the first of its mapping values with `canonicalValue` true — and that mapping's `source`, each of its `sourceMappings[].source`, and each of that mapping's `values[].value`. The code SHALL NOT be a column: it SHALL be available on hover, and a code with no canonical value SHALL be shown by its code, marked as having none. Row order SHALL follow the order of the response.
+
+#### Scenario: Canonical value and its source on every row of a code
+
+- **WHEN** code `B` maps `BvD` `Business` (canonical) and `SAP` `Business`
+- **THEN** both of its rows SHALL show Canonical Value `Business` and Canonical Source `BvD`
+
+#### Scenario: A code with no canonical value
+
+- **WHEN** code `A` has no mapping value with `canonicalValue` true
+- **THEN** its rows SHALL show `A` marked as having no canonical value, and no canonical source
 
 #### Scenario: Each source of each code becomes a row
 
@@ -98,7 +108,7 @@ The extension SHALL present the response as rows of **Code**, **Source** and **V
 #### Scenario: A code with no source mappings
 
 - **WHEN** an entry has no `sourceMappings`
-- **THEN** one row SHALL be produced showing that code with empty Source and Value at Source
+- **THEN** one row SHALL be produced for that code, with empty Source and Value at Source
 
 #### Scenario: Unexpected response shape
 
@@ -109,12 +119,12 @@ The extension SHALL present the response as rows of **Code**, **Source** and **V
 
 The extension SHALL display the rows in a webview panel titled with the lookup type name, reusing a single panel across invocations so that opening another lookup type replaces its contents rather than accumulating tabs.
 
-The panel SHALL also make the unmodified response available in a collapsed section, so that fields outside the three columns remain inspectable.
+The panel SHALL also make the unmodified response available in a collapsed section, so that fields outside the four columns remain inspectable.
 
 #### Scenario: Panel titled and populated
 
 - **WHEN** the user runs Get Lookup Values on `AddressTypes`
-- **THEN** a panel titled for `AddressTypes` SHALL show the Code / Source / Value at Source table
+- **THEN** a panel titled for `AddressTypes` SHALL show the Canonical Value / Canonical Source / Source / Value at Source table
 
 #### Scenario: Second lookup type reuses the panel
 

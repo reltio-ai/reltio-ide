@@ -51,3 +51,5 @@ CLAUDE.md
 .reltio-environment.json
 .reltio-config-source.json
 .claude/skills/reltio-rdm-lookup-values-from-csv/
+.cursor/skills/reltio-rdm-lookup-values-from-csv/
+*.bpmn20.baseline.xml
