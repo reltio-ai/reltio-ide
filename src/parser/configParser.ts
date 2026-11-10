@@ -6,7 +6,7 @@ import {
 	parse,
 	parseTree,
 } from 'jsonc-parser';
-import type { ReltioBusinessModel } from '../model/types';
+import type { ReltioBusinessModel, RdmConfiguration } from '../model/types';
 
 export interface ParsedDocument {
 	model: ReltioBusinessModel;
@@ -18,6 +18,30 @@ export function parseDocument(text: string): ParsedDocument {
 	const errors: ParseError[] = [];
 	const model = parse(text, errors) as ReltioBusinessModel ?? {};
 	const ast = parseTree(text, undefined, { allowTrailingComma: true }) as Node;
+	return { model, ast, errors };
+}
+
+export interface ParsedRdmDocument {
+	model: RdmConfiguration;
+	ast: Node | undefined;
+	errors: ParseError[];
+}
+
+/**
+ * Parse an `RDM.{rdmTenantId}.reltio.json` document.
+ *
+ * Typed separately from `parseDocument` on purpose: `sources` is a top-level key
+ * of both the L3 business model and an RDM configuration, but the item shapes
+ * differ, so casting an RDM payload to `ReltioBusinessModel` would half-render
+ * through the L3 section renderer instead of failing visibly.
+ *
+ * `ast` may be `undefined` for input that is not recoverable as a tree; callers
+ * that only need the file URI (such as Show in Editor) still work in that case.
+ */
+export function parseRdmDocument(text: string): ParsedRdmDocument {
+	const errors: ParseError[] = [];
+	const model = (parse(text, errors) as RdmConfiguration) ?? {};
+	const ast = parseTree(text, undefined, { allowTrailingComma: true });
 	return { model, ast, errors };
 }
 

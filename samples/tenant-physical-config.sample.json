@@ -1,0 +1,91 @@
+{
+  "type": "PLATFORM",
+  "tenantId": "MdmSampleTenant",
+  "tenantName": "MdmSampleTenant-Sample-INTERNAL",
+  "customerName": "Sample-Customer",
+  "dataStorageConfig": {
+    "isolated": true,
+    "entityMergeTreeStoringMode": "writeNew_readNew",
+    "dataStorages": [
+      {
+        "id": "spannerdb",
+        "type": "SpannerDB",
+        "spannerDBConfig": {
+          "serviceAccount": "REDACTED@example.invalid",
+          "databaseId": "REDACTED"
+        }
+      }
+    ],
+    "dataKeyspaceConfig": {
+      "dataStorageId": "spannerdb",
+      "dataStorageIds": [
+        "spannerdb"
+      ]
+    },
+    "historyBigTableConfig": {
+      "project": "REDACTED",
+      "instanceId": "REDACTED",
+      "kmsEncrypted": false,
+      "tableName": "REDACTED",
+      "ttl": "P1M",
+      "environmentName": "REDACTED"
+    },
+    "entitiesCF": "ENTITIES",
+    "relationsCF": "RELATIONS"
+  },
+  "searchStorageConfiguration": {
+    "esClusterName": "REDACTED",
+    "esHosts": "REDACTED",
+    "numberOfShards": 1,
+    "maxNumberOfResults": 200,
+    "indexRelations": true,
+    "indexRDMLookups": true
+  },
+  "streamingConfig": {
+    "streamingEnabled": true,
+    "payloadType": "SNAPSHOT",
+    "messaging": {
+      "destinations": [
+        {
+          "payloadType": "SNAPSHOT",
+          "type": "topic",
+          "provider": "REDACTED",
+          "name": "REDACTED",
+          "enabled": false,
+          "format": "JSON"
+        }
+      ]
+    }
+  },
+  "matchingConfiguration": {
+    "strategy": "INCREMENTAL_V2",
+    "resolveLookupStrategy": "LOOKUP_CODE"
+  },
+  "defaultCrosswalk": "Reltio",
+  "defaultTenant": "MdmSampleTenant",
+  "resolveLookupCode": false,
+  "rdmConfig": {
+    "serviceUri": "https://rdm.reltio.com",
+    "oauthInstance": "https://auth.reltio.com/oauth/token",
+    "rdmTenants": [
+      {
+        "rdmTenantId": "RdmSampleTenant"
+      }
+    ],
+    "cache": {
+      "enabled": true,
+      "type": "TranscodeInMemory"
+    },
+    "publishRDMErrors": false,
+    "multiParentTranscoding": false,
+    "includeDisabledLookups": false,
+    "transcodeByEndDatedCrosswalks": true,
+    "dcrHierarchyTranscoding": false,
+    "enableUserSecuritySupport": false
+  },
+  "createdTime": 1784221790721,
+  "timestamp": 1784268714149,
+  "version": "00000000-0000-0000-0000-000000000000",
+  "createdBy": "PLATFORM_CONTROL_CENTER",
+  "updatedBy": "gsystem"
+}
