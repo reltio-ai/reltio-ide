@@ -234,6 +234,11 @@
         "icon": "$(copy)"
       },
       {
+        "command": "reltio.matchLabReview",
+        "title": "Match Lab Review",
+        "icon": "$(search)"
+      },
+      {
         "command": "reltio.browseEntities",
         "title": "Browse Entities",
         "icon": "$(search)"
@@ -465,6 +470,25 @@
     "configuration": {
       "title": "Reltio",
       "properties": {
+        "reltio.matchLab.mappingFile": {
+          "type": "string",
+          "default": "",
+          "description": "Optional absolute path to your own JSON listing which attributes the customer intended to map (for example { \"intendedAttributes\": [\"FirstName\", \"LastName\"] }). Used by Match Lab Review to tell an unused key apart from a tenant that simply has no data. Nothing is bundled; leave blank to infer from empty occupancy only."
+        },
+        "reltio.matchLab.fillRateScope": {
+          "type": "string",
+          "enum": [
+            "candidates",
+            "all"
+          ],
+          "default": "candidates",
+          "description": "How much of the entity type Match Lab Review measures fill rates for. \"candidates\" measures only the attributes it is already ranking as possible match keys. \"all\" measures every attribute, adds the Fill rates tab, and is what the match-rule-recommendations skill needs — it costs roughly one read-only count per attribute, so expect a slower run."
+        },
+        "reltio.matchLab.fillRateMaxAgeHours": {
+          "type": "number",
+          "default": 168,
+          "description": "How long a cached full-scope fill-rate measurement stays usable, in hours. Within this window Match Lab Review reuses <EntityType>.fill-rates.json instead of re-counting; older than this and it measures again. Default is one week."
+        },
         "reltio.unresolvedUriSeverity": {
           "type": "string",
           "enum": [
@@ -733,6 +757,11 @@
           "command": "reltio.insertMatchGroup",
           "when": "view == reltioConfigTree && viewItem == reltio.item.entityType",
           "group": "3_insert@20"
+        },
+        {
+          "command": "reltio.matchLabReview",
+          "when": "view == reltioConfigTree && (viewItem == reltio.item.entityType || viewItem == reltio.folder.matchGroupsFolder)",
+          "group": "3_getconfig@00"
         },
         {
           "command": "reltio.insertSurvivorshipGroup",
@@ -1156,6 +1185,8 @@
     "build:ext": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --main-fields=module,main",
     "build:webview": "esbuild src/webview/ontologyView.ts --bundle --outfile=dist/webview.js --format=iife --platform=browser && node -e \"require('fs').copyFileSync('src/webview/ontologyView.css','dist/webview.css')\"",
     "build:bpmnview": "esbuild src/webview/bpmnView.ts --bundle --outfile=dist/bpmnView.js --format=iife --platform=browser && node -e \"require('fs').copyFileSync('src/webview/bpmnView.css','dist/bpmnView.css')\"",
+    "postbuild": "npm run build:webview:matchlab",
+    "build:webview:matchlab": "esbuild src/webview/matchLabView.ts --bundle --outfile=dist/matchLabWebview.js --format=iife --platform=browser && node -e \"require('fs').copyFileSync('src/webview/matchLabView.css','dist/matchLabWebview.css')\"",
     "build:watch": "npm run build:ext -- --watch",
     "clean": "node -e \"['dist','target'].forEach(d=>{try{require('fs').rmSync(d,{recursive:true,force:true})}catch(e){}})\"",
     "package": "npm run clean && npm run build && node -e \"require('fs').mkdirSync('target',{recursive:true})\" && npx vsce package --out target/ --baseContentUrl https://github.com/reltio-ai/reltio-ide/blob/main/ --baseImagesUrl https://raw.githubusercontent.com/reltio-ai/reltio-ide/main/",

@@ -33,6 +33,8 @@ import {
 } from './workflow/bpmnDiagnosticsManager';
 import { ReltioUriCompletionProvider } from './navigation/uriCompletionProvider';
 import { OntologyPanelManager } from './ontology/ontologyPanel';
+import { MatchLabPanelManager } from './matchLab/matchLabPanel';
+import { runMatchLabReviewCommand } from './commands/matchLabReview';
 import { EnvironmentManager, type GitSource } from './workspace/environmentManager';
 import {
 	applyDefaultEnvironments,
@@ -829,6 +831,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const ontologyManager = new OntologyPanelManager();
 	const bpmnManager = new BpmnPanelManager();
 	context.subscriptions.push({ dispose: () => bpmnManager.dispose() });
+	const matchLabPanel = new MatchLabPanelManager();
+	context.subscriptions.push(matchLabPanel);
 
 	const treeView = vscode.window.createTreeView('reltioConfigTree', {
 		treeDataProvider: treeProvider,
@@ -2497,6 +2501,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			} catch (e) {
 				void vscode.window.showErrorMessage(`Failed to remove tenant: ${(e as Error).message}`);
 			}
+		}),
+		vscode.commands.registerCommand('reltio.matchLabReview', async (node?: unknown) => {
+			if (!environmentManager) return;
+			await runMatchLabReviewCommand(node, {
+				environmentManager,
+				tokenStore,
+				extensionUri: context.extensionUri,
+				panel: matchLabPanel,
+				getSelectedTreeItem: () => treeView.selection[0],
+			});
 		}),
 		vscode.commands.registerCommand('reltio.copyTenantId', async (node?: unknown) => {
 			let tenantId = tenantIdFromTreeContext(node);

@@ -1,0 +1,205 @@
+:root {
+	color-scheme: light dark;
+	--bg: var(--vscode-editor-background);
+	--fg: var(--vscode-editor-foreground);
+	--muted: var(--vscode-descriptionForeground);
+	--border: var(--vscode-panel-border);
+	--surface: var(--vscode-sideBar-background);
+	--header: var(--vscode-editorGroupHeader-tabsBackground);
+	--link: var(--vscode-textLink-foreground);
+	--accent: var(--vscode-focusBorder);
+	--lab: #f5a623;
+	--reltio: #7b5ea7;
+}
+
+* { box-sizing: border-box; }
+
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--fg);
+	font: 13px/1.45 var(--vscode-font-family);
+}
+
+.shell {
+	display: grid;
+	grid-template-rows: auto 1fr;
+	height: 100vh;
+}
+
+header {
+	border-bottom: 1px solid var(--border);
+	background: var(--surface);
+	padding: 10px 14px 0;
+}
+
+h1 {
+	font-size: 16px;
+	font-weight: 600;
+	margin: 0 0 8px;
+}
+
+.toolbar {
+	display: flex;
+	gap: 12px;
+	align-items: center;
+	margin-bottom: 8px;
+}
+
+.picker { color: var(--muted); }
+.picker select {
+	margin-left: 6px;
+	background: var(--bg);
+	color: var(--fg);
+	border: 1px solid var(--border);
+}
+
+#row-filter {
+	margin-left: auto;
+	min-width: 180px;
+	background: var(--bg);
+	color: var(--fg);
+	border: 1px solid var(--border);
+	padding: 4px 8px;
+}
+
+.tab-bar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px;
+}
+
+.tab {
+	border: 1px solid transparent;
+	border-bottom: none;
+	background: transparent;
+	color: var(--muted);
+	padding: 6px 10px;
+	cursor: pointer;
+	border-radius: 6px 6px 0 0;
+}
+
+.tab.active {
+	background: var(--bg);
+	color: var(--fg);
+	border-color: var(--border);
+	font-weight: 600;
+}
+
+#sheet {
+	overflow: auto;
+	padding: 0;
+	min-height: 0;
+}
+
+.docs {
+	margin: 0;
+	padding: 10px 14px;
+	white-space: pre-wrap;
+	color: var(--muted);
+	font: 12px/1.45 var(--vscode-font-family);
+	border-bottom: 1px solid var(--border);
+}
+
+.table-wrap {
+	overflow: auto;
+	height: 100%;
+}
+
+table {
+	border-collapse: separate;
+	border-spacing: 0;
+	min-width: 100%;
+}
+
+th, td {
+	border-bottom: 1px solid var(--border);
+	border-right: 1px solid var(--border);
+	padding: 6px 10px;
+	text-align: left;
+	vertical-align: top;
+	/* Sheets wraps; truncating here hid the explanatory columns entirely. */
+	white-space: normal;
+	overflow-wrap: break-word;
+	max-width: 380px;
+}
+
+/* Widths follow the content: prose gets room to wrap, short values stay on one line. */
+.col-prose { min-width: 300px; max-width: 620px; }
+.col-compact { white-space: nowrap; }
+
+/* A frozen column keeps the row's identity in view when a pair tab scrolls sideways. */
+.frozen {
+	position: sticky;
+	background: var(--bg);
+	z-index: 1;
+}
+
+th.frozen {
+	background: var(--header);
+	z-index: 3;
+}
+
+/* Each attribute's a_ / b_ / cmp_ columns share a band, so the blocks stay distinguishable. */
+.band { background: color-mix(in srgb, var(--surface) 45%, var(--bg)); }
+.frozen.band { background: color-mix(in srgb, var(--surface) 45%, var(--bg)); }
+
+.rowhead {
+	font-weight: 600;
+	color: var(--fg);
+}
+
+/* Blank rows separate sections in the workbook; render them as a gap, not an empty grid row. */
+tr.spacer td {
+	height: 10px;
+	padding: 0;
+	background: var(--surface);
+	border-right-color: transparent;
+}
+
+.census-error {
+	color: var(--vscode-errorForeground, #c72e2e);
+	font-weight: 600;
+}
+
+td.recommendation { white-space: normal; }
+td.multi-line { white-space: pre-line; }
+
+.rec-badge {
+	display: inline-block;
+	padding: 1px 7px;
+	border: 1px solid currentColor;
+	border-radius: 10px;
+	font-size: 11px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.rec-unknown { color: var(--vscode-errorForeground, #c72e2e); }
+.rec-review { color: var(--lab); }
+.rec-keep { color: var(--reltio); }
+.rec-idle, .rec-idle-internal { color: var(--muted); }
+
+th {
+	background: var(--header);
+	position: sticky;
+	top: 0;
+	z-index: 2;
+	font-weight: 600;
+}
+
+/* Opaque, so a frozen cell does not let the scrolled-under row show through. */
+tr:hover td { background: color-mix(in srgb, var(--surface) 80%, var(--bg)); }
+
+a {
+	color: var(--link);
+	cursor: pointer;
+	text-decoration: underline;
+}
+
+.note-lab {
+	background: color-mix(in srgb, var(--lab) 28%, transparent);
+	white-space: pre-line;
+}
+
+.empty { color: var(--muted); padding: 16px; }
