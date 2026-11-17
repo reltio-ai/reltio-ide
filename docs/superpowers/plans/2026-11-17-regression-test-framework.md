@@ -137,6 +137,8 @@ Owner chose feature-area grouping over `src/` directories. Areas, in match order
 
 The gate's `compile` writes per-file `tsc` output into `dist/` before `package`'s build, which `.vscodeignore` (`!dist/**`) would ship. A clean release build today does not ship it.
 
+**Ruling (supersedes the `.vscodeignore` approach below):** `.vscodeignore` exclusions cannot work because `vsce` keeps any file matched by a `!` pattern regardless of line order, and replacing `!dist/**` would break `scripts/test-extension-packaging.cjs` (an existing test that asserts `!dist/**`). Instead, add a `gate:cleanup` script to `package.json` that removes `dist/` (`node -e "require('fs').rmSync('dist',{recursive:true,force:true})"`, same style as the existing `clean` script) and change `prebuild` to `npm run test:gate && npm run gate:cleanup`. esbuild then recreates `dist/` with only the real bundles, so a clean build yields the baseline file list. `.vscodeignore` is NOT modified. Files: modify `package.json` only. A failed gate skips the cleanup (existing accepted behavior).
+
 **Files:**
 - Modify: `.vscodeignore` (additions after the `!dist/**` line only)
 
