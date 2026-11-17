@@ -708,7 +708,7 @@ A failing test, a failing coverage self-test, or a coverage area below its floor
 
 **Coverage areas:** line coverage via `c8` (`.c8rc.json`; `src/webview/` is excluded because tsconfig does not compile it). Files are grouped into 9 feature areas by first-match path patterns in [`scripts/module-coverage.config.json`](scripts/module-coverage.config.json): Workflows, LCA, Setup & Authentication, Git Integration, AI Agent & Skills, Tenant Explorer & UX, Business Configuration, Common Utils, Extension Activation. Every non-webview file under `src/` must belong to an area; an unmapped file fails the check, so a new file needs a pattern in the right area.
 
-Each area has a `floor`, seeded 2 points below its measured baseline. `target` is 70 and `enforceTarget` is false, so areas below 70 only warn (currently Setup & Authentication, Business Configuration, Extension Activation). When an area's tests reach 70, set `enforceTarget` to true.
+Each area has a `floor`, seeded 2 points below its measured baseline. `target` is 70 and `enforceTarget` is false, so areas below 70 only warn (currently Setup & Authentication, Business Configuration, Extension Activation). `enforceTarget` is a single global flag, so set it to true only once ALL areas are at or above 70; setting it earlier fails the build for every area still under 70. An invalid config (missing or non-numeric `floor` or `target`, empty `patterns`, non-boolean `enforceTarget`) fails the gate.
 
 **Raising a floor:** floors are only ever raised. After adding tests, either edit the floor by hand or run:
 
@@ -716,7 +716,7 @@ Each area has a `floor`, seeded 2 points below its measured baseline. `target` i
 npm run compile && npx c8 node scripts/run-unit-tests.cjs && node scripts/check-module-coverage.cjs --write-baseline
 ```
 
-`--write-baseline` recomputes every floor from the current numbers; review the diff and do not lower a floor.
+`--write-baseline` recomputes floors from the current numbers (2 points under the measured value) and never lowers an existing floor (enforced in code); review the diff before committing.
 
 **Developer notes:**
 

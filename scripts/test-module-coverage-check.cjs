@@ -7,7 +7,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const checker = path.join(__dirname, 'check-module-coverage.cjs');
-const { areaOf, aggregate, evaluate } = require(checker);
+const { areaOf, aggregate, evaluate, validateConfig, computeBaselineFloors } = require(checker);
 
 let passed = 0;
 function check(label, fn) {
@@ -97,6 +97,54 @@ check('unmapped file fails and is named', () => {
 check('area with no measured files fails closed', () => {
 	const r = evaluate(res({}), oneArea(0));
 	assert.ok(r.failures.some((f) => f.includes('A')));
+});
+check('invalid config: missing floor fails and names the area', () => {
+	const cfg = oneArea(0);
+	delete cfg.areas[0].floor;
+	const r = evaluate(res({ A: 90 }), cfg);
+	assert.ok(r.failures.some((f) => f.includes('floor') && f.includes('A')));
+});
+check('invalid config: non-numeric floor fails', () => {
+	const r = evaluate(res({ A: 90 }), oneArea('50'));
+	assert.ok(r.failures.some((f) => f.includes('floor')));
+});
+check('invalid config: floor 101 fails', () => {
+	const r = evaluate(res({ A: 90 }), oneArea(101));
+	assert.ok(r.failures.some((f) => f.includes('floor')));
+});
+check('invalid config: empty patterns fails', () => {
+	const cfg = oneArea(0);
+	cfg.areas[0].patterns = [];
+	const r = evaluate(res({ A: 90 }), cfg);
+	assert.ok(r.failures.some((f) => f.includes('patterns')));
+});
+check('invalid config: missing areas fails', () => {
+	const r = evaluate(res({}), { target: 70, enforceTarget: false });
+	assert.ok(r.failures.some((f) => f.includes('areas')));
+});
+check('invalid config: target as a string fails', () => {
+	const r = evaluate(res({ A: 90 }), oneArea(0, { target: '70' }));
+	assert.ok(r.failures.some((f) => f.includes('target')));
+});
+check('invalid config: enforceTarget as a string fails', () => {
+	const r = evaluate(res({ A: 90 }), oneArea(0, { enforceTarget: 'true' }));
+	assert.ok(r.failures.some((f) => f.includes('enforceTarget')));
+});
+check('shipped config validates clean', () => {
+	const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'module-coverage.config.json'), 'utf8'));
+	assert.deepStrictEqual(validateConfig(cfg), []);
+});
+check('computeBaselineFloors: raises, never lowers, leaves unmeasured unchanged', () => {
+	const areas = [
+		{ name: 'Up', patterns: ['a/**'], floor: 10 },
+		{ name: 'Down', patterns: ['b/**'], floor: 80 },
+		{ name: 'Absent', patterns: ['c/**'], floor: 33 },
+		{ name: 'NoFloor', patterns: ['d/**'] },
+	];
+	const out = computeBaselineFloors(areas, { Up: 50.9, Down: 60, NoFloor: 5.5 });
+	assert.deepStrictEqual(out.map((a) => a.floor), [48, 80, 33, 3]);
+	assert.deepStrictEqual(out[0].patterns, ['a/**']);
+	assert.strictEqual(out[0].name, 'Up');
 });
 check('CLI exits 1 when coverage summary is missing', () => {
 	const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'modcov-'));
