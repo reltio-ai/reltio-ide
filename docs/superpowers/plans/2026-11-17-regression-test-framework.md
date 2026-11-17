@@ -153,11 +153,11 @@ The gate's `compile` writes per-file `tsc` output into `dist/` before `package`'
 - Not modified: `.github/workflows/release.yml` (gated via the `prebuild` hook)
 
 **Interfaces:**
-- Consumes: `npm run test:gate`, `npm run build -- --ignore-scripts`.
+- Consumes: `npm run test:gate`, `npm run build --ignore-scripts`.
 
-- [ ] **Step 1: `ci.yml`:** order steps Install -> Test (`npm run test:gate`) -> Build (`npm run build -- --ignore-scripts`). Step names stay `Test` and `Build`.
-- [ ] **Step 2: `Jenkinsfile`:** move the `Test` stage (command `npm run test:gate`) ahead of `Build`, and change the Build command to `npm run build -- --ignore-scripts`. Leave all other stages and settings as they are.
-- [ ] **Step 3: Verify `--ignore-scripts` skips the hook.** Run `npm run build -- --ignore-scripts` and confirm the test gate output does not appear and the bundles are produced.
+- [ ] **Step 1: `ci.yml`:** order steps Install -> Test (`npm run test:gate`) -> Build (`npm run build --ignore-scripts`). Step names stay `Test` and `Build`.
+- [ ] **Step 2: `Jenkinsfile`:** move the `Test` stage (command `npm run test:gate`) ahead of `Build`, and change the Build command to `npm run build --ignore-scripts`. Leave all other stages and settings as they are.
+- [ ] **Step 3: Verify `--ignore-scripts` skips the hook.** Run `npm run build --ignore-scripts` and confirm the test gate output does not appear and the bundles are produced.
 - [ ] **Step 4: Verify `release.yml` is untouched:** `git diff --stat main -- .github/workflows/release.yml` prints nothing.
 - [ ] **Step 5: Commit** both files.
 
