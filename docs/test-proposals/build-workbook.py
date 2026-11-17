@@ -55,7 +55,7 @@ COLUMNS = [
     ("Reviewer comments", None, 30), ("Dev notes", None, 30),
 ]
 MAX_ROW = 500
-ID_RE = re.compile(r"^([A-Z]+)-(\d{3})$")
+ID_RE = re.compile(r"([A-Z]+)-(\d{3})")
 
 
 def fail(msg):
@@ -133,7 +133,7 @@ def validate_row(row, idx, area, prefix, fname, seen, errors):
             errors.append("%s: '%s' must be a non-empty string" % (where, k))
     rid = row.get("id")
     if isinstance(rid, str) and rid:
-        m = ID_RE.match(rid)
+        m = ID_RE.fullmatch(rid)
         if not m:
             errors.append("%s: id '%s' must look like %s-NNN" % (where, rid, prefix))
         elif m.group(1) != prefix:
@@ -150,10 +150,11 @@ def validate_row(row, idx, area, prefix, fname, seen, errors):
         if isinstance(row.get(k), str) and row[k] and row[k] not in allowed:
             errors.append("%s: %s '%s' not in %s" % (where, k, row[k], allowed))
     cat, sub = row.get("category"), row.get("subtype")
-    if isinstance(sub, str) and sub and cat in SUBTYPES and sub not in SUBTYPES[cat]:
+    cat_ok = isinstance(cat, str) and cat in SUBTYPES
+    if isinstance(sub, str) and sub and cat_ok and sub not in SUBTYPES[cat]:
         errors.append("%s: subtype '%s' does not belong to category '%s' (allowed: %s)"
                       % (where, sub, cat, SUBTYPES[cat]))
-    elif isinstance(sub, str) and sub and cat not in SUBTYPES and sub not in ALL_SUBTYPES:
+    elif isinstance(sub, str) and sub and not cat_ok and sub not in ALL_SUBTYPES:
         errors.append("%s: subtype '%s' not in %s" % (where, sub, ALL_SUBTYPES))
 
 
@@ -177,7 +178,8 @@ def load_areas(src_dir, allow_missing):
         for i, row in enumerate(rows, start=1):
             validate_row(row, i, area, prefix, fname, seen, errors)
         if not allow_missing:
-            present = {r.get("category") for r in rows if isinstance(r, dict)}
+            present = {r.get("category") for r in rows
+                       if isinstance(r, dict) and isinstance(r.get("category"), str)}
             for cat in CATEGORIES:
                 if cat not in present and cat not in na:
                     errors.append("%s: no %s row (add one or declare not_applicable with a reason)" % (fname, cat))
@@ -299,7 +301,9 @@ def add_area_sheet(wb, area, rows, lists_ref):
     for col_letter, ref in (("E", lists_ref["category"]), ("F", lists_ref["subtype"]),
                             ("I", lists_ref["priority"]), ("J", lists_ref["coverage"]),
                             ("L", lists_ref["status"])):
-        dv = DataValidation(type="list", formula1=ref, allow_blank=True)
+        dv = DataValidation(type="list", formula1=ref, allow_blank=True,
+                            showErrorMessage=True, errorStyle="stop",
+                            errorTitle="Invalid value", error="Pick a value from the dropdown list.")
         dv.add("%s2:%s%d" % (col_letter, col_letter, MAX_ROW))
         ws.add_data_validation(dv)
 
