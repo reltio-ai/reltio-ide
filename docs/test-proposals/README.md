@@ -69,3 +69,11 @@ IDs are the key used later to convert proposals into tests. Never renumber or re
 The XLSX is generated from the JSON files, and the JSON is the source of truth for regeneration. Edits made in Excel (status, comments, new rows) must be carried back into the JSON, or the XLSX becomes the new source by agreement. Regenerating overwrites the XLSX.
 
 The Summary sheet reads source patterns, floors and the target from `scripts/module-coverage.config.json` and baseline line coverage from `coverage-baseline.json`. Its counts are live formulas over the area sheets.
+
+## Priority rubric
+
+- **P1**: security-sensitive (tokens, secrets, path traversal, untrusted input, injection), guards against data loss or overwriting user work, or is a core user flow or invariant, and existing coverage is None or Partial. A `Covered` row is P1 only if it is Security or data-safety.
+- **P2**: important behavior or edge case, partially covered non-core flows, reliability and performance guards, contract checks between modules.
+- **P3**: pins behavior an existing test already asserts (`Covered`, not security/data-safety), polish, rare edge cases, speculative or environment-dependent performance budgets.
+
+Reviewers can re-rank by editing the `priority` column.
