@@ -149,6 +149,14 @@ Scaffolding without the agent: `npm run openspec -- new change "<name>"`. For JS
 
 ---
 
+## Regression gate and proposed tests
+
+`npm run build` and `npm run package` run the unit tests and a per-area coverage check first (`prebuild` = `npm run test:gate`). A failing test or an area below its floor stops the build. Run `npm run test:gate` before a PR; use `npm run build --ignore-scripts` (no `--` separator) only when the gate already passed. If you add a file under `src/`, add its path to an area in `scripts/module-coverage.config.json`, or the check fails. If you add tests, raise the area floor (never lower it). Details, floors, and troubleshooting: [ARCHITECTURE.md](../ARCHITECTURE.md) "Regression gate and coverage".
+
+Proposed regression tests per feature area (one JSON per area plus a generated XLSX to review and edit) live in `docs/test-proposals/`; they are later used to add tests to this framework.
+
+---
+
 ## Related docs
 
 | Doc | Role |
