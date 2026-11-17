@@ -22,6 +22,7 @@
 - Coverage metric: lines. Target 70%. Floors are set from the measured baseline and only ever raised.
 - Node 22. Plain `node:assert`, no test framework (`CLAUDE.md` convention).
 - Do not commit unless the user has asked; the commit steps below apply once they have.
+- Grouping: after Task 3b, "module" everywhere in this plan means a feature area (9 areas, defined in Task 3b), not a `src/` directory. The `module` field in proposal JSON holds the area name, and IDs use an area prefix (for example `WF-001`, `LCA-001`).
 
 ## Review Focus
 
@@ -88,6 +89,35 @@
 - [ ] **Step 5: Seed the floors.** Create `scripts/module-coverage.config.json` with `target: 70`, `enforceTarget: false`, `modules: {}`, then run `npm run compile && npx c8 node scripts/run-unit-tests.cjs && node scripts/check-module-coverage.cjs --write-baseline`. Expected: the config now lists every measured module with a floor 2 points under baseline. Re-run the checker without the flag. Expected: exit 0 and a table; modules below 70 are listed as warnings.
 - [ ] **Step 6: Commit** the three new files.
 
+### Task 3b: Group coverage by feature area (owner request, supersedes directory modules)
+
+Owner chose feature-area grouping over `src/` directories. Areas, in match order (first match wins; patterns are paths relative to `src/`; `dir/**` = prefix, `*` = any chars except `/`, otherwise exact file):
+
+1. **Workflows**: `workflow/**`, `providers/bpmnContentProvider.ts`, `api/workflowAdapterClient.ts`, `tree/workflowNodes.ts`, `tree/processDefinitionRows.ts`, `workspace/workflow*.ts`
+2. **LCA**: `lca/**`, `commands/lcaActions.ts`
+3. **Setup & Authentication**: `api/oauthCredentialsResolve.ts`, `api/oauthCredentialsStore.ts`, `api/oauthLogin.ts`, `api/sessionStore.ts`, `api/tokenStore.ts`, `ux/setupGuidePanel.ts`, `ux/setupWizard.ts`, `ux/termsOfUse.ts`, `workspace/environmentManager.ts`, `workspace/applyDefaultEnvironments.ts`
+4. **Git Integration**: `workspace/gitConfigSource.ts`, `workspace/gitSourceMarker.ts`, `workspace/tenantGitBinding.ts`, `workspace/tenantFolderStructure.ts`, `workspace/layoutMigration.ts`
+5. **AI Agent & Skills**: `workspace/agentSkillDiscovery.ts`, `workspace/reltioAgentSync.ts`
+6. **Tenant Explorer & UX**: `tree/**`, `ux/quickSwitch.ts`, `ux/recents.ts`, `ux/statusBar.ts`, `ux/uxState.ts`
+7. **Business Configuration**: `parser/**`, `model/**`, `navigation/**`, `ontology/**`, `entityBrowser/**`, `commands/editCommands.ts`, `commands/elementSkeletons.ts`, `commands/revealCommand.ts`, `commands/revealInsertion.ts`, `workspace/configurationHistory.ts`, `workspace/reltioAutoSave.ts`, `workspace/l3Discovery.ts`, `workspace/matchVerification.ts`, `api/formatJson.ts`
+8. **Common Utils**: `util/**`, `api/reltioClient.ts`
+9. **Extension Activation**: `extension.ts`
+
+**Files:**
+- Modify: `scripts/check-module-coverage.cjs`, `scripts/test-module-coverage-check.cjs`, `scripts/module-coverage.config.json`
+
+**Interfaces:**
+- Config shape becomes `{ "target": 70, "enforceTarget": false, "areas": [ { "name": string, "patterns": string[], "floor": number } ] }` (ordered; replaces `modules`).
+- `areaOf(file: string, areas): string | null`: normalizes `\` to `/`, strips everything up to and including the last `src/`, returns the first matching area's name; `null` for files outside `src/`; throws or returns `"(unmapped)"` is NOT allowed: an in-`src/` file matching no area is reported by `aggregate`/`evaluate` as a failure naming the file.
+- `aggregate(summary, areas): { pct: Record<string, number>, unmapped: string[] }`; `evaluate(result, config)` fails on any `unmapped` file, any area below its floor, any area with no measured files, and (with `enforceTarget`) any area below `target`; below-target areas are warnings otherwise.
+- CLI table lists areas in config order; `--write-baseline` rewrites each area's floor as `max(0, floor(pct) - 2)`, preserving `name` and `patterns`.
+
+- [ ] **Step 1: Update the self-test first** to the new interfaces. Cases: first-match order (`tree/workflowNodes.ts` -> Workflows, `tree/treeNodes.ts` -> Tenant Explorer & UX); `*` pattern (`workspace/workflowRepoSync.ts` -> Workflows, `workspace/gitSourceMarker.ts` -> Git Integration); Windows path (`C:\p\src\lca\cloud.ts` -> LCA); unmapped file reported (`src/brandNew/x.ts`); area with no measured files fails; floor and target behavior as in Task 3; aggregation sums covered/total across an area's files from different directories.
+- [ ] **Step 2: Run it.** Expected: FAIL against the directory-based implementation.
+- [ ] **Step 3: Implement** the area-based `areaOf`/`aggregate`/`evaluate` and CLI; keep exports and the `require.main` guard. Replace `scripts/module-coverage.config.json` with the 9 areas above (floors 0).
+- [ ] **Step 4: Re-seed.** `npm run compile && npx c8 node scripts/run-unit-tests.cjs && node scripts/check-module-coverage.cjs --write-baseline`, then the checker without the flag. Expected: exit 0, 9-area table, below-70 areas as warnings only, zero unmapped files.
+- [ ] **Step 5: Commit.**
+
 ### Task 4: The gate script
 
 **Files:**
@@ -142,18 +172,18 @@ The gate's `compile` writes per-file `tsc` output into `dist/` before `package`'
 ### Task 8: Module-wise XLSX of proposed tests
 
 **Files:**
-- Create: `docs/test-proposals/<module>.json` (one per module), `docs/test-proposals/build-workbook.py`, `docs/test-proposals/regression-test-proposals.xlsx`, `docs/test-proposals/README.md`
+- Create: `docs/test-proposals/<area>.json` (one per area), `docs/test-proposals/build-workbook.py`, `docs/test-proposals/regression-test-proposals.xlsx`, `docs/test-proposals/README.md`
 
 **Interfaces:**
 - Row schema in each JSON file (array): `id` (`<MODULE>-NNN`, unique, stable), `module`, `source` (file and function or area), `title`, `category` (`Technical` | `Functional` | `Non-functional`), `subtype` (Technical: `Unit`, `Contract`, `Integration`; Functional: `Feature`, `Workflow`, `Error handling`; Non-functional: `Performance`, `Security`, `Reliability`, `Compatibility`, `Scalability`), `scenario`, `expected`, `priority` (`P1` | `P2` | `P3`), `existing_coverage` (`None` | `Partial` | `Covered`), `target_script` (proposed `scripts/test-<name>.cjs`), `status` (always `Proposed` on creation).
-- Workbook layout: sheet `README` (legend, how to edit, status meanings), sheet `Summary` (module, source files, baseline coverage %, floor, proposed counts per category), one sheet per module with the columns above plus empty `Reviewer comments` and `Dev notes`. Dropdowns on `category`, `subtype`, `priority`, `existing_coverage`, `status`; frozen header; filters on.
+- Workbook layout: sheet `README` (legend, how to edit, status meanings), sheet `Summary` (module, source files, baseline coverage %, floor, proposed counts per category), one sheet per area with the columns above plus empty `Reviewer comments` and `Dev notes`. Dropdowns on `category`, `subtype`, `priority`, `existing_coverage`, `status`; frozen header; filters on.
 - Produces (`build-workbook.py`): `python docs/test-proposals/build-workbook.py` validates all JSON (required fields, enums, unique ids) and writes the XLSX; exits non-zero on any violation.
 
-Modules and where to read (read each module's `src/<dir>` plus existing `scripts/test-*.cjs` that import it): `api`, `commands`, `entityBrowser`, `lca`, `model`, `navigation`, `ontology`, `parser`, `providers`, `tree`, `util`, `ux`, `workflow`, `workspace`, `webview` (pure logic only), and `(root)` for `src/extension.ts`.
+Areas (one sheet and one JSON file each; files per area are listed in Task 3b; read those source files plus the existing `scripts/test-*.cjs` that import them): Setup & Authentication, Business Configuration, Tenant Explorer & UX, Git Integration, Workflows, LCA, AI Agent & Skills, Common Utils, Extension Activation. Webview code (`src/webview/*`, pure logic only) is proposed under the area it serves (ontology view -> Business Configuration, BPMN view -> Workflows). JSON file names: `setup-authentication.json`, `business-configuration.json`, `tenant-explorer-ux.json`, `git-integration.json`, `workflows.json`, `lca.json`, `ai-agent-skills.json`, `common-utils.json`, `extension-activation.json`.
 
 - [ ] **Step 1: Write `build-workbook.py`** with the validator and the workbook layout above. Test it with a two-row fixture JSON placed in the scratchpad: expect a workbook with README, Summary and one module sheet, and a non-zero exit on a bad enum.
 - [ ] **Step 2: For each module, draft `docs/test-proposals/<module>.json`.** Read the module's source and its existing tests. Propose tests that would catch regressions in current behavior (not new features). Each module needs at least one `Technical`, one `Functional` and one `Non-functional` row where the module has applicable behavior. Mark `existing_coverage` honestly from the existing scripts. Use the Task 3 coverage table to prioritize low-coverage modules (P1). Modules are independent, so they can be drafted in parallel.
-- [ ] **Step 3: Run `python docs/test-proposals/build-workbook.py`.** Expected: exit 0, XLSX with 2 + 16 sheets.
+- [ ] **Step 3: Run `python docs/test-proposals/build-workbook.py`.** Expected: exit 0, XLSX with 2 + 9 sheets.
 - [ ] **Step 4: Open the workbook** (or read it back with openpyxl) and confirm every module sheet has rows, dropdowns work, and the Summary counts match the JSON.
 - [ ] **Step 5: Write `README.md`** describing the schema, the stable-ID rule, and that the XLSX is for review and later conversion into tests. No test code is generated here.
 - [ ] **Step 6: Commit** `docs/test-proposals/`.
