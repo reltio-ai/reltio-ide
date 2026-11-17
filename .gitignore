@@ -17,3 +17,6 @@ code_understanding/
 # Claude Code local files
 CLAUDE.md
 .claude/
+
+# Coverage output
+coverage/
