@@ -36,7 +36,7 @@ Catch regressions in every module when new features land. Tests run before the b
 ### 1. Gate
 
 - `package.json`: add `"prebuild": "npm test"`. `npm run build` and `npm run package` (which calls `build`) run tests first. `build:ext`, `build:watch` and the other `build:*` scripts stay ungated so watch mode stays fast.
-- `ci.yml` and `Jenkinsfile`: order becomes Install -> Test -> Build. The build step is `npm run build -- --ignore-scripts` (skips the `prebuild` hook) so tests do not run twice. Test remains its own step for clear failure attribution.
+- `ci.yml` and `Jenkinsfile`: order becomes Install -> Test -> Build. The build step is `npm run build --ignore-scripts` (skips the `prebuild` hook) so tests do not run twice. Test remains its own step for clear failure attribution.
 - `release.yml`: no change (constraint from the owner). It is gated through the `prebuild` hook: the existing `npm run build` step runs the tests first, so a red test fails `Build extension` before packaging. Nothing is published, because the release commit, tag and GitHub Release happen in later steps. Tests run twice per release (the `Build extension` step, then `package`'s inner `npm run build`). A test failure appears in the `Build extension` step log rather than a dedicated Test step. The gate relies on npm lifecycle hooks, so adding `--ignore-scripts` to those steps would silently remove it; document this in `CONTRIBUTING`. The comment "Tests are not repeated here" becomes stale but is left as is.
 - Failure path: red test -> non-zero exit -> no `dist/` bundles, no VSIX, no release commit or tag. In `release.yml` the test step runs before the version bump is pushed, so nothing is published.
 
