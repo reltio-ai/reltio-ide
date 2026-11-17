@@ -1,51 +1,107 @@
 {
 	"target": 70,
 	"enforceTarget": false,
-	"modules": {
-		"(root)": {
-			"floor": 0
+	"areas": [
+		{
+			"name": "Workflows",
+			"patterns": [
+				"workflow/**",
+				"providers/bpmnContentProvider.ts",
+				"api/workflowAdapterClient.ts",
+				"tree/workflowNodes.ts",
+				"tree/processDefinitionRows.ts",
+				"workspace/workflow*.ts"
+			],
+			"floor": 91
 		},
-		"api": {
-			"floor": 74
+		{
+			"name": "LCA",
+			"patterns": [
+				"lca/**",
+				"commands/lcaActions.ts"
+			],
+			"floor": 72
 		},
-		"commands": {
-			"floor": 9
+		{
+			"name": "Setup & Authentication",
+			"patterns": [
+				"api/oauthCredentialsResolve.ts",
+				"api/oauthCredentialsStore.ts",
+				"api/oauthLogin.ts",
+				"api/sessionStore.ts",
+				"api/tokenStore.ts",
+				"ux/setupGuidePanel.ts",
+				"ux/setupWizard.ts",
+				"ux/termsOfUse.ts",
+				"workspace/environmentManager.ts",
+				"workspace/applyDefaultEnvironments.ts"
+			],
+			"floor": 31
 		},
-		"entityBrowser": {
-			"floor": 0
+		{
+			"name": "Git Integration",
+			"patterns": [
+				"workspace/gitConfigSource.ts",
+				"workspace/gitSourceMarker.ts",
+				"workspace/tenantGitBinding.ts",
+				"workspace/tenantFolderStructure.ts",
+				"workspace/layoutMigration.ts"
+			],
+			"floor": 73
 		},
-		"lca": {
+		{
+			"name": "AI Agent & Skills",
+			"patterns": [
+				"workspace/agentSkillDiscovery.ts",
+				"workspace/reltioAgentSync.ts"
+			],
+			"floor": 94
+		},
+		{
+			"name": "Tenant Explorer & UX",
+			"patterns": [
+				"tree/**",
+				"ux/quickSwitch.ts",
+				"ux/recents.ts",
+				"ux/statusBar.ts",
+				"ux/uxState.ts"
+			],
+			"floor": 71
+		},
+		{
+			"name": "Business Configuration",
+			"patterns": [
+				"parser/**",
+				"model/**",
+				"navigation/**",
+				"ontology/**",
+				"entityBrowser/**",
+				"commands/editCommands.ts",
+				"commands/elementSkeletons.ts",
+				"commands/revealCommand.ts",
+				"commands/revealInsertion.ts",
+				"workspace/configurationHistory.ts",
+				"workspace/reltioAutoSave.ts",
+				"workspace/l3Discovery.ts",
+				"workspace/matchVerification.ts",
+				"api/formatJson.ts"
+			],
+			"floor": 31
+		},
+		{
+			"name": "Common Utils",
+			"patterns": [
+				"util/**",
+				"api/reltioClient.ts"
+			],
 			"floor": 79
 		},
-		"model": {
+		{
+			"name": "Extension Activation",
+			"patterns": [
+				"extension.ts"
+			],
 			"floor": 0
-		},
-		"navigation": {
-			"floor": 52
-		},
-		"ontology": {
-			"floor": 54
-		},
-		"parser": {
-			"floor": 69
-		},
-		"providers": {
-			"floor": 98
-		},
-		"tree": {
-			"floor": 80
-		},
-		"util": {
-			"floor": 87
-		},
-		"ux": {
-			"floor": 16
-		},
-		"workflow": {
-			"floor": 87
-		},
-		"workspace": {
-			"floor": 79
 		}
-	}
+	]
 }
