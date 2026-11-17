@@ -53,3 +53,6 @@ CLAUDE.md
 .claude/skills/reltio-rdm-lookup-values-from-csv/
 .cursor/skills/reltio-rdm-lookup-values-from-csv/
 *.bpmn20.baseline.xml
+
+# Coverage output
+coverage/
