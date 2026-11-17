@@ -1,0 +1,51 @@
+{
+	"target": 70,
+	"enforceTarget": false,
+	"modules": {
+		"(root)": {
+			"floor": 0
+		},
+		"api": {
+			"floor": 74
+		},
+		"commands": {
+			"floor": 9
+		},
+		"entityBrowser": {
+			"floor": 0
+		},
+		"lca": {
+			"floor": 79
+		},
+		"model": {
+			"floor": 0
+		},
+		"navigation": {
+			"floor": 52
+		},
+		"ontology": {
+			"floor": 54
+		},
+		"parser": {
+			"floor": 69
+		},
+		"providers": {
+			"floor": 98
+		},
+		"tree": {
+			"floor": 80
+		},
+		"util": {
+			"floor": 87
+		},
+		"ux": {
+			"floor": 16
+		},
+		"workflow": {
+			"floor": 87
+		},
+		"workspace": {
+			"floor": 79
+		}
+	}
+}
