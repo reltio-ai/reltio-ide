@@ -4,7 +4,8 @@
  * OpenSpec change: replace-tenants-with-enhanced-tenants
  * Tier A: listTenants URL/method/headers, record→tenantId mapping, malformed-response
  *         rejection, status-code handling; xxx-client still sent on other calls
- * Tier B: no source file outside fixtures references the retired /reltio/tenants
+ * Tier B: no source file outside fixtures references the retired /reltio/tenants list;
+ *         the per-tenant GET /reltio/tenants/{tenantId} (RDM discovery) is the one exception
  * Tier C (manual): design.md Test plan: setup wizard and Add Tenant against a live
  *         external environment; the 403 reproduction needs an affected user's tenant
  */
@@ -127,23 +128,39 @@ function jsonResponse(status, body) {
 		assert.deepStrictEqual(result, []);
 	}
 
-	// 7. Tier B: the retired endpoint is gone from shipped source.
+	// 7. Tier B: the retired tenant list is gone from shipped source.
+	//
+	// Only the list (`/reltio/tenants`, optionally with a query) is retired. The per-tenant
+	// `GET /reltio/tenants/{tenantId}` is a different endpoint: the tenant physical configuration,
+	// the only place RDM's service URI and tenant ids are found. It is allowed in exactly one
+	// caller, fetchTenantPhysicalConfiguration, so a new use of the family still fails here.
 	{
-		const offenders = [];
+		const listOffenders = [];
+		const perTenantCallers = [];
 		const walk = dir => {
 			for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
 				const full = path.join(dir, entry.name);
 				if (entry.isDirectory()) {
 					walk(full);
 				} else if (/\.ts$/.test(entry.name)) {
-					if (/\/reltio\/tenants\b/.test(fs.readFileSync(full, 'utf8'))) {
-						offenders.push(path.relative(repoRoot, full));
+					const text = fs.readFileSync(full, 'utf8');
+					const rel = path.relative(repoRoot, full).split(path.sep).join('/');
+					if (/\/reltio\/tenants(?![\w/])/.test(text)) {
+						listOffenders.push(rel);
+					}
+					for (const m of text.matchAll(/`\$\{root\}\/reltio\/tenants\//g)) {
+						perTenantCallers.push(rel);
 					}
 				}
 			}
 		};
 		walk(path.join(repoRoot, 'src'));
-		assert.deepStrictEqual(offenders, [], `src still references /reltio/tenants: ${offenders.join(', ')}`);
+		assert.deepStrictEqual(listOffenders, [], `src still references the retired /reltio/tenants list: ${listOffenders.join(', ')}`);
+		assert.deepStrictEqual(
+			perTenantCallers,
+			['src/api/reltioClient.ts'],
+			'GET /reltio/tenants/{tenantId} is built in exactly one place, fetchTenantPhysicalConfiguration',
+		);
 	}
 
 	console.log('test-replace-tenants-with-enhanced-tenants: OK');

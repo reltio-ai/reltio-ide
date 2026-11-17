@@ -405,8 +405,10 @@ const { GitFolderNode, EnvironmentNode } = importDist('tree/multiTenantNodes');
 		const l3Uri = vscode.Uri.file('/ws/L3.json');
 		mgr.setGitSource({ environmentName: 'ws', tenantId: 'default', l3Uri });
 
+		// hasRdm is false for git sources: a repository checkout has no
+		// `*.reltio.tenant` folder, so no fetched RDM configuration can live there.
 		assert.deepStrictEqual(await mgr.scanEnvironments(), [
-			{ name: 'ws', tenants: [{ tenantId: 'default', hasL3: true }] },
+			{ name: 'ws', tenants: [{ tenantId: 'default', hasL3: true, hasRdm: false }] },
 		]);
 		assert.strictEqual(mgr.getL3Uri('ws', 'default').path, l3Uri.path);
 		assert.strictEqual(mgr.getLayoutUri('ws', 'default').path, '/ws/L3.reltio.layout.json');

@@ -1,3 +1,5 @@
+import type { ExtractedRdmConfig, RdmLookupValueRow } from '../model/types';
+
 const DEFAULT_TIMEOUT_MS = 10_000;
 /**
  * A genuine Reltio platform header, not a placeholder name: it routes a request
@@ -348,6 +350,339 @@ export async function fetchL3Configuration(
 		throw new ReltioApiError(`Fetch L3 failed: HTTP ${res.status}`, res.status);
 	}
 	return res.text();
+}
+
+/**
+ * Tenant physical configuration — `GET …/reltio/tenants/{tenantId}`.
+ *
+ * Used only to discover the RDM service URI and RDM tenant ids. The response
+ * also carries messaging credentials, storage service accounts and internal
+ * hostnames, so callers must extract `rdmConfig` and discard the rest; it is
+ * never written to disk.
+ */
+export async function fetchTenantPhysicalConfiguration(
+	baseUrl: string,
+	tenantId: string,
+	token: string,
+): Promise<unknown> {
+	const root = toHttpsBase(baseUrl);
+	const url = `${root}/reltio/tenants/${encodeURIComponent(tenantId)}`;
+	const res = await fetchWithTimeout(
+		url,
+		{
+			method: 'GET',
+			headers: reltioHeaders(token),
+		},
+		DEFAULT_TIMEOUT_MS,
+	);
+	if (res.status === 401) {
+		throw new ReltioApiError('Unauthorized (401)', 401);
+	}
+	if (!res.ok) {
+		throw new ReltioApiError(`Fetch tenant physical configuration failed: HTTP ${res.status}`, res.status);
+	}
+	return (await res.json()) as unknown;
+}
+
+/**
+ * Pull the RDM service URI and RDM tenant ids out of a tenant physical
+ * configuration. Pure and total: any shape is accepted and anything missing or
+ * malformed yields an empty result, because a tenant with no RDM is a normal
+ * outcome rather than an error.
+ */
+export function extractRdmConfig(physicalConfiguration: unknown): ExtractedRdmConfig {
+	// Same key set on every path, so callers never have to distinguish
+	// "no serviceUri" from "no rdmConfig at all".
+	const empty: ExtractedRdmConfig = { serviceUri: undefined, rdmTenantIds: [] };
+	if (!physicalConfiguration || typeof physicalConfiguration !== 'object') {
+		return empty;
+	}
+	const rdmConfig = (physicalConfiguration as Record<string, unknown>).rdmConfig;
+	if (!rdmConfig || typeof rdmConfig !== 'object') {
+		return empty;
+	}
+	const block = rdmConfig as Record<string, unknown>;
+
+	const rawServiceUri = block.serviceUri;
+	const serviceUri =
+		typeof rawServiceUri === 'string' && rawServiceUri.trim() ? rawServiceUri.trim() : undefined;
+
+	const rdmTenantIds: string[] = [];
+	if (Array.isArray(block.rdmTenants)) {
+		for (const entry of block.rdmTenants) {
+			if (!entry || typeof entry !== 'object') {
+				continue;
+			}
+			const id = (entry as Record<string, unknown>).rdmTenantId;
+			if (typeof id === 'string' && id.trim()) {
+				rdmTenantIds.push(id.trim());
+			}
+		}
+	}
+	return { serviceUri, rdmTenantIds };
+}
+
+/**
+ * RDM tenant configuration — `GET {serviceUri}/configuration/{rdmTenantId}`.
+ *
+ * `serviceUri` comes from the tenant physical configuration and may be a
+ * different host from the MDM environment; it is never constructed from the
+ * environment name. Returns raw text so formatting is applied once on write,
+ * mirroring `fetchL3Configuration`.
+ *
+ * Because that host arrives from a server response rather than from user
+ * configuration, it goes through `toHttpsBase()` like any other base URL and is
+ * therefore subject to the trusted-host allowlist — an RDM service outside
+ * `reltio.trustedHostSuffixes` raises `UntrustedHostError` rather than being
+ * contacted.
+ */
+export async function fetchRdmConfiguration(
+	serviceUri: string,
+	rdmTenantId: string,
+	token: string,
+): Promise<string> {
+	const root = toHttpsBase(serviceUri);
+	const url = `${root}/configuration/${encodeURIComponent(rdmTenantId)}`;
+	const res = await fetchWithTimeout(
+		url,
+		{
+			method: 'GET',
+			headers: reltioHeaders(token),
+		},
+		DEFAULT_TIMEOUT_MS,
+	);
+	if (res.status === 401) {
+		throw new ReltioApiError('Unauthorized (401)', 401);
+	}
+	if (!res.ok) {
+		throw new ReltioApiError(`Fetch RDM configuration failed: HTTP ${res.status}`, res.status);
+	}
+	return res.text();
+}
+
+/**
+ * Push an RDM configuration — `PUT {serviceUri}/configuration/{rdmTenantId}`.
+ *
+ * `body` is the document text as saved rather than a re-serialization, so what
+ * reaches the service is what the user is looking at.
+ *
+ * Failures reuse `formatPutConfigurationFailureMessage`. Whether the RDM
+ * service returns the same error envelope as the MDM configuration endpoint is
+ * unverified — the formatter falls back to the trimmed response body when the
+ * shape does not match, so this is strictly better than a bare status code
+ * rather than a bet on the shape.
+ */
+export async function putRdmConfiguration(
+	serviceUri: string,
+	rdmTenantId: string,
+	body: string,
+	token: string,
+): Promise<void> {
+	const root = toHttpsBase(serviceUri);
+	const url = `${root}/configuration/${encodeURIComponent(rdmTenantId)}`;
+	const res = await fetchWithTimeout(
+		url,
+		{
+			method: 'PUT',
+			headers: reltioHeaders(token, { 'Content-Type': 'application/json' }),
+			body,
+		},
+		DEFAULT_TIMEOUT_MS,
+	);
+	if (res.status === 401) {
+		throw new ReltioApiError('Unauthorized (401)', 401);
+	}
+	if (!res.ok) {
+		let fullText = '';
+		try {
+			fullText = await res.text();
+		} catch {
+			/* ignore */
+		}
+		throw new ReltioApiError(
+			formatPutConfigurationFailureMessage(res.status, fullText),
+			res.status,
+		);
+	}
+}
+
+/**
+ * Values of one RDM lookup type — `GET {serviceUri}/lookups/{rdmTenantId}/{lookupTypeName}`.
+ *
+ * Fetched on demand for a single lookup type, never eagerly for all of them:
+ * a tenant can define dozens, and the configuration file lists only their
+ * definitions. Like `fetchRdmConfiguration`, the service URI comes from a
+ * server response and so passes through `toHttpsBase()`, which enforces the
+ * trusted-host allowlist.
+ */
+export async function fetchRdmLookupValues(
+	serviceUri: string,
+	rdmTenantId: string,
+	lookupTypeName: string,
+	token: string,
+): Promise<unknown> {
+	const root = toHttpsBase(serviceUri);
+	const url = `${root}/lookups/${encodeURIComponent(rdmTenantId)}/${encodeURIComponent(lookupTypeName)}`;
+	const res = await fetchWithTimeout(
+		url,
+		{
+			method: 'GET',
+			headers: reltioHeaders(token),
+		},
+		DEFAULT_TIMEOUT_MS,
+	);
+	if (res.status === 401) {
+		throw new ReltioApiError('Unauthorized (401)', 401);
+	}
+	if (!res.ok) {
+		throw new ReltioApiError(`Fetch RDM lookup values failed: HTTP ${res.status}`, res.status);
+	}
+	return (await res.json()) as unknown;
+}
+
+/**
+ * Create lookup values — `POST {serviceUri}/lookups/{rdmTenantId}`.
+ *
+ * `body` is the array `buildLookupValuesCreateBody` produces. A code that
+ * already exists is **replaced**, mappings included, so callers must refuse
+ * existing codes first. Not `…/_update`: that is the partial-update endpoint,
+ * which needs an `operation` on every mapping value and does not create codes.
+ *
+ * Returns the parsed response — documented as one `{ uri, value }` per stored
+ * code — or `undefined` when the body is not JSON.
+ *
+ * The service URI comes from a server response, so it passes through
+ * `toHttpsBase()` and its trusted-host allowlist like every RDM read.
+ */
+export async function postRdmLookupValues(
+	serviceUri: string,
+	rdmTenantId: string,
+	body: unknown,
+	token: string,
+): Promise<unknown> {
+	const root = toHttpsBase(serviceUri);
+	const url = `${root}/lookups/${encodeURIComponent(rdmTenantId)}`;
+	const res = await fetchWithTimeout(
+		url,
+		{
+			method: 'POST',
+			headers: reltioHeaders(token, { 'Content-Type': 'application/json' }),
+			body: JSON.stringify(body),
+		},
+		DEFAULT_TIMEOUT_MS,
+	);
+	if (res.status === 401) {
+		throw new ReltioApiError('Unauthorized (401)', 401);
+	}
+	if (!res.ok) {
+		let fullText = '';
+		try {
+			fullText = await res.text();
+		} catch {
+			/* ignore */
+		}
+		throw new ReltioApiError(formatRdmLookupUpdateFailureMessage(res.status, fullText), res.status);
+	}
+	try {
+		return JSON.parse(await res.text()) as unknown;
+	} catch {
+		// The write succeeded; the caller still re-fetches to see what was stored.
+		return undefined;
+	}
+}
+
+/**
+ * The service's own words when it has them. Unlike
+ * `formatPutConfigurationFailureMessage` there is no "fix your L3 JSON"
+ * framing: these values have no local file.
+ */
+function formatRdmLookupUpdateFailureMessage(httpStatus: number, bodyText: string): string {
+	const reltio = tryParseReltioConfigurationError(bodyText);
+	if (reltio && (reltio.errorMessage || reltio.errorDetailMessage)) {
+		const detail = [reltio.errorMessage, reltio.errorDetailMessage]
+			.filter((m, i, all): m is string => !!m && all.indexOf(m) === i)
+			.join(' ');
+		return `HTTP ${httpStatus}: ${detail}`;
+	}
+	const trimmed = bodyText.trim();
+	if (!trimmed) {
+		return `HTTP ${httpStatus}.`;
+	}
+	return `HTTP ${httpStatus}: ${
+		trimmed.length > MAX_ERROR_BODY_CHARS ? `${trimmed.slice(0, MAX_ERROR_BODY_CHARS)}…` : trimmed
+	}`;
+}
+
+/**
+ * Flatten the nested lookup response into one row per (code, source, value).
+ *
+ * Pure and total — anything unexpected contributes no rows rather than
+ * throwing. Two deliberate non-omissions, because both are meaningful states
+ * that a reader needs to see:
+ *   - a source mapped with an empty `values` array still yields a row, with an
+ *     empty value, so "mapped but unpopulated" is visible;
+ *   - an entry with no source mappings still yields a row, so the code itself
+ *     is visible.
+ * Row order follows the response, which is how Reltio itself presents them.
+ *
+ * Every row also carries its code's canonical value and the source that
+ * contributes it: the first mapping value with `canonicalValue: true`. Both are
+ * empty when the code has no canonical mapping.
+ */
+export function flattenRdmLookupValues(response: unknown): RdmLookupValueRow[] {
+	if (!Array.isArray(response)) {
+		return [];
+	}
+	const asText = (v: unknown): string => (typeof v === 'string' ? v : '');
+	const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object';
+	const rows: RdmLookupValueRow[] = [];
+
+	for (const entry of response) {
+		if (!isObject(entry)) {
+			continue;
+		}
+		const code = asText(entry.code);
+		const mappings = Array.isArray(entry.sourceMappings) ? entry.sourceMappings.filter(isObject) : [];
+
+		let canonicalValue = '';
+		let canonicalSource = '';
+		find: for (const mapping of mappings) {
+			for (const value of Array.isArray(mapping.values) ? mapping.values.filter(isObject) : []) {
+				if (value.canonicalValue === true) {
+					canonicalValue = asText(value.value);
+					canonicalSource = asText(mapping.source);
+					break find;
+				}
+			}
+		}
+		const row = (source: string, valueAtSource: string): RdmLookupValueRow => ({
+			code,
+			canonicalValue,
+			canonicalSource,
+			source,
+			valueAtSource,
+		});
+
+		if (!Array.isArray(entry.sourceMappings) || entry.sourceMappings.length === 0) {
+			rows.push(row('', ''));
+			continue;
+		}
+		for (const mapping of mappings) {
+			const source = asText(mapping.source);
+			const values = mapping.values;
+			if (!Array.isArray(values) || values.length === 0) {
+				rows.push(row(source, ''));
+				continue;
+			}
+			for (const value of values) {
+				if (!isObject(value)) {
+					continue;
+				}
+				rows.push(row(source, asText(value.value)));
+			}
+		}
+	}
+	return rows;
 }
 
 export interface EntitySearchOptions {

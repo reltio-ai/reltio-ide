@@ -28,8 +28,8 @@ const fs = require('fs');
 const path = require('path');
 
 // Pinned together: change the skills, bump skillsBundleVersion, update both values.
-const PINNED_SKILLS_BUNDLE_VERSION = '26';
-const PINNED_SKILLS_HASH = '5bd886e9fb68d2b2c45966d21e832cee79ab1c9fe5c3e399b9c828c512ff3e52';
+const PINNED_SKILLS_BUNDLE_VERSION = '30';
+const PINNED_SKILLS_HASH = '8dd4cd7cbba903a77b01a5d9b6c7d5dc744ab5986841ef87c048d87456458a6e';
 
 
 const repoRoot = path.join(__dirname, '..');
@@ -373,7 +373,11 @@ for (const folder of PLAYBOOKS) {
 {
 	const pkg = JSON.parse(read('package.json'));
 	const titles = pkg.contributes.commands.map(c => c.title);
-	const ids = new Set(pkg.contributes.commands.map(c => c.command));
+	// Settings are product names too: a skill may point the user at one, but only if it exists.
+	const ids = new Set([
+		...pkg.contributes.commands.map(c => c.command),
+		...Object.keys(pkg.contributes.configuration.properties),
+	]);
 	const all = [];
 	const walk13 = d => {
 		for (const e of fs.readdirSync(d, { withFileTypes: true })) {

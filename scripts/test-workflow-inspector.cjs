@@ -473,9 +473,12 @@ function textResponse(status, text) {
 		const workflowMenuCommands = menuItems
 			.filter(m => m.command && m.command.startsWith('reltio.') && m.command.toLowerCase().includes('workflow'))
 			.map(m => m.command);
-		for (const cmd of ['reltio.fetchWorkflows', 'reltio.refreshWorkflows', 'reltio.editWorkflowAdapterUrl']) {
+		for (const cmd of ['reltio.refreshWorkflows', 'reltio.editWorkflowAdapterUrl']) {
 			assert.ok(workflowMenuCommands.includes(cmd), `view/item/context must include menu entry for "${cmd}"`);
 		}
+		// Fetch Workflows has no button of its own: Refresh does the same work and
+		// hands over to the fetch command when no Adapter URL is saved yet.
+		assert.ok(!workflowMenuCommands.includes('reltio.fetchWorkflows'), 'Fetch Workflows must not have a menu entry');
 	}
 
 	// ── 13. Row tooltips ────────────────────────────────────────────────────
