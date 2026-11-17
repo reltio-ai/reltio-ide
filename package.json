@@ -1162,7 +1162,8 @@
     "openspec": "openspec",
     "test": "npm run compile && node scripts/run-unit-tests.cjs",
     "test:gate": "npm run compile && c8 node scripts/run-unit-tests.cjs && node scripts/test-module-coverage-check.cjs && node scripts/check-module-coverage.cjs",
-    "prebuild": "npm run test:gate",
+    "prebuild": "npm run test:gate && npm run gate:cleanup",
+    "gate:cleanup": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "bench:format-json": "node scripts/bench-format-json.cjs"
   },
   "dependencies": {
