@@ -4,7 +4,7 @@ How to turn proposals into real tests, with a standard prompt and a standard fai
 
 ## Before you start: ticket and branch
 
-Tests are never written on `main` or on the framework branch. Each piece of test work gets its own feature branch.
+The prompt below asks you for the ticket. Tests are never written on `main` or on the framework branch. Each piece of test work gets its own feature branch.
 
 - **Branch name:** `<TICKET>-<short-slug>`, for example `RP-123456-git-integration-tests`. The ticket prefix is required (repo convention `RP-<n>-<slug>`).
 - **Ticket:** provide the ticket number yourself, or ask the assistant to create one on your behalf. If you ask for a ticket, say which epic it belongs under; the assistant creates it in the Reltio Platform (RP) project and uses the new key as the prefix.
@@ -13,7 +13,7 @@ Tests are never written on `main` or on the framework branch. Each piece of test
 
 ## What you can ask for
 
-Point the assistant at a proposals JSON (a Drive link or the repo path, for example `docs/test-proposals/git-integration.json`) and choose a scope:
+The assistant asks for these when you paste the prompt. Give it a proposals JSON (a Drive link or the repo path, for example `docs/test-proposals/git-integration.json`) and choose a scope:
 
 - **A particular test case:** give one or more row IDs, for example `GIT-002`.
 - **The entire feature:** ask for the whole JSON; every row in it is in scope except rows marked `manual (Tier C)`, which get no script.
@@ -22,40 +22,63 @@ If you give a Drive link, the assistant reads that file and compares it with the
 
 ## Standard prompt
 
-Copy the block below, fill in the three fields, and give it to your AI assistant.
+Copy the whole block below and paste it into your AI assistant as is. There is nothing to fill in: the assistant asks you for the variables first and waits for your answers.
 
 ```
-Ticket: <RP-123456 | "create a ticket for me, epic RP-xxxxxx">
-Source: <Drive link or repo path of the area JSON, e.g. docs/test-proposals/git-integration.json>
-Scope: <"entire feature" | row IDs such as GIT-001, GIT-004>
+You are going to write regression tests for the Reltio IDE extension from the proposals
+in docs/test-proposals/. Follow these instructions exactly.
 
-Implement the regression tests for the rows in scope.
+STEP 1: Ask me for these variables in a single message, then wait. Do not guess any of
+them and do not start work until I have answered all three.
+  1. Source: the proposals JSON for the feature. A Drive link or a repo path such as
+     docs/test-proposals/git-integration.json.
+  2. Scope: either "entire feature" (every row in that JSON except rows whose
+     target_script is "manual (Tier C)"), or specific test case IDs such as GIT-001, GIT-004.
+  3. Ticket: the Jira ticket number I want as the branch prefix (for example RP-123456),
+     or "create one for me". If I ask you to create one, also ask me for the parent epic
+     key and create the ticket in the RP project before continuing.
 
-Rules (do not deviate):
-0. Create a new feature branch named <TICKET>-<short-slug> from the latest main (or the
-   framework branch if it has not merged). If I gave no ticket and did not ask you to
-   create one, stop and ask. Never work on main or on the framework branch.
-1. Read first: docs/test-proposals/README.md, ARCHITECTURE.md "Regression gate and
-   coverage", and two existing scripts in scripts/ for style. Each row's `source`,
-   `scenario` and `expected` fields are the spec; do not invent extra checks. If the
-   Source is a Drive link, check it against the repo JSON first and stop if they differ.
-2. Only add or change files in scripts/ (the new test script, its registration in
-   scripts/run-unit-tests.cjs). Never edit src/, existing test scripts, scripts/lib/,
-   package.json, workflows, .vscodeignore, the area JSON files or the workbook.
-   If a row exposes a product bug, pin nothing silently: stop and report it.
-3. Use the row's `target_script` name. Follow the existing structure: shebang,
-   'use strict', docblock naming the row IDs, plain node:assert, importDist from
-   scripts/lib/import-dist.cjs, existing helpers in scripts/lib, the shared fixture
-   samples/first-test.json, no new dependencies, no new oracle JSON, and a final
-   console.log('<script-name>: OK').
-4. Every assertion message starts with the row ID, e.g. 'GIT-001 #2: ...', so a failure
-   traces to a row and check number.
-5. Register the script in SCRIPTS (alphabetical), run npm run test:gate, then raise the
-   area floor in scripts/module-coverage.config.json only if coverage went up
-   (never lower it). If you add a src/ file, map it to an area.
-6. Run the failure simulation below for each row and show me the output.
-7. Tell me which rows you implemented and which script covers each. I update the
-   proposals JSON, the workbook and the Drive copy myself.
+STEP 2: Prepare.
+  a. If Source is a Drive link, read it and compare it with the matching JSON in the repo.
+     If they differ, stop and show me the difference. The repo copy is the source of truth.
+  b. Confirm the list of test case IDs in scope and the target script for each, and wait
+     for my "go".
+  c. Create a new feature branch named <TICKET>-<short-slug> from the latest main (from
+     the regression-framework branch if it has not merged yet). Never work on main or on
+     the framework branch.
+
+STEP 3: Write the tests. Rules (do not deviate):
+  1. Read first: docs/test-proposals/README.md, ARCHITECTURE.md "Regression gate and
+     coverage", and two existing scripts in scripts/ for style. Each row's `source`,
+     `scenario` and `expected` fields are the spec; do not invent extra checks.
+  2. Only add or change files in scripts/ (the new test script and its registration in
+     scripts/run-unit-tests.cjs). Never edit src/, existing test scripts, scripts/lib/,
+     package.json, workflows, .vscodeignore, the area JSON files or the workbook. If a row
+     exposes a product bug, pin nothing silently: stop and report it.
+  3. Use the row's target_script name. Follow the existing structure: shebang,
+     'use strict', docblock naming the row IDs, plain node:assert, importDist from
+     scripts/lib/import-dist.cjs, existing helpers in scripts/lib, the shared fixture
+     samples/first-test.json, no new dependencies, no new oracle JSON, and a final
+     console.log('<script-name>: OK').
+  4. Every assertion message starts with the row ID, for example 'GIT-001 #2: ...', so a
+     failure traces to a row and check number.
+  5. Register the script in SCRIPTS (alphabetical), run npm run test:gate, then raise the
+     area floor in scripts/module-coverage.config.json only if coverage went up (never
+     lower it). If you add a src/ file, map it to an area.
+
+STEP 4: Prove each test can fail. For every row implemented:
+  1. npm run compile && node scripts/<target_script> passes.
+  2. Make a one-line breaking change in the file named in the row's `source` (working
+     tree only, never committed), recompile, rerun the script. It must exit non-zero with
+     a message that starts with the row ID. If it passes, strengthen the test.
+  3. git checkout -- src/, recompile, rerun: green again.
+  4. Set the area floor to 100 temporarily, run node scripts/check-module-coverage.cjs,
+     confirm it prints FAIL <area>, then restore the floor.
+  Show me the failing and the restored output for each row.
+
+STEP 5: Report. List the rows implemented and the script covering each, the branch name,
+and anything you could not do. I update the proposals JSON, the workbook and the Drive
+copy myself, so do not touch them.
 ```
 
 ## Naming and file layout
