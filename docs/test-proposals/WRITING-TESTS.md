@@ -23,9 +23,19 @@ them and do not start work until I have answered all three.
 STEP 2: Prepare.
   a. If Source is a Drive link, read it and compare it with the matching JSON in the repo.
      If they differ, stop and show me the difference. The repo copy is the source of truth.
-  b. Confirm the list of test case IDs in scope and the target script for each, and wait
-     for my "go".
-  c. Create a new feature branch named <TICKET>-<short-slug> from the latest main (from
+  b. Check for existing tests before writing anything. For every row in scope, search
+     scripts/ (all test-*.cjs and the SCRIPTS registry) for a test that already covers the
+     same or similar behavior: grep for the function and file names in the row's `source`,
+     for the module it imports through importDist, and for key terms from its title and
+     scenario. Also read the row's `existing_coverage` and `target_script` as hints, but
+     verify against the actual scripts. Classify each row as:
+       - SAME: an existing assertion already checks it. Write nothing for it.
+       - SIMILAR: an existing script covers the same module or behavior in part. Plan to
+         modify that script instead of creating a new one.
+       - NEW: nothing relevant exists. Plan a new script named by target_script.
+  c. Show me a table of row ID, classification, the existing script and lines found (if
+     any), and the script you will change or create. Wait for my "go".
+  d. Create a new feature branch named <TICKET>-<short-slug> from the latest main (from
      the regression-framework branch if it has not merged yet). Never work on main or on
      the framework branch.
 
@@ -33,10 +43,16 @@ STEP 3: Write the tests. Rules (do not deviate):
   1. Read first: docs/test-proposals/README.md, ARCHITECTURE.md "Regression gate and
      coverage", and two existing scripts in scripts/ for style. Each row's `source`,
      `scenario` and `expected` fields are the spec; do not invent extra checks.
-  2. Only add or change files in scripts/ (the new test script and its registration in
-     scripts/run-unit-tests.cjs). Never edit src/, existing test scripts, scripts/lib/,
-     package.json, workflows, .vscodeignore, the area JSON files or the workbook. If a row
-     exposes a product bug, pin nothing silently: stop and report it.
+  2. Only add or change files in scripts/: new test scripts, their registration in
+     scripts/run-unit-tests.cjs, and existing test scripts only for rows classified
+     SIMILAR. Never edit src/, scripts/lib/, package.json, workflows, .vscodeignore, the
+     area JSON files or the workbook. If a row exposes a product bug, pin nothing
+     silently: stop and report it.
+  2a. When modifying an existing script (SIMILAR rows): extend it in its own style. Add
+     the new assertions and the row IDs to its docblock. Never delete, loosen or reorder
+     existing assertions, never change its fixtures or helpers in a way that alters what
+     it checks, and keep it green. Do not create a second script for behavior an
+     existing script already covers. If you are unsure whether to extend or create, ask me.
   3. Use the row's target_script name. Follow the existing structure: shebang,
      'use strict', docblock naming the row IDs, plain node:assert, importDist from
      scripts/lib/import-dist.cjs, existing helpers in scripts/lib, the shared fixture
@@ -56,9 +72,12 @@ STEP 4: Prove each test can fail. For every row implemented:
   3. git checkout -- src/, recompile, rerun: green again.
   4. Set the area floor to 100 temporarily, run node scripts/check-module-coverage.cjs,
      confirm it prints FAIL <area>, then restore the floor.
-  Show me the failing and the restored output for each row.
+  For a modified existing script, break the behavior your new assertions cover and
+  confirm that your new assertions are the ones that fail. Show me the failing and the
+  restored output for each row.
 
-STEP 5: Report. List the rows implemented and the script covering each, the branch name,
+STEP 5: Report. List the rows implemented and the script covering each, which rows were
+SAME (nothing written), which scripts were modified instead of created, the branch name,
 and anything you could not do. I update the proposals JSON, the workbook and the Drive
 copy myself, so do not touch them.
 ```
@@ -85,6 +104,7 @@ If you give a Drive link, the assistant reads that file and compares it with the
 
 - A regression script is named `scripts/test-<topic>.cjs`. `<topic>` is the source module or feature under test (`reltio-client`, `agent-skills`, `git-integration`), not necessarily the whole area. An area with several distinct topics has several scripts.
 - The row's `target_script` in the area JSON is authoritative. Rows that name an existing script (a `test-<openspec-change>.cjs`) extend that script instead of creating a new one. Rows marked `manual (Tier C)` get no script.
+- Before creating a script, check for an existing one that covers the same or similar behavior. If one does, extend it instead of creating a new script (the prompt makes the assistant do this check and show the result before writing anything).
 - Several rows may share one script. Keep one topic per file: if a script would mix unrelated sources or grow hard to review, split it and tell the developer which rows now map to which script, so they can update `target_script` in the JSON.
 - Every script is registered in `SCRIPTS` in `scripts/run-unit-tests.cjs`, alphabetical.
 
