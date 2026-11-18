@@ -1,19 +1,44 @@
 # Writing regression tests from the proposals
 
-How to turn rows of the proposals workbook into real tests, with a standard prompt and a standard failure simulation. Use these as written so every test follows the same structure.
+How to turn proposals into real tests, with a standard prompt and a standard failure simulation. Use these as written so every test follows the same structure.
+
+## Before you start: ticket and branch
+
+Tests are never written on `main` or on the framework branch. Each piece of test work gets its own feature branch.
+
+- **Branch name:** `<TICKET>-<short-slug>`, for example `RP-123456-git-integration-tests`. The ticket prefix is required (repo convention `RP-<n>-<slug>`).
+- **Ticket:** provide the ticket number yourself, or ask the assistant to create one on your behalf. If you ask for a ticket, say which epic it belongs under; the assistant creates it in the Reltio Platform (RP) project and uses the new key as the prefix.
+- **Base:** create the branch from the latest `main`. If the regression framework has not merged yet, branch from the framework branch instead and say so in the PR.
+- The assistant must stop and ask if no ticket is given and no ticket creation is requested. It must not invent a ticket number.
+
+## What you can ask for
+
+Point the assistant at a proposals JSON (a Drive link or the repo path, for example `docs/test-proposals/git-integration.json`) and choose a scope:
+
+- **A particular test case:** give one or more row IDs, for example `GIT-002`.
+- **The entire feature:** ask for the whole JSON; every row in it is in scope except rows marked `manual (Tier C)`, which get no script.
+
+If you give a Drive link, the assistant reads that file and compares it with the matching JSON in the repo. If the two differ, the assistant stops and reports the difference instead of choosing one. The repo copy on your feature branch is the source of truth.
 
 ## Standard prompt
 
-Copy the block below, fill in `<area>` and the row IDs, and give it to your AI assistant.
+Copy the block below, fill in the three fields, and give it to your AI assistant.
 
 ```
-Implement the regression tests for these rows of docs/test-proposals/<area>.json:
-<ID-001, ID-004, ...>
+Ticket: <RP-123456 | "create a ticket for me, epic RP-xxxxxx">
+Source: <Drive link or repo path of the area JSON, e.g. docs/test-proposals/git-integration.json>
+Scope: <"entire feature" | row IDs such as GIT-001, GIT-004>
+
+Implement the regression tests for the rows in scope.
 
 Rules (do not deviate):
+0. Create a new feature branch named <TICKET>-<short-slug> from the latest main (or the
+   framework branch if it has not merged). If I gave no ticket and did not ask you to
+   create one, stop and ask. Never work on main or on the framework branch.
 1. Read first: docs/test-proposals/README.md, ARCHITECTURE.md "Regression gate and
    coverage", and two existing scripts in scripts/ for style. Each row's `source`,
-   `scenario` and `expected` fields are the spec; do not invent extra checks.
+   `scenario` and `expected` fields are the spec; do not invent extra checks. If the
+   Source is a Drive link, check it against the repo JSON first and stop if they differ.
 2. Only add or change files in scripts/ (the new test script, its registration in
    scripts/run-unit-tests.cjs) and the row `status` in the area JSON. Never edit src/,
    existing test scripts, scripts/lib/, package.json, workflows or .vscodeignore.
@@ -30,7 +55,8 @@ Rules (do not deviate):
    (never lower it). If you add a src/ file, map it to an area.
 6. Set the rows' status to Implemented in the JSON and regenerate the workbook with
    python docs/test-proposals/build-workbook.py.
-7. Then run the failure simulation below for each row and show me the output.
+7. Run the failure simulation below for each row and show me the output.
+8. Sync the changed workbook and JSON files to the Drive folder (see "Syncing to Drive").
 ```
 
 ## Naming and file layout
@@ -50,6 +76,16 @@ A test that has never failed proves nothing. Run this for every row you implemen
 4. **Restore:** `git checkout -- src/` and `npm run compile`, then rerun the script and confirm it is green.
 5. **Gate-level check:** temporarily set the area's floor to 100 in `scripts/module-coverage.config.json` and run `node scripts/check-module-coverage.cjs`. It must print `FAIL <area>`. Restore the floor afterwards.
 6. **PR evidence:** paste the failing output and the restored green run into the PR description.
+
+## Syncing to Drive
+
+The team reads the proposals from the shared Drive folder `reltio-ide-test-proposals` (https://drive.google.com/drive/folders/1v04wSGzeXvheuDuamMGAjKYVFu1atZiM). After **any** change to the workbook or to an area JSON, update the Drive copy.
+
+- **What to sync:** `ide-regression-test-proposals.xlsx` and every area JSON that changed.
+- **How:** upload directly to the folder through the Drive connector (`create_file` with `parentId` set to the folder ID `1v04wSGzeXvheuDuamMGAjKYVFu1atZiM` and `disableConversionToGoogleType` set to true, so the xlsx stays an xlsx). Do not copy through the locally mounted Drive path.
+- **Order:** regenerate the workbook from the JSON files first, then upload, so the two never disagree.
+- **Replacing a file:** the connector can create a file or change its metadata, but it cannot replace the content of an existing file. If a file with the same name is already in the folder, the assistant says so before uploading and does not leave two files with the same name unannounced; the owner removes the superseded copy or uploads the new content as a new version in the Drive UI.
+- **Report back:** list each file synced with its Drive link, and any file that could not be synced.
 
 ## Related
 
