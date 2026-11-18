@@ -502,5 +502,19 @@
     "existing_coverage": "None",
     "target_script": "scripts/test-business-configuration-regression.cjs",
     "status": "Proposed"
+  },
+  {
+    "id": "BIZCFG-037",
+    "module": "Business Configuration",
+    "source": "resources/velocity-packs/manifest.json; resources/reltio-agent-assets.json; scripts/lib/validate-velocity-packs.cjs",
+    "title": "Manifest byte counts and assets versions stay consistent",
+    "category": "Technical",
+    "subtype": "Contract",
+    "scenario": "Reuse validateVelocityPacks, then add per-pack check: declared bytes equal statSync size of each BusinessConfig.json; assets JSON has non-empty skillsBundleVersion and velocityPacksBundleVersion. Existing test-skills-and-enablement-packs-library.cjs checks only the aggregate sum.",
+    "expected": "Per-pack declared bytes equal file size, with the failing pack id named; both version fields present.",
+    "priority": "P3",
+    "existing_coverage": "Partial",
+    "target_script": "scripts/test-agent-skills-regression.cjs",
+    "status": "Proposed"
   }
 ]

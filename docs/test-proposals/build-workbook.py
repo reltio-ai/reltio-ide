@@ -27,7 +27,6 @@ AREAS = [
     ("Git Integration", "git-integration.json", "GIT"),
     ("Workflows", "workflows.json", "WF"),
     ("LCA", "lca.json", "LCA"),
-    ("AI Agent & Skills", "ai-agent-skills.json", "AGENT"),
     ("Common Utils", "common-utils.json", "UTIL"),
     ("Extension Activation", "extension-activation.json", "ACT"),
 ]

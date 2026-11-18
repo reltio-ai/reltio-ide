@@ -91,6 +91,8 @@
 
 ### Task 3b: Group coverage by feature area (owner request, supersedes directory modules)
 
+> Note (2026-11-18): AI Agent & Skills was folded into Common Utils (source files) and into Workflows, LCA, Business Configuration and Common Utils (proposals) on 2026-11-18 at the owner's request; 8 areas remain.
+
 Owner chose feature-area grouping over `src/` directories. Areas, in match order (first match wins; patterns are paths relative to `src/`; `dir/**` = prefix, `*` = any chars except `/`, otherwise exact file):
 
 1. **Workflows**: `workflow/**`, `providers/bpmnContentProvider.ts`, `api/workflowAdapterClient.ts`, `tree/workflowNodes.ts`, `tree/processDefinitionRows.ts`, `workspace/workflow*.ts`
