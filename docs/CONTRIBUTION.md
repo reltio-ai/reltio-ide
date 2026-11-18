@@ -155,7 +155,7 @@ Scaffolding without the agent: `npm run openspec -- new change "<name>"`. For JS
 
 After pulling this change, run `npm ci`: the gate needs the new `c8` devDependency, and without it `npm run build` fails with "c8 not found".
 
-Proposed regression tests per feature area (one JSON per area plus a generated XLSX to review and edit) live in `docs/test-proposals/`; they are later used to add tests to this framework.
+Proposed regression tests per feature area (one JSON per area plus a generated XLSX to review and edit) live in `docs/test-proposals/`; they are later used to add tests to this framework. To implement rows as tests, use the standard prompt and failure simulation in [docs/test-proposals/WRITING-TESTS.md](test-proposals/WRITING-TESTS.md).
 
 ---
 
