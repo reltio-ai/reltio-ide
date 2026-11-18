@@ -12,7 +12,7 @@ python docs/test-proposals/build-workbook.py
 
 Options: `--dir DIR` (JSON folder, default `docs/test-proposals`), `--out FILE` (default `docs/test-proposals/regression-test-proposals.xlsx`), `--allow-missing` (skip area files that do not exist and skip the per-category minimum check). Requires Python 3 and `openpyxl`.
 
-Validation collects every violation, prints them and exits non-zero without writing the workbook. Without `--allow-missing`, all 9 files must exist and each needs at least one Technical, one Functional and one Non-functional row. An area may opt out of a category with the object form:
+Validation collects every violation, prints them and exits non-zero without writing the workbook. Without `--allow-missing`, all 8 files must exist and each needs at least one Technical, one Functional and one Non-functional row. An area may opt out of a category with the object form:
 
 ```json
 {"not_applicable": {"Non-functional": "reason"}, "rows": [ ... ]}
@@ -30,7 +30,6 @@ The reason must be non-empty. A plain array of rows is also accepted.
 | Git Integration | `git-integration.json` | `GIT` |
 | Workflows | `workflows.json` | `WF` |
 | LCA | `lca.json` | `LCA` |
-| AI Agent & Skills | `ai-agent-skills.json` | `AGENT` |
 | Common Utils | `common-utils.json` | `UTIL` |
 | Extension Activation | `extension-activation.json` | `ACT` |
 

@@ -50,14 +50,6 @@
 			"floor": 73
 		},
 		{
-			"name": "AI Agent & Skills",
-			"patterns": [
-				"workspace/agentSkillDiscovery.ts",
-				"workspace/reltioAgentSync.ts"
-			],
-			"floor": 94
-		},
-		{
 			"name": "Tenant Explorer & UX",
 			"patterns": [
 				"tree/**",
@@ -92,9 +84,11 @@
 			"name": "Common Utils",
 			"patterns": [
 				"util/**",
+				"workspace/agentSkillDiscovery.ts",
+				"workspace/reltioAgentSync.ts",
 				"api/reltioClient.ts"
 			],
-			"floor": 79
+			"floor": 86
 		},
 		{
 			"name": "Extension Activation",
