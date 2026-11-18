@@ -12,7 +12,7 @@ python docs/test-proposals/build-workbook.py
 
 Options: `--dir DIR` (JSON folder, default `docs/test-proposals`), `--out FILE` (default `docs/test-proposals/regression-test-proposals.xlsx`), `--allow-missing` (skip area files that do not exist and skip the per-category minimum check). Requires Python 3 and `openpyxl`.
 
-Validation collects every violation, prints them and exits non-zero without writing the workbook. Without `--allow-missing`, all 8 files must exist and each needs at least one Technical, one Functional and one Non-functional row. An area may opt out of a category with the object form:
+Validation collects every violation, prints them and exits non-zero without writing the workbook. Without `--allow-missing`, all 9 files must exist and each needs at least one Technical, one Functional and one Non-functional row. An area may opt out of a category with the object form:
 
 ```json
 {"not_applicable": {"Non-functional": "reason"}, "rows": [ ... ]}
@@ -32,6 +32,9 @@ The reason must be non-empty. A plain array of rows is also accepted.
 | LCA | `lca.json` | `LCA` |
 | Common Utils | `common-utils.json` | `UTIL` |
 | Extension Activation | `extension-activation.json` | `ACT` |
+| RDM | `rdm.json` | `RDM` |
+
+The first 8 are coverage areas defined in `scripts/module-coverage.config.json`. RDM is a ninth, proposal-only sheet: its code is not on main yet (branch `origin/RP-205759-031126`), so it is not in the coverage config and the Summary sheet shows `n/a` for its baseline, floor and target. When RDM merges to main, add an `RDM` area with patterns `rdm/**`, `tree/rdmSubtree.ts`, `workspace/rdmRelocation.ts` to the config BEFORE the `tree/**` pattern of Tenant Explorer & UX, otherwise the unmapped `rdm/` files fail the gate; then add its baseline to `coverage-baseline.json` and drop RDM from `EXTRA_AREAS` in `build-workbook.py`.
 
 ## Row schema
 

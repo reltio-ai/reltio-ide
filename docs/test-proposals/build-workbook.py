@@ -29,7 +29,14 @@ AREAS = [
     ("LCA", "lca.json", "LCA"),
     ("Common Utils", "common-utils.json", "UTIL"),
     ("Extension Activation", "extension-activation.json", "ACT"),
+    ("RDM", "rdm.json", "RDM"),
 ]
+
+# Areas that are not in the coverage config yet: Summary shows the text and n/a for coverage columns.
+EXTRA_AREAS = {
+    "RDM": "Not on main yet. Source: branch origin/RP-205759-031126 "
+           "(rdm/**, tree/rdmSubtree.ts, workspace/rdmRelocation.ts)",
+}
 
 KEYS = ["id", "module", "source", "title", "category", "subtype", "scenario",
         "expected", "priority", "existing_coverage", "target_script", "status"]
@@ -80,6 +87,9 @@ def read_config():
     base = load_json(BASELINE_PATH, "coverage baseline").get("areas", {})
     info = {}
     for name, _, _ in AREAS:
+        if name in EXTRA_AREAS:
+            info[name] = {"patterns": [EXTRA_AREAS[name]], "floor": "n/a", "baseline": "n/a", "target": "n/a"}
+            continue
         if name not in by_name:
             fail("area '%s' missing from %s" % (name, CONFIG_PATH))
         if name not in base:
@@ -261,7 +271,7 @@ def add_summary(wb, areas_present, target, info):
         ws.cell(row=r, column=2, value="\n".join(i["patterns"]))
         ws.cell(row=r, column=3, value=i["baseline"])
         ws.cell(row=r, column=4, value=i["floor"])
-        ws.cell(row=r, column=5, value=target)
+        ws.cell(row=r, column=5, value=i.get("target", target))
         if area in areas_present:
             sh = q(area)
             for col, cat in ((6, "Technical"), (7, "Functional"), (8, "Non-functional")):
