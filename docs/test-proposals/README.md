@@ -10,7 +10,7 @@ Per-area JSON files (one per product area) hold proposed regression tests. `buil
 python docs/test-proposals/build-workbook.py
 ```
 
-Options: `--dir DIR` (JSON folder, default `docs/test-proposals`), `--out FILE` (default `docs/test-proposals/regression-test-proposals.xlsx`), `--allow-missing` (skip area files that do not exist and skip the per-category minimum check). Requires Python 3 and `openpyxl`.
+Options: `--dir DIR` (JSON folder, default `docs/test-proposals`), `--out FILE` (default `docs/test-proposals/ide-regression-test-proposals.xlsx`), `--allow-missing` (skip area files that do not exist and skip the per-category minimum check). Requires Python 3 and `openpyxl`.
 
 Validation collects every violation, prints them and exits non-zero without writing the workbook. Without `--allow-missing`, all 9 files must exist and each needs at least one Technical, one Functional and one Non-functional row. An area may opt out of a category with the object form:
 

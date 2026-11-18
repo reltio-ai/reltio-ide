@@ -10,7 +10,7 @@
     "expected": "1) false for root itself, outside, sibling-prefix and different-drive paths; true for nested and normalized in-root paths. 2) Path is [collection, index, 'lifecycleActions'] or undefined; edited text differs only inside that type's lifecycleActions and still parses as JSON.",
     "priority": "P1",
     "existing_coverage": "None",
-    "target_script": "scripts/test-lca-regression.cjs",
+    "target_script": "scripts/test-lca.cjs",
     "status": "Proposed"
   },
   {
@@ -24,7 +24,7 @@
     "expected": "1) ok true; aws lambda update-function-code --function-name hcp-before-save --zip-file fileb://<abs artifact>; summary has no credential values. 2) gcloud functions deploy <name> --gen2 --region us-central1 --source <artifact dir>; cwd is the resolved working directory. 3) Only real-valued keys returned; placeholders, empty, quoted-empty, comment and malformed lines skipped; key names only, never values.",
     "priority": "P2",
     "existing_coverage": "None",
-    "target_script": "scripts/test-lca-regression.cjs",
+    "target_script": "scripts/test-lca.cjs",
     "status": "Proposed"
   },
   {
@@ -52,7 +52,7 @@
     "expected": "1) ok false for both with Azure-unresolved / native-no-cloud-CLI messages; no plan or env returned. 2) ok false with missing naming AWS_PROFILE or AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN respectively; no .env value in the message. 3) error shows [redacted]; nextAction differs per class and says not to paste secrets; unknown case says do not update L3 until deploy succeeds.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-lca-regression.cjs",
+    "target_script": "scripts/test-lca.cjs",
     "status": "Proposed"
   },
   {
@@ -108,7 +108,7 @@
     "expected": "1) All return ok false with the unsupported-characters message; 'hcp.before-save_1' accepted. 2) Outside paths and the directory itself give 'must be a file inside the working directory'; .txt gives 'must be a .jar or .zip file'; traversal never reaches CLI args. 3) secretValues holds only values of 8+ chars; output shows [redacted] per secret and is cut to 2000 chars; shorter values not scrubbed.",
     "priority": "P1",
     "existing_coverage": "None",
-    "target_script": "scripts/test-lca-regression.cjs",
+    "target_script": "scripts/test-lca.cjs",
     "status": "Proposed"
   },
   {
@@ -150,7 +150,7 @@
     "expected": "Garbage and mismatched files return undefined without throwing; a partial file is merged over emptyProjectContext and implementationLanguage is forced to Java.",
     "priority": "P3",
     "existing_coverage": "None",
-    "target_script": "scripts/test-lca-regression.cjs",
+    "target_script": "scripts/test-lca.cjs",
     "status": "Proposed"
   }
 ]

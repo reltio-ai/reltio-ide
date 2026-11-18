@@ -10,7 +10,7 @@
     "expected": "1) Zero declared-but-unregistered ids (today all 80 are registered); a new command without a handler fails with the id named. 2) Only allowlisted ids are registered-but-undeclared; a new handler with no package.json entry fails unless added to the allowlist deliberately. 3) No dangling menu or welcome-link command; renaming a command without updating menus fails.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-extension-activation-regression.cjs",
+    "target_script": "scripts/test-extension-activation.cjs",
     "status": "Proposed"
   },
   {
@@ -24,7 +24,7 @@
     "expected": "1) Rebuild runs for *.reltio.json, L3.json and BusinessConfig.json (basename case-insensitive, forward-slash paths), not for package.json; BPMN files take the BPMN diagnostics branch. 2) Rebuild counts 1, 1 and 1; tree provider onL3DocumentChanged called per edit event; no rebuild for non-Reltio docs. 3) Allowlist is set synchronously at activation start and tracks live setting changes, so no token is attached under a stale host list. 4) classic: no status bar item and no guide panel; default: status bar created and guide opened once for a workspace with zero environments.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-extension-activation-regression.cjs",
+    "target_script": "scripts/test-extension-activation.cjs",
     "status": "Proposed"
   },
   {
@@ -38,7 +38,7 @@
     "expected": "1) Every declared setting is read (all 12 referenced today) and no code reads an undeclared reltio.* key. 2) All seven events present and main points at the bundle; removing onStartupFinished fails because the setup guide auto-open would never run in an empty workspace.",
     "priority": "P2",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-extension-activation-regression.cjs",
+    "target_script": "scripts/test-extension-activation.cjs",
     "status": "Proposed"
   },
   {
@@ -52,7 +52,7 @@
     "expected": "1) Exactly one build site and one setIndex per provider; a provider wired directly in a change listener fails. 2) Order matches ARCHITECTURE.md Application Bootstrap; moving trust setup after store creation, or auto-apply before providers exist, is flagged for review.",
     "priority": "P2",
     "existing_coverage": "None",
-    "target_script": "scripts/test-extension-activation-regression.cjs",
+    "target_script": "scripts/test-extension-activation.cjs",
     "status": "Proposed"
   },
   {
@@ -66,7 +66,7 @@
     "expected": "1) Zero undisposed disposables; a new watcher or listener not pushed fails. Requires extending scripts/lib/vscode-stub.cjs (not available today). 2) Untrusted workspace creates zero token-file watchers; re-setup never leaves two live watchers for the same file; no timer fires after dispose.",
     "priority": "P2",
     "existing_coverage": "None",
-    "target_script": "scripts/test-extension-activation-regression.cjs",
+    "target_script": "scripts/test-extension-activation.cjs",
     "status": "Proposed"
   },
   {
@@ -80,7 +80,7 @@
     "expected": "1) Resolves cleanly with null guards; declared commands still resolve to handlers (no 'command not found'). 2) (a) 'tenant' with layout migration started off the critical path, (b) 'git', (c) undefined; tenant takes priority over git restore. 3) (a) no sync, (b) one sync with force false; unrelated keys never trigger sync. 4) Pending BPMN update cancelled (no late diagnostics) and bpmnDiagnosticsManager.clear called; Reltio doc close calls diagnosticsManager.clear(uri).",
     "priority": "P1",
     "existing_coverage": "None",
-    "target_script": "scripts/test-extension-activation-regression.cjs",
+    "target_script": "scripts/test-extension-activation.cjs",
     "status": "Proposed"
   },
   {
@@ -94,7 +94,7 @@
     "expected": "1) Runs exactly once only for (true, trusted, folder); default is false; a thrown error is caught and logged via console.error and activation resolves. 2) A: session set in TokenStore and rotated refresh token saved; B and C: refresh token deleted; tree refreshed after; activation does not wait on this. 3) Migration failure shows a warning (migrationFailureMessage); agent sync failure offers 'Resync Agent Assets'; session-restore scan failure is swallowed; apply-defaults failure is console.error; activate() resolves in every case.",
     "priority": "P1",
     "existing_coverage": "None",
-    "target_script": "scripts/test-extension-activation-regression.cjs",
+    "target_script": "scripts/test-extension-activation.cjs",
     "status": "Proposed"
   },
   {
@@ -108,7 +108,7 @@
     "expected": "1) First activation opens the guide and sets reltio.setupGuideAutoOpened; second does not; a workspace with at least one environment never opens it. 2) (a) and (b) set the flag true; (c) leaves it unset/false; an already-true flag is never reset.",
     "priority": "P2",
     "existing_coverage": "None",
-    "target_script": "scripts/test-extension-activation-regression.cjs",
+    "target_script": "scripts/test-extension-activation.cjs",
     "status": "Proposed"
   },
   {
@@ -150,7 +150,7 @@
     "expected": "1) No handler runs after dispose for the KeyedDebouncer, token reload and override timers (all registered). NOTE: the plain debounceTimer for rebuildUriIndex is not in subscriptions today, so expect it to fire; decide whether to fix or document before implementing. 2) Characterize current behavior: .reltio.json matches with backslashes; L3.json / BusinessConfig.json by basename use split(/[\\/]/) which only splits on forward slash, so backslash paths may not match. Confirm intent with the owner before pinning.",
     "priority": "P3",
     "existing_coverage": "None",
-    "target_script": "scripts/test-extension-activation-regression.cjs",
+    "target_script": "scripts/test-extension-activation.cjs",
     "status": "Proposed"
   },
   {
@@ -164,7 +164,7 @@
     "expected": "1) activate() resolves while those promises are still pending (they are void-launched); only the environment scans for walkthrough/guide gating are awaited inline.",
     "priority": "P3",
     "existing_coverage": "None",
-    "target_script": "scripts/test-extension-activation-regression.cjs",
+    "target_script": "scripts/test-extension-activation.cjs",
     "status": "Proposed"
   }
 ]

@@ -10,7 +10,7 @@
     "expected": "1) ast is a non-null node, model.entityTypes[0].uri set, errors list trailing commas, no throw. 2) model is {}, no exception, UriIndex.build runs. 3) Result always valid JSON with the remaining elements, no dangling comma, sole delete keeps brackets. 4) Empty: offset at closing bracket, isEmpty true; populated: after last element, isEmpty false; missing or non-array: -1, isEmpty true. 5) Valid input becomes 2-space JSON with one trailing newline and no BOM; empty, whitespace, invalid (and JSONC) input returned unchanged without throwing.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-business-configuration-regression.cjs",
+    "target_script": "scripts/test-business-configuration.cjs",
     "status": "Proposed"
   },
   {
@@ -24,7 +24,7 @@
     "expected": "1) Captured WorkspaceEdit holds only a range delete or label+uri replacements (new uri keeps prefix, swaps last segment); no range spans the whole document (CLAUDE.md invariant). 2) Returns false with no edit. 3) Both return false, show 'lifecycleActions is read-only' and apply no edit. 4) Label 'EntityType8'; each skeleton has uri 'configuration/<family>/<label>' and its mandatory fields. The stub may need applyEdit support.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-business-configuration-regression.cjs",
+    "target_script": "scripts/test-business-configuration.cjs",
     "status": "Proposed"
   },
   {
@@ -66,7 +66,7 @@
     "expected": "1) Only B's entries remain in definitions, virtualDefinitions and references. 2) getAllUnresolved returns only the Missing reference (one per referencing node). 3) getDefinition('<refAttrUri>/attributes/<name>') resolves to B's attribute and getRealUri maps back; cycles and long chains terminate (MAX_VIRTUAL_DEPTH 5). 4) virtualDefinitions holds the ref URI with realUri = mapping URI; getDefinitionNode returns the outputMapping array value node.",
     "priority": "P2",
     "existing_coverage": "None",
-    "target_script": "scripts/test-business-configuration-regression.cjs",
+    "target_script": "scripts/test-business-configuration.cjs",
     "status": "Proposed"
   },
   {
@@ -80,7 +80,7 @@
     "expected": "1) warning/error: one 'Unresolved URI: <uri>' diagnostic, source 'reltio', matching severity, range excludes quotes; 'off': empty list; unknown falls back to Warning. 2) Saves only .reltio.json and L3.json docs; disabled editor-switch setting skips; blur saves nothing unless enabled and ignores focus-gain. If the stub lacks DiagnosticCollection or event emitters, run as manual (Tier C).",
     "priority": "P2",
     "existing_coverage": "None",
-    "target_script": "scripts/test-business-configuration-regression.cjs",
+    "target_script": "scripts/test-business-configuration.cjs",
     "status": "Proposed"
   },
   {
@@ -94,7 +94,7 @@
     "expected": "1) Illegal characters become '_', length capped at 80, empty becomes 'unknown'; parse returns the same timestamp; malformed names return undefined. 2) Body is JSON.stringify(configuration, null, tab) plus newline; rewrite is idempotent; list is newest first and ignores non-snapshot names; clear removes files but keeps subfolders; missing directory yields [] without throwing.",
     "priority": "P2",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-business-configuration-regression.cjs",
+    "target_script": "scripts/test-business-configuration.cjs",
     "status": "Proposed"
   },
   {
@@ -108,7 +108,7 @@
     "expected": "1) Per-pack declared bytes equal file size, with the failing pack id named; both version fields present.",
     "priority": "P3",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-agent-skills-regression.cjs",
+    "target_script": "scripts/test-agent-skills.cjs",
     "status": "Proposed"
   },
   {
@@ -122,7 +122,7 @@
     "expected": "1) New URI resolves via getDefinition, getReferences lists it, getAllUnresolved no longer reports it; removing the definition makes it unresolved again. 2) Result is valid JSON with a new array holding one skeleton with the parent URI prefix and label 'Attribute1' or 'MatchGroup1'; other properties and formatting unchanged.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-business-configuration-regression.cjs",
+    "target_script": "scripts/test-business-configuration.cjs",
     "status": "Proposed"
   },
   {
@@ -150,7 +150,7 @@
     "expected": "1) No outbound call for missing or sentinel token (signed-out); UntrustedHostError becomes failed/untrusted-host; network error becomes failed/network; handleVerificationRequest never throws. 2) Name has no path separators or reserved characters so joinPath stays in historyDir and still ends .reltio.json.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-business-configuration-regression.cjs",
+    "target_script": "scripts/test-business-configuration.cjs",
     "status": "Proposed"
   },
   {
@@ -164,7 +164,7 @@
     "expected": "1) Each pass within a generous CI budget (for example under 2s) and definitions equal the type count; fails if index build turns quadratic. 2) 40x takes at most about 80x the 1x time; output equals JSON.stringify(parse, null, 2) plus newline. 3) Under 1s, 1000 nodes, edges deduped per sorted pair, no duplicate edge ids.",
     "priority": "P2",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-business-configuration-regression.cjs",
+    "target_script": "scripts/test-business-configuration.cjs",
     "status": "Proposed"
   },
   {
@@ -178,7 +178,7 @@
     "expected": "1) win32/darwin: case-insensitive trim gives folder rows ['DP']; linux strict; matchVerification accepts backslash and mixed-case paths inside the root. 2) Result valid JSON, other lines keep original line endings, insertion indent follows the parent property indent.",
     "priority": "P2",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-business-configuration-regression.cjs",
+    "target_script": "scripts/test-business-configuration.cjs",
     "status": "Proposed"
   }
 ]
