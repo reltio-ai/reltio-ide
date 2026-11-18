@@ -33,6 +33,13 @@ Rules (do not deviate):
 7. Then run the failure simulation below for each row and show me the output.
 ```
 
+## Naming and file layout
+
+- A regression script is named `scripts/test-<topic>-regression.cjs`. `<topic>` is the source module or feature under test (`reltio-client`, `agent-skills`, `git-integration`), not necessarily the whole area. An area with several distinct topics has several scripts.
+- The row's `target_script` in the area JSON is authoritative. Rows that name an existing script (a `test-<openspec-change>.cjs`) extend that script instead of creating a new one. Rows marked `manual (Tier C)` get no script.
+- Several rows may share one script. Keep one topic per file: if a script would mix unrelated sources or grow hard to review, split it and update the `target_script` of the affected rows in the JSON, then regenerate the workbook.
+- Every script is registered in `SCRIPTS` in `scripts/run-unit-tests.cjs`, alphabetical.
+
 ## Standard failure simulation
 
 A test that has never failed proves nothing. Run this for every row you implement.
