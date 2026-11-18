@@ -36,6 +36,10 @@ The reason must be non-empty. A plain array of rows is also accepted.
 
 The first 8 are coverage areas defined in `scripts/module-coverage.config.json`. RDM is a ninth, proposal-only sheet: its code is not on main yet (branch `origin/RP-205759-031126`), so it is not in the coverage config and the Summary sheet shows `n/a` for its baseline, floor and target. When RDM merges to main, add an `RDM` area with patterns `rdm/**`, `tree/rdmSubtree.ts`, `workspace/rdmRelocation.ts` to the config BEFORE the `tree/**` pattern of Tenant Explorer & UX, otherwise the unmapped `rdm/` files fail the gate; then add its baseline to `coverage-baseline.json` and drop RDM from `EXTRA_AREAS` in `build-workbook.py`.
 
+## Consolidated rows
+
+Each row is a test case that may club several related checks, listed as numbered items in Scenario and Expected result. The proposals were consolidated from a longer list: rows already covered by an existing test and of low priority were dropped, and the rest were clubbed by topic and category (Security rows are never merged into non-Security rows). Priority, existing coverage and ID describe the clubbed row: priority is the highest of the clubbed checks, and existing coverage is Covered only when all clubbed checks are covered.
+
 ## Row schema
 
 Each row is an object with exactly these keys, all non-empty strings.

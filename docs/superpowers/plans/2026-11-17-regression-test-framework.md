@@ -92,6 +92,7 @@
 ### Task 3b: Group coverage by feature area (owner request, supersedes directory modules)
 
 > Note (2026-11-18): AI Agent & Skills was folded into Common Utils (source files) and into Business Configuration and Common Utils (proposals) on 2026-11-18 at the owner's request; 8 areas remain.
+> Note (2026-11-18): proposals were later consolidated into fewer multi-check test cases at the owner's request (305 rows down to 106 across 9 sheets); row counts quoted in this plan refer to the earlier list.
 
 Owner chose feature-area grouping over `src/` directories. Areas, in match order (first match wins; patterns are paths relative to `src/`; `dir/**` = prefix, `*` = any chars except `/`, otherwise exact file):
 
