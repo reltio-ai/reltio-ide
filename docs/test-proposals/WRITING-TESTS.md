@@ -17,8 +17,8 @@ them and do not start work until I have answered all three.
   2. Scope: either "entire feature" (every row in that JSON except rows whose
      target_script is "manual (Tier C)"), or specific test case IDs such as GIT-001, GIT-004.
   3. Ticket: the Jira ticket number I want as the branch prefix (for example RP-123456),
-     or "create one for me". If I ask you to create one, also ask me for the parent epic
-     key and create the ticket in the RP project before continuing.
+     or "create one for me". If I ask you to create one, create it in the RP project with
+     parent epic RP-189333 (do not ask me for the epic) before continuing.
 
 STEP 2: Prepare.
   a. If Source is a Drive link, read it and compare it with the matching JSON in the repo.
@@ -68,7 +68,7 @@ copy myself, so do not touch them.
 The prompt above asks you for the ticket. Tests are never written on `main` or on the framework branch. Each piece of test work gets its own feature branch.
 
 - **Branch name:** `<TICKET>-<short-slug>`, for example `RP-123456-git-integration-tests`. The ticket prefix is required (repo convention `RP-<n>-<slug>`).
-- **Ticket:** provide the ticket number yourself, or ask the assistant to create one on your behalf. If you ask for a ticket, say which epic it belongs under; the assistant creates it in the Reltio Platform (RP) project and uses the new key as the prefix.
+- **Ticket:** provide the ticket number yourself, or ask the assistant to create one on your behalf. If you ask for a ticket, the assistant creates it in the Reltio Platform (RP) project under the parent epic RP-189333 and uses the new key as the prefix.
 - **Base:** create the branch from the latest `main`. If the regression framework has not merged yet, branch from the framework branch instead and say so in the PR.
 - The assistant must stop and ask if no ticket is given and no ticket creation is requested. It must not invent a ticket number.
 
