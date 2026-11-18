@@ -22,6 +22,7 @@ Catch regressions in every module when new features land. Tests run before the b
 5. Proposed tests cover technical, functional and non-functional categories.
 6. No existing functionality changes. No edits under `src/`, no edits to existing test scripts or `scripts/lib/`, no change to existing script bodies in `package.json`, and no change to the VSIX file list. The `prebuild` hook is the one requested build-behavior change, and `release.yml` stays untouched.
 7. Revision (2026-11-18): AI Agent & Skills was folded into Common Utils (source files) and into Business Configuration and Common Utils (proposals) at the owner's request; 8 areas remain.
+8. Revision (2026-11-18): the proposal workbook was consolidated into fewer multi-check test cases at the owner's request (305 rows down to 106 across 9 sheets); counts quoted elsewhere in this document refer to the earlier list.
 
 ## Current state (verified from repo)
 
