@@ -21,8 +21,8 @@ them and do not start work until I have answered all three.
      parent epic RP-189333 (do not ask me for the epic) before continuing.
 
 STEP 2: Prepare.
-  a. If Source is a Drive link, read it and compare it with the matching JSON in the repo.
-     If they differ, stop and show me the difference. The repo copy is the source of truth.
+  a. Read the Source I gave you (open the Drive link, or read the repo path). Treat it as
+     the source of truth; do not compare it with any other copy.
   b. Check for existing tests before writing anything. For every row in scope, search
      scripts/ (all test-*.cjs and the SCRIPTS registry) for a test that already covers the
      same or similar behavior: grep for the function and file names in the row's `source`,
@@ -98,7 +98,7 @@ The assistant asks for these when you paste the prompt. Give it a proposals JSON
 - **A particular test case:** give one or more row IDs, for example `GIT-002`.
 - **The entire feature:** ask for the whole JSON; every row in it is in scope except rows marked `manual (Tier C)`, which get no script.
 
-If you give a Drive link, the assistant reads that file and compares it with the matching JSON in the repo. If the two differ, the assistant stops and reports the difference instead of choosing one. The repo copy on your feature branch is the source of truth.
+Whatever you provide, a Drive link or a repo path, is treated as the source of truth. The assistant reads it as given and does not compare it with any other copy.
 
 ## Naming and file layout
 
