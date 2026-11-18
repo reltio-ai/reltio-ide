@@ -1,28 +1,10 @@
 # Writing regression tests from the proposals
 
-How to turn proposals into real tests, with a standard prompt and a standard failure simulation. Use these as written so every test follows the same structure.
-
-## Before you start: ticket and branch
-
-The prompt below asks you for the ticket. Tests are never written on `main` or on the framework branch. Each piece of test work gets its own feature branch.
-
-- **Branch name:** `<TICKET>-<short-slug>`, for example `RP-123456-git-integration-tests`. The ticket prefix is required (repo convention `RP-<n>-<slug>`).
-- **Ticket:** provide the ticket number yourself, or ask the assistant to create one on your behalf. If you ask for a ticket, say which epic it belongs under; the assistant creates it in the Reltio Platform (RP) project and uses the new key as the prefix.
-- **Base:** create the branch from the latest `main`. If the regression framework has not merged yet, branch from the framework branch instead and say so in the PR.
-- The assistant must stop and ask if no ticket is given and no ticket creation is requested. It must not invent a ticket number.
-
-## What you can ask for
-
-The assistant asks for these when you paste the prompt. Give it a proposals JSON (a Drive link or the repo path, for example `docs/test-proposals/git-integration.json`) and choose a scope:
-
-- **A particular test case:** give one or more row IDs, for example `GIT-002`.
-- **The entire feature:** ask for the whole JSON; every row in it is in scope except rows marked `manual (Tier C)`, which get no script.
-
-If you give a Drive link, the assistant reads that file and compares it with the matching JSON in the repo. If the two differ, the assistant stops and reports the difference instead of choosing one. The repo copy on your feature branch is the source of truth.
+Copy the prompt in the first section below and paste it into your AI assistant. Nothing else on this page needs to be pasted; the sections after it are background.
 
 ## Standard prompt
 
-Copy the whole block below and paste it into your AI assistant as is. There is nothing to fill in: the assistant asks you for the variables first and waits for your answers.
+Paste the whole block below as is. There is nothing to fill in: the assistant asks you for the variables first and waits for your answers.
 
 ```
 You are going to write regression tests for the Reltio IDE extension from the proposals
@@ -80,6 +62,24 @@ STEP 5: Report. List the rows implemented and the script covering each, the bran
 and anything you could not do. I update the proposals JSON, the workbook and the Drive
 copy myself, so do not touch them.
 ```
+
+## Before you start: ticket and branch
+
+The prompt above asks you for the ticket. Tests are never written on `main` or on the framework branch. Each piece of test work gets its own feature branch.
+
+- **Branch name:** `<TICKET>-<short-slug>`, for example `RP-123456-git-integration-tests`. The ticket prefix is required (repo convention `RP-<n>-<slug>`).
+- **Ticket:** provide the ticket number yourself, or ask the assistant to create one on your behalf. If you ask for a ticket, say which epic it belongs under; the assistant creates it in the Reltio Platform (RP) project and uses the new key as the prefix.
+- **Base:** create the branch from the latest `main`. If the regression framework has not merged yet, branch from the framework branch instead and say so in the PR.
+- The assistant must stop and ask if no ticket is given and no ticket creation is requested. It must not invent a ticket number.
+
+## What you can ask for
+
+The assistant asks for these when you paste the prompt. Give it a proposals JSON (a Drive link or the repo path, for example `docs/test-proposals/git-integration.json`) and choose a scope:
+
+- **A particular test case:** give one or more row IDs, for example `GIT-002`.
+- **The entire feature:** ask for the whole JSON; every row in it is in scope except rows marked `manual (Tier C)`, which get no script.
+
+If you give a Drive link, the assistant reads that file and compares it with the matching JSON in the repo. If the two differ, the assistant stops and reports the difference instead of choosing one. The repo copy on your feature branch is the source of truth.
 
 ## Naming and file layout
 
