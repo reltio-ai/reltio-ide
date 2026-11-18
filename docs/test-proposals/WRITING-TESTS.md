@@ -40,8 +40,8 @@ Rules (do not deviate):
    `scenario` and `expected` fields are the spec; do not invent extra checks. If the
    Source is a Drive link, check it against the repo JSON first and stop if they differ.
 2. Only add or change files in scripts/ (the new test script, its registration in
-   scripts/run-unit-tests.cjs) and the row `status` in the area JSON. Never edit src/,
-   existing test scripts, scripts/lib/, package.json, workflows or .vscodeignore.
+   scripts/run-unit-tests.cjs). Never edit src/, existing test scripts, scripts/lib/,
+   package.json, workflows, .vscodeignore, the area JSON files or the workbook.
    If a row exposes a product bug, pin nothing silently: stop and report it.
 3. Use the row's `target_script` name. Follow the existing structure: shebang,
    'use strict', docblock naming the row IDs, plain node:assert, importDist from
@@ -53,17 +53,16 @@ Rules (do not deviate):
 5. Register the script in SCRIPTS (alphabetical), run npm run test:gate, then raise the
    area floor in scripts/module-coverage.config.json only if coverage went up
    (never lower it). If you add a src/ file, map it to an area.
-6. Set the rows' status to Implemented in the JSON and regenerate the workbook with
-   python docs/test-proposals/build-workbook.py.
-7. Run the failure simulation below for each row and show me the output.
-8. Sync the changed workbook and JSON files to the Drive folder (see "Syncing to Drive").
+6. Run the failure simulation below for each row and show me the output.
+7. Tell me which rows you implemented and which script covers each. I update the
+   proposals JSON, the workbook and the Drive copy myself.
 ```
 
 ## Naming and file layout
 
 - A regression script is named `scripts/test-<topic>.cjs`. `<topic>` is the source module or feature under test (`reltio-client`, `agent-skills`, `git-integration`), not necessarily the whole area. An area with several distinct topics has several scripts.
 - The row's `target_script` in the area JSON is authoritative. Rows that name an existing script (a `test-<openspec-change>.cjs`) extend that script instead of creating a new one. Rows marked `manual (Tier C)` get no script.
-- Several rows may share one script. Keep one topic per file: if a script would mix unrelated sources or grow hard to review, split it and update the `target_script` of the affected rows in the JSON, then regenerate the workbook.
+- Several rows may share one script. Keep one topic per file: if a script would mix unrelated sources or grow hard to review, split it and tell the developer which rows now map to which script, so they can update `target_script` in the JSON.
 - Every script is registered in `SCRIPTS` in `scripts/run-unit-tests.cjs`, alphabetical.
 
 ## Standard failure simulation
@@ -77,15 +76,13 @@ A test that has never failed proves nothing. Run this for every row you implemen
 5. **Gate-level check:** temporarily set the area's floor to 100 in `scripts/module-coverage.config.json` and run `node scripts/check-module-coverage.cjs`. It must print `FAIL <area>`. Restore the floor afterwards.
 6. **PR evidence:** paste the failing output and the restored green run into the PR description.
 
-## Syncing to Drive
+## Proposals JSON, workbook and Drive are maintained by the developer
 
-The team reads the proposals from the shared Drive folder `reltio-ide-test-proposals` (https://drive.google.com/drive/folders/1v04wSGzeXvheuDuamMGAjKYVFu1atZiM). After **any** change to the workbook or to an area JSON, update the Drive copy.
+The assistant writes tests only. It does not edit the area JSON files or the workbook, and it does not sync anything to Drive. After the tests land, the developer:
 
-- **What to sync:** `ide-regression-test-proposals.xlsx` and every area JSON that changed.
-- **How:** upload directly to the folder through the Drive connector (`create_file` with `parentId` set to the folder ID `1v04wSGzeXvheuDuamMGAjKYVFu1atZiM` and `disableConversionToGoogleType` set to true, so the xlsx stays an xlsx). Do not copy through the locally mounted Drive path.
-- **Order:** regenerate the workbook from the JSON files first, then upload, so the two never disagree.
-- **Replacing a file:** the connector can create a file or change its metadata, but it cannot replace the content of an existing file. If a file with the same name is already in the folder, the assistant says so before uploading and does not leave two files with the same name unannounced; the owner removes the superseded copy or uploads the new content as a new version in the Drive UI.
-- **Report back:** list each file synced with its Drive link, and any file that could not be synced.
+- sets the implemented rows' `status` to `Implemented` and corrects any `target_script` that changed, in the area JSON;
+- regenerates the workbook with `python docs/test-proposals/build-workbook.py`;
+- updates the shared Drive copy.
 
 ## Related
 
