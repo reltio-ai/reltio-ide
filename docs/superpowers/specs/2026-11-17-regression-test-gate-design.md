@@ -21,7 +21,7 @@ Catch regressions in every module when new features land. Tests run before the b
 4. Coverage target is 70% lines per module. Because no tests are added here, the target is recorded and reported, and enforcement is a per-module floor set from the measured baseline. A module's floor is raised to 70 as its tests land. Enforcing 70% on day one would fail the build for any module currently below it.
 5. Proposed tests cover technical, functional and non-functional categories.
 6. No existing functionality changes. No edits under `src/`, no edits to existing test scripts or `scripts/lib/`, no change to existing script bodies in `package.json`, and no change to the VSIX file list. The `prebuild` hook is the one requested build-behavior change, and `release.yml` stays untouched.
-7. Revision (2026-11-18): AI Agent & Skills was folded into Common Utils (source files) and into Workflows, LCA, Business Configuration and Common Utils (proposals) at the owner's request; 8 areas remain.
+7. Revision (2026-11-18): AI Agent & Skills was folded into Common Utils (source files) and into Business Configuration and Common Utils (proposals) at the owner's request; 8 areas remain.
 
 ## Current state (verified from repo)
 
