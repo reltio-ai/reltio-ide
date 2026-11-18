@@ -10,7 +10,7 @@
     "expected": "1) Undefined before set; 'a1' then 'a2'; hasToken false after clear. 2) Chains resolve up to 10 hops; cycles and over-deep chains return undefined without hanging; direct setToken drops the alias. 3) Access and refresh tokens returned; clearSession removes them and the alias for that env only; clearAll empties tokens, aliases, sessions and in-flight refreshes. 4) Same promise instance for e1 (concurrent 401s share one refresh); undefined for e2 and after clear. 5) Sentinel round-trips unchanged with its literal value.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-setup-auth-regression.cjs",
+    "target_script": "scripts/test-setup-auth.cjs",
     "status": "Proposed"
   },
   {
@@ -24,7 +24,7 @@
     "expected": "1) Secrets hold 'reltio.refreshToken.e1' and '.e2'; listEnvironments is ['e1','e2'] with no duplicate; only the env name list (no token) is in the Memento. 2) e1 secret gone and load is undefined; list is ['e2']; deleting an unknown env does not throw. 3) Keys are reltio.oauth.<env>.clientId/clientSecret/ssoTenantId; e2 with missing secret loads undefined and has=false; delete removes all three keys for e1.",
     "priority": "P1",
     "existing_coverage": "None",
-    "target_script": "scripts/test-setup-auth-regression.cjs",
+    "target_script": "scripts/test-setup-auth.cjs",
     "status": "Proposed"
   },
   {
@@ -38,7 +38,7 @@
     "expected": "1) Host auth.reltio.com path /oauth/sso; tenant_id, response_type=code, client_id, redirect_uri=http://localhost:8081, state present and percent-encoded; client secret never in URL. 2) 'sso' and 'native' for the first two; the other three throw OAuthLoginError SSO_CHECK_FAILED; POST body has tenant_id, client_id, response_type=code, state, redirect_uri and no client_secret. 3) accessToken 'new', refreshToken 'old', expiresAt about now+60s; second case uses returned refresh token and defaults to 3600s; Basic auth and grant_type=refresh_token.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-setup-auth-regression.cjs",
+    "target_script": "scripts/test-setup-auth.cjs",
     "status": "Proposed"
   },
   {
@@ -52,7 +52,7 @@
     "expected": "1) Folder uses short label 'dev' with a marker carrying the full host; scan returns the host (not 'dev') with tenant t1 hasL3 false; dotfolders like .reltio skipped; results sorted. 2) hostA reported as conflict with sorted distinct paths and omitted from bindings; hostB+hostC give one binding with sorted hosts; reload reads the file once and sets the same token on both hosts.",
     "priority": "P2",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-setup-auth-regression.cjs",
+    "target_script": "scripts/test-setup-auth.cjs",
     "status": "Proposed"
   },
   {
@@ -66,7 +66,7 @@
     "expected": "1) 200 success page; runBrowserLogin resolves an OAuthSession with future expiresAt; token POST uses grant_type=authorization_code with code and redirect_uri. 2) OAuthLoginError REFRESH_FAILED 'Token refresh failed: HTTP <status>' without refresh token, secret or Basic header. 3) NO_IDP_CONFIGURED naming the tenant; no listener, browser not opened. 4) PORT_BUSY mentioning 8081; EXCHANGE_FAILED 'Token exchange failed: HTTP 401'; no message includes client secret or code.",
     "priority": "P1",
     "existing_coverage": "None",
-    "target_script": "scripts/test-setup-auth-regression.cjs",
+    "target_script": "scripts/test-setup-auth.cjs",
     "status": "Proposed"
   },
   {
@@ -80,7 +80,7 @@
     "expected": "1) Accept returns true and stores TERMS_VERSION; decline/dismiss/unreadable/blank return false with no state; accepted returns true with no modal; mismatched version prompts. 2) Each failure deletes the env's client credentials and SSO tenant id, shows a code-specific message (modal for first two, plain 'Login failed:' otherwise) and goes back a step. 3) Cancel creates no environment; back re-runs step 4 (min 1); skip finishes with env only and a hint; auto-added tenant skips the step 4 picker and is not recreated. Reviewer to confirm that wiping credentials on transient errors (e.g. PORT_BUSY) is intended.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-setup-auth-regression.cjs",
+    "target_script": "scripts/test-setup-auth.cjs",
     "status": "Proposed"
   },
   {
@@ -94,7 +94,7 @@
     "expected": "1) First run: environment once, two tenants, scaffolded=3; second run scaffolded=0; empty/invalid/unsafe return explanatory errors and create nothing; summarizeApplyResult lists counts and issues. 2) Valid returns trimmed 'tok', authenticated=1; others return specific {error} strings added to result.errors without throwing. 3) 'written' increments fetched; '401' adds 'token rejected (401)'; 'error' adds 'Fetch Configuration failed.'; authenticated unaffected.",
     "priority": "P1",
     "existing_coverage": "None",
-    "target_script": "scripts/test-setup-auth-regression.cjs",
+    "target_script": "scripts/test-setup-auth.cjs",
     "status": "Proposed"
   },
   {
@@ -108,7 +108,7 @@
     "expected": "1) HTTP 400 error page; login rejects with STATE_MISMATCH; no token exchange fetch; state is 32 hex chars (random per login). 2) HTTP 400 'Login failed' page; message HTML-escaped (&, <, >); login promise rejects; server closes after the single response.",
     "priority": "P1",
     "existing_coverage": "None",
-    "target_script": "scripts/test-setup-auth-regression.cjs",
+    "target_script": "scripts/test-setup-auth.cjs",
     "status": "Proposed"
   },
   {
@@ -122,7 +122,7 @@
     "expected": "1) Wizard returns with no step shown, no environment created, and no tokenStore/sessionStore/oauthCredentialsStore use. 2) setSession gets both tokens; only refresh token saved to secrets; 'A' in no secrets, Memento or config; paste-token path calls setToken only. 3) One panel with enableScripts false and limited localResourceRoots; second call reveals it; failure shows 'Could not load Setup Guide' with escaped error.",
     "priority": "P1",
     "existing_coverage": "None",
-    "target_script": "scripts/test-setup-auth-regression.cjs",
+    "target_script": "scripts/test-setup-auth.cjs",
     "status": "Proposed"
   },
   {
@@ -136,7 +136,7 @@
     "expected": "1) Unsafe segments false, valid host true; escaping, absolute and empty tokenFile return {error}; 'secrets/t.json' resolves under the workspace root. 2) Environment and tenant scaffolded; tokenStore.setToken never called with 'abc'; result.errors lists ignored field names, not values.",
     "priority": "P1",
     "existing_coverage": "None",
-    "target_script": "scripts/test-setup-auth-regression.cjs",
+    "target_script": "scripts/test-setup-auth.cjs",
     "status": "Proposed"
   },
   {
@@ -164,7 +164,7 @@
     "expected": "1) Host appears once, from the preferred .reltio/ copy; legacy-only host listed with tenant t1; removeTenant deletes the legacy suffixed directory, not a bare-named path.",
     "priority": "P3",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-setup-auth-regression.cjs",
+    "target_script": "scripts/test-setup-auth.cjs",
     "status": "Proposed"
   }
 ]

@@ -48,7 +48,7 @@ Catch regressions in every module when new features land. Tests run before the b
 - Source maps: tests import per-file `tsc` output from `dist/`. Verify `c8` attributes coverage to `src/` (enable `sourceMap` in `tsconfig`, or report on `dist/` and map by directory). Resolve this before setting thresholds.
 - `scripts/module-coverage.json` maps each `src/<dir>` to a minimum line-coverage floor. Floors start a few points under baseline and are only ever raised.
 - `npm test` runs the runner under `c8` and a small `scripts/check-module-coverage.cjs` compares per-module results to the floors. A drop fails the run.
-- Gap-filling: for each module below the agreed bar, add `scripts/test-<module>-regression.cjs`, register it in `run-unit-tests.cjs`, and follow existing conventions (`scripts/lib/import-dist.cjs`, shared fixture `samples/first-test.json`, self-oracle helpers, no new oracle JSON).
+- Gap-filling: for each module below the agreed bar, add `scripts/test-<topic>.cjs`, register it in `run-unit-tests.cjs`, and follow existing conventions (`scripts/lib/import-dist.cjs`, shared fixture `samples/first-test.json`, self-oracle helpers, no new oracle JSON).
 - Coverage bar: not yet agreed. Proposed: decide per module after the baseline; target 70% lines for logic-heavy modules (`api`, `workspace`, `workflow`, `lca`, `navigation`, `parser`, `model`, `util`). Confirm after seeing baseline numbers.
 
 Modules in scope (16): `api`, `commands`, `entityBrowser`, `lca`, `model`, `navigation`, `ontology`, `parser`, `providers`, `tree`, `util`, `ux`, `webview`, `workflow`, `workspace`, plus root `src/extension.ts`.

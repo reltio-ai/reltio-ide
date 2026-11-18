@@ -10,7 +10,7 @@
     "expected": "1) Entity Types (2) then Sources (1) in SECTIONS order, no empty folder, labels carry '(count)'. 2) Browse Entities first, then sections in code order; absent Hidden Config not emitted. 3) Nested, reference, simple groups, each case-insensitively alphabetical, jsonPath keeps original array index. 4) A returns [B, C] transitively; concrete returns itself; D excluded; cycle terminates. 5) Parent is the Entity Types (n) folder with tenantL3Uri; undefined for root-level paths.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-tenant-explorer-ux-regression.cjs",
+    "target_script": "scripts/test-tenant-explorer-ux.cjs",
     "status": "Proposed"
   },
   {
@@ -24,7 +24,7 @@
     "expected": "1) contextValue is reltio.folder.<type> or reltio.item.<type>; relationType attribute nodes get '.relationType'; id is '<uri>|<path>' (plus '|browseEntities'). 2) Same jsonPath gives different ids per tenant URI; children inherit tenantL3Uri. 3) Ids use tenant:, businessConfig:, history:, gitFolder: prefixes; same tenant in two envs gives different ids; History contextValue gets '.empty' at zero snapshots.",
     "priority": "P1",
     "existing_coverage": "None",
-    "target_script": "scripts/test-tenant-explorer-ux-regression.cjs",
+    "target_script": "scripts/test-tenant-explorer-ux.cjs",
     "status": "Proposed"
   },
   {
@@ -38,7 +38,7 @@
     "expected": "1) contextValue reltio.environment.{authorized|unauthorized}[.oauthReady|.oauthBlocked], '.noTenants' only for E_AUTHED_NO_TENANTS; description/tooltip follow eState; id 'env:<name>'. 2) contextValue reltio.tenant[.l3][.gitbound]; description '(local)' when stale and unauthed else TState hint plus branch marker; command reltio.fetchL3 for T_NO_L3 else reltio.openL3, absent when setting false. 3) entityBrowser gets reltio.browseEntities, config items reltio.revealInEditor, snapshots vscode.open with fileUri; existing command not overwritten.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-tenant-explorer-ux-regression.cjs",
+    "target_script": "scripts/test-tenant-explorer-ux.cjs",
     "status": "Proposed"
   },
   {
@@ -52,7 +52,7 @@
     "expected": "1) One EnvironmentNode per env with authorized flag from TokenStore; env children are TenantNodes with TState from uxState or T_NO_L3; unknown env returns []. 2) With L3: Business Config then Workflows; without L3: Workflows only; git tenants no Workflows. 3) Folders before configs, localeCompare sorted and de-duplicated; configs by label else tenantId; Expanded, default T_READY. 4) Exactly one change event after about 150 ms; notes.txt never triggers; businessconfig.json matches case-insensitively.",
     "priority": "P1",
     "existing_coverage": "None",
-    "target_script": "scripts/test-tenant-explorer-ux-regression.cjs",
+    "target_script": "scripts/test-tenant-explorer-ux.cjs",
     "status": "Proposed"
   },
   {
@@ -66,7 +66,7 @@
     "expected": "1) No token + OAuth gives E_HAS_OAUTH_NO_SESSION; git source always E_READY; token with tenants E_READY; global G_NEEDS_AUTH when nothing authed. 2) G_NEEDS_TENANT, then T_L3_NEVER_OPENED with G_READY, then T_READY; tenantCount and envCount correct. 3) Listeners fire once with no payload; setContext reltio.uxState=<global> and reltio.workspaceSource=<source> (null when undefined); dispose stops events.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-tenant-explorer-ux-regression.cjs",
+    "target_script": "scripts/test-tenant-explorer-ux.cjs",
     "status": "Proposed"
   },
   {
@@ -80,7 +80,7 @@
     "expected": "1) Newest first, no duplicate, capped at 10, per-host tenant lists independent. 2) Valid values round-trip; unknown loads undefined; empty Memento gives empty Set. 3) ['a.com','b.com'], cached after first read, failure yields [] without throwing. 4) Labels Add an environment, Sign in required, Add a tenant, Fetch L3 with matching commands; 'Reltio: N env(s), M tenant(s)' pluralized; 1 env/0 tenants hides item. 5) Hidden without workspace folder; else 'Reltio: Add an environment' bound to reltio.launchSetupWizard.",
     "priority": "P2",
     "existing_coverage": "None",
-    "target_script": "scripts/test-tenant-explorer-ux-regression.cjs",
+    "target_script": "scripts/test-tenant-explorer-ux.cjs",
     "status": "Proposed"
   },
   {
@@ -94,7 +94,7 @@
     "expected": "1) Sign-in items only match unauthorized.oauthReady; token/OAuth config items match oauthBlocked; no tenant-connectivity entries show in git workspaces; all referenced commands are declared.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-tenant-explorer-ux-regression.cjs",
+    "target_script": "scripts/test-tenant-explorer-ux.cjs",
     "status": "Proposed"
   },
   {
@@ -108,7 +108,7 @@
     "expected": "1) Children contain no config sections (History may appear); no exception propagates to the tree; text of an already-open editor document is preferred over disk.",
     "priority": "P1",
     "existing_coverage": "None",
-    "target_script": "scripts/test-tenant-explorer-ux-regression.cjs",
+    "target_script": "scripts/test-tenant-explorer-ux.cjs",
     "status": "Proposed"
   },
   {
@@ -122,7 +122,7 @@
     "expected": "1) Zero envs: 'No Reltio environments configured.' and no pick; items say 'No tenants', '1 tenant', '3 tenants'; cancel does nothing. 2) Both focus workbench.view.extension.reltioExplorer; only the single-L3 env opens its getL3Uri document. 3) 'L3 not fetched - click to fetch' (fetchL3), 'Open L3 to start editing' (openL3), then none; real-click flow is manual QA (Tier C).",
     "priority": "P2",
     "existing_coverage": "None",
-    "target_script": "scripts/test-tenant-explorer-ux-regression.cjs",
+    "target_script": "scripts/test-tenant-explorer-ux.cjs",
     "status": "Proposed"
   },
   {
@@ -136,7 +136,7 @@
     "expected": "1) Only env name, tenant id, branch and fixed hint text appear; no token, credential or file contents are copied into node fields.",
     "priority": "P1",
     "existing_coverage": "None",
-    "target_script": "scripts/test-tenant-explorer-ux-regression.cjs",
+    "target_script": "scripts/test-tenant-explorer-ux.cjs",
     "status": "Proposed"
   },
   {
@@ -150,7 +150,7 @@
     "expected": "1) Under 1 s (generous threshold); item count equals array length; ids unique. 2) 200 unique TenantNodes, time far below serial sum via Promise.all. 3) One change event total; debounce timer reset per call, not stacked.",
     "priority": "P2",
     "existing_coverage": "None",
-    "target_script": "scripts/test-tenant-explorer-ux-regression.cjs",
+    "target_script": "scripts/test-tenant-explorer-ux.cjs",
     "status": "Proposed"
   },
   {
@@ -164,7 +164,7 @@
     "expected": "1) Push succeeds on empty store; stored map not mutated (copy written); only host and tenant strings stored. 2) Background warning ThemeColor then restored after 1500 ms; dispose disposes item. 3) Ids deterministic and unique with spaces and backslashes; refresh match uses lowercased path suffix; real UI across OSes is manual QA (Tier C).",
     "priority": "P3",
     "existing_coverage": "None",
-    "target_script": "scripts/test-tenant-explorer-ux-regression.cjs",
+    "target_script": "scripts/test-tenant-explorer-ux.cjs",
     "status": "Proposed"
   }
 ]

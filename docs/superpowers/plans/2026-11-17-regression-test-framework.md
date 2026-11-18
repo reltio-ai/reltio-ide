@@ -177,7 +177,7 @@ The gate's `compile` writes per-file `tsc` output into `dist/` before `package`'
 ### Task 8: Module-wise XLSX of proposed tests
 
 **Files:**
-- Create: `docs/test-proposals/<area>.json` (one per area), `docs/test-proposals/build-workbook.py`, `docs/test-proposals/regression-test-proposals.xlsx`, `docs/test-proposals/README.md`
+- Create: `docs/test-proposals/<area>.json` (one per area), `docs/test-proposals/build-workbook.py`, `docs/test-proposals/ide-regression-test-proposals.xlsx`, `docs/test-proposals/README.md`
 
 **Interfaces:**
 - Row schema in each JSON file (array): `id` (`<MODULE>-NNN`, unique, stable), `module`, `source` (file and function or area), `title`, `category` (`Technical` | `Functional` | `Non-functional`), `subtype` (Technical: `Unit`, `Contract`, `Integration`; Functional: `Feature`, `Workflow`, `Error handling`; Non-functional: `Performance`, `Security`, `Reliability`, `Compatibility`, `Scalability`), `scenario`, `expected`, `priority` (`P1` | `P2` | `P3`), `existing_coverage` (`None` | `Partial` | `Covered`), `target_script` (proposed `scripts/test-<name>.cjs`), `status` (always `Proposed` on creation).

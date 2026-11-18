@@ -10,7 +10,7 @@
     "expected": "1) First four return undefined; ext::, fd::, file://, leading '-', whitespace/control chars and password URLs each return a message; isAllowedCloneUrl mirrors it. 2) Every scheme://user[:pw]@ becomes scheme://; text without userinfo and scp-like form are unchanged. 3) Unsafe URLs throw 'Unsupported git URL' with redacted URL and execFile is not called; valid call has -c protocol.ext.allow=never and protocol.fd.allow=never before 'clone', '--' before the url, '--branch <b>' only when a branch is given.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-git-integration-regression.cjs",
+    "target_script": "scripts/test-git-integration.cjs",
     "status": "Proposed"
   },
   {
@@ -38,7 +38,7 @@
     "expected": "1) Known wordings true; unrelated stderr false; special-character branches neither throw nor match wrong text ('a+b' vs 'aab'). 2) ENOENT gives GitNotFoundError mentioning PATH; killed gives a timeout message in minutes; credentials removed; a clean Error is returned as the same object. 3) Branch case throws BranchNotFoundError(branch,url) with redacted URL; other failures go through describeGitFailure; no branch never throws BranchNotFoundError.",
     "priority": "P2",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-git-integration-regression.cjs",
+    "target_script": "scripts/test-git-integration.cjs",
     "status": "Proposed"
   },
   {
@@ -52,7 +52,7 @@
     "expected": "1) Legacy wraps into {sources:[x]}; valid multi returned as is; invalid entry, bad JSON or missing file gives undefined without throwing; readGitSourceMarker returns first source or undefined. 2) File created when absent; alternate spellings not duplicated; unrelated lines preserved; newline inserted before append; second run writes nothing; workspace variant adds .reltio-ide-backup/. 3) Values round-trip exactly; write also updates .gitignore; absent marker gives undefined. 4) Names match the documented git layout; renaming one is caught because it would orphan user repositories.",
     "priority": "P2",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-git-integration-regression.cjs",
+    "target_script": "scripts/test-git-integration.cjs",
     "status": "Proposed"
   },
   {
@@ -66,7 +66,7 @@
     "expected": "1) Outcome {kind:'cloned',branch:'dev'}; component tree, identity marker and .gitignore entries written; confirmCreateBranch not called. 2) init -b, remote add origin, fetch origin <b>, reset origin/<b> (mixed, never --hard), set-upstream-to; 'adopted'; BusinessConfig.json bytes unchanged; existing .git throws 'already a Git repository'. 3) Declined: 'declined', no marker or tree, adopt path deletes the .git it created. Confirmed: branch-created, branch-created-not-pushed or initialized-empty-remote, no data loss. 4) checkout -b <branch>, git rm of BUSINESS_CONFIG_FILE (staged, not committed), push -u origin; a git rm failure is ignored; component folders and READMEs untouched.",
     "priority": "P1",
     "existing_coverage": "None",
-    "target_script": "scripts/test-git-integration-regression.cjs",
+    "target_script": "scripts/test-git-integration.cjs",
     "status": "Proposed"
   },
   {
@@ -80,7 +80,7 @@
     "expected": "1) Backup under .reltio-ide-backup/<env>/<tenant> exists before any move; files byte-identical at new paths; stamp only after all moves; rename failure returns 'move-failed' with no stamp. 2) Skip reason 'dirty-worktree' or 'backup-failed' with detail; no files moved, no stamp, legacy files intact. 3) First run migrated=1 with backupRoot; second migrated=0, no skips, backupRoot undefined, contents unchanged. 4) Legacy files restored with original bytes, migrated copies removed, stamp cleared; no backup returns restored=[] and touches nothing.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-git-integration-regression.cjs",
+    "target_script": "scripts/test-git-integration.cjs",
     "status": "Proposed"
   },
   {
@@ -108,7 +108,7 @@
     "expected": "1) Rejects with GitNotFoundError telling the user to install Git; no marker written and no tenant data deleted. 2) migrateWorkspace still resolves with a report; other tenants are processed; no exception reaches the caller.",
     "priority": "P2",
     "existing_coverage": "None",
-    "target_script": "scripts/test-git-integration-regression.cjs",
+    "target_script": "scripts/test-git-integration.cjs",
     "status": "Proposed"
   },
   {
@@ -122,7 +122,7 @@
     "expected": "1) win32: differently cased path is contained, sibling prefix is not; linux: case difference is not contained; separator always '/'. 2) Result is Uri.joinPath of segments (no doubled or backslash separators), spaces preserved; isTenantConfigPath accepts both separator styles.",
     "priority": "P3",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-git-integration-regression.cjs",
+    "target_script": "scripts/test-git-integration.cjs",
     "status": "Proposed"
   }
 ]

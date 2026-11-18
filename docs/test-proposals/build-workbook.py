@@ -372,11 +372,11 @@ def resolve(p, default):
 def main():
     ap = argparse.ArgumentParser(description="Build the regression test proposal workbook.")
     ap.add_argument("--dir", help="folder with the per-area JSON files (default docs/test-proposals)")
-    ap.add_argument("--out", help="output xlsx (default docs/test-proposals/regression-test-proposals.xlsx)")
+    ap.add_argument("--out", help="output xlsx (default docs/test-proposals/ide-regression-test-proposals.xlsx)")
     ap.add_argument("--allow-missing", action="store_true", help="skip missing area files")
     args = ap.parse_args()
     src_dir = resolve(args.dir, REPO_ROOT / "docs" / "test-proposals")
-    out = resolve(args.out, REPO_ROOT / "docs" / "test-proposals" / "regression-test-proposals.xlsx")
+    out = resolve(args.out, REPO_ROOT / "docs" / "test-proposals" / "ide-regression-test-proposals.xlsx")
 
     target, info = read_config()
     data, errors = load_areas(src_dir, args.allow_missing)

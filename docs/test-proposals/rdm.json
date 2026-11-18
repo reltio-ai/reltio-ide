@@ -10,7 +10,7 @@
     "expected": "1) Fields unquoted correctly, embedded newlines kept, each record reports its start line, final record kept; lone CR currently ends a record (pins current behavior, owner may want different intent). 2) Two errors naming both lines each, no duplicated mapping in the draft; same code under two types stays two values without error.",
     "priority": "P2",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-rdm-csv-parsing-regression.cjs",
+    "target_script": "scripts/test-rdm-csv-parsing.cjs",
     "status": "Proposed"
   },
   {
@@ -24,7 +24,7 @@
     "expected": "1) No exception from frozen input; stored object deep-equals its snapshot; merged result is a separate copy with the new mapping. 2) Malformed messages return undefined, extra fields dropped, text trimmed, rule breaches give kind rejected listing every error, over 100 codes rejected. 3) Result has exactly serviceUri and rdmTenantIds with no leaked field; bad shapes give serviceUri undefined and an empty list without throwing; valid ids keep order.",
     "priority": "P2",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-rdm-lookup-merge-regression.cjs",
+    "target_script": "scripts/test-rdm-lookup-merge.cjs",
     "status": "Proposed"
   },
   {
@@ -38,7 +38,7 @@
     "expected": "1) URLs follow /reltio/tenants/{id}, /configuration/{id}, /lookups/{id}/{type} with encodeURIComponent, no extra segment or query; real functions are exercised. 2) PUT to /configuration/{rdmTenantId}, Content-Type application/json, body byte-identical to the input, Authorization carries the token. 3) No L3 edit command matches an RDM value; RDM nodes stay in the reltio.rdm.* namespace (a stale code comment says RDM is read-only although Apply now PUTs; guard the namespace, not the comment).",
     "priority": "P2",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-rdm-api-client-regression.cjs",
+    "target_script": "scripts/test-rdm-api-client.cjs",
     "status": "Proposed"
   },
   {
@@ -52,7 +52,7 @@
     "expected": "1) The POSTed B equals the fetched value with only the SAP mapping added; enabled, endDate, version and existing mappings untouched; a warning says stored values are kept. 2) Conflicting row skipped with a warning naming its line, stored 'Business' never overwritten, identical row counted as already present, nothing sent if nothing is appendable.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-rdm-lookup-merge-regression.cjs",
+    "target_script": "scripts/test-rdm-lookup-merge.cjs",
     "status": "Proposed"
   },
   {
@@ -94,7 +94,7 @@
     "expected": "1) Plan: zero posts and prompts; cancelled: zero posts; CSV errors: invalid-csv, zero prompts and posts; only approve true allows a post. 2) Each returns failed/invalid-request with zero fetch or post calls; backslash and other-drive cases are new. 3) SECRET-TOKEN and the Authorization value appear nowhere; extend the bridge assertion to the client functions. 4) Untrusted host throws UntrustedHostError with zero fetch calls; trusted host receives the token only there (today only POST is asserted).",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-rdm-load-bridge-security-regression.cjs",
+    "target_script": "scripts/test-rdm-load-bridge-security.cjs",
     "status": "Proposed"
   },
   {
@@ -108,7 +108,7 @@
     "expected": "1) Tenant listed under conflicts, no rename called, both legacy files stay, rename always uses overwrite false. 2) Second run does nothing; mid-pair failure reports failed once, config at its new path, stray legacy baseline not moved on rerun (pins current behavior, owner may want different intent), healthy tenant still moves. 3) In-workspace paths resolve, config path matches rdmConfigUri despite case and separator differences, request reaches status planned.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-rdm-relocation-regression.cjs",
+    "target_script": "scripts/test-rdm-relocation.cjs",
     "status": "Proposed"
   },
   {
@@ -136,7 +136,7 @@
     "expected": "10000 rows and 2 MB parse without a limit error; 10001 rows gives 'limit is 10000' and 2 MB + 1 gives 'larger than 2 MB'; neither case throws.",
     "priority": "P2",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-rdm-csv-parsing-regression.cjs",
+    "target_script": "scripts/test-rdm-csv-parsing.cjs",
     "status": "Proposed"
   },
   {

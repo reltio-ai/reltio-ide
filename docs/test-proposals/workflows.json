@@ -10,7 +10,7 @@
     "expected": "1) Unsafe paths are dropped; modified/unpushed go to keptModified; target/ files are removed; .env stays; a baseline is removed only with its owning BPMN. 2) Result lists a, b, c sorted by id; hasLocalChanges false/true/false (c is a draft with baselineText undefined); notes.txt ignored; a missing directory returns []. 3) Second write rejects with 'already exists' and the first content is intact; list returns only drafts sorted by id, with processName undefined when unreadable.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-workflows-regression.cjs",
+    "target_script": "scripts/test-workflows.cjs",
     "status": "Proposed"
   },
   {
@@ -164,7 +164,7 @@
     "expected": "1) Both finish under a generous budget (for example 3 s); node and flow counts equal the generated numbers; no finding is reported for a valid chain. 2) Promise resolves within a generous budget (for example 15 s); bounds exist for every node, waypoints for every routable flow; the section parses and passes isCompleteFor.",
     "priority": "P3",
     "existing_coverage": "None",
-    "target_script": "scripts/test-workflows-regression.cjs",
+    "target_script": "scripts/test-workflows.cjs",
     "status": "Proposed"
   }
 ]

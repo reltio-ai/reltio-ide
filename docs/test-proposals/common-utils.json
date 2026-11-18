@@ -10,7 +10,7 @@
     "expected": "1) Returns true; reordered keys are equal. 2) All false; array vs object never equal, even when both empty. 3) null===null and identical primitives true; null vs object and differing types false. 4) Differing key counts or names false; key-with-undefined is not equal to a missing key. 5) Valid JSON returns the value (null and 0 included); empty or malformed text returns undefined. 6) tenantId 'abc.def-1', environmentName 'My Env'; with two tenant segments the first match is used.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-common-utils-regression.cjs",
+    "target_script": "scripts/test-common-utils.cjs",
     "status": "Proposed"
   },
   {
@@ -24,7 +24,7 @@
     "expected": "1) skills/default is deleted and recopied (stray file gone) and the stamp becomes 21. 2) Neither folder is deleted or recopied; markers survive and no managed-layer writes occur. 3) skills/default recopied, velocity-packs untouched, stamp shows skills 21 and packs 1, ownedAgentFiles retained. 4) velocity-packs is recopied from resources/velocity-packs; skills/default is not rewritten. 5) The edited managed file is restored to bundled content and the stamp stays at bundled versions; a non-forced equal-stamp run leaves the edit alone.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-agent-skills-regression.cjs",
+    "target_script": "scripts/test-agent-skills.cjs",
     "status": "Proposed"
   },
   {
@@ -38,7 +38,7 @@
     "expected": "1) Both callbacks run exactly once; the first key's work is not dropped by the second. 2) Only callback 3 runs, once, measured from the last schedule call. 3) Cancelled and disposed work never runs, B runs if not disposed, cancel on an unknown key and double dispose do not throw, and re-schedule after cancel works.",
     "priority": "P2",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-common-utils-regression.cjs",
+    "target_script": "scripts/test-common-utils.cjs",
     "status": "Proposed"
   },
   {
@@ -52,7 +52,7 @@
     "expected": "1) listTenants lacks 'xxx-client'; the others send xxx-client: true; Authorization 'Bearer tok' when a token is given and absent for validateEnvironment; Content-Type on POST/PUT. 2) Each returns {conflicts:[],invalid:[]} without throwing and creates no .reltio/reltio-agent directory or stamp.",
     "priority": "P2",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-agent-skills-regression.cjs",
+    "target_script": "scripts/test-agent-skills.cjs",
     "status": "Proposed"
   },
   {
@@ -66,7 +66,7 @@
     "expected": "1) Undefined or unparsable baseline or local gives true; formatting-only differences give false; a real value difference gives true. 2) Unparsable either side gives false (never claims a match); equal gives true; different gives false; protects the overwrite-remote confirmation.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-common-utils-regression.cjs",
+    "target_script": "scripts/test-common-utils.cjs",
     "status": "Proposed"
   },
   {
@@ -80,7 +80,7 @@
     "expected": "1) skills/workspace is byte-identical after every run, including opt-out. 2) The managed default copy keeps bundled content; the installed .claude copy shows the override content. 3) All stamp-owned paths vanish, ownedAgentFiles becomes [], user files remain, and the .reltio/reltio-agent managed layer is still synced.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-agent-skills-regression.cjs",
+    "target_script": "scripts/test-agent-skills.cjs",
     "status": "Proposed"
   },
   {
@@ -94,7 +94,7 @@
     "expected": "1) Report.conflicts lists the path, user content is unchanged, and the path is absent from ownedAgentFiles in the stamp. 2) Each case yields one invalid message naming playbook and reason; the skill is not installed and the default is not silently substituted; a 64-char name and 1024-char description are accepted.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-agent-skills-regression.cjs",
+    "target_script": "scripts/test-agent-skills.cjs",
     "status": "Proposed"
   },
   {
@@ -108,7 +108,7 @@
     "expected": "1) ReltioApiError with the documented message per case and statusCode 200; numeric timestamp stringified; valid rows kept in order. 2) 401 gives 'Unauthorized (401)'; others '<op> failed: HTTP <n>'; URL contains 'a%2Fb%20c'. 3) Intro has HTTP status and code; duplicate detail omitted; code-only adds a documentation hint; empty gives 'Put configuration failed (HTTP 400).'; invalid JSON falls back to raw text. 4) GET fallback returns 42, 7, 9, 5; unexpected shape throws 'unexpected response shape'; 401 after fallback still maps to Unauthorized.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-reltio-client-regression.cjs",
+    "target_script": "scripts/test-reltio-client.cjs",
     "status": "Proposed"
   },
   {
@@ -122,7 +122,7 @@
     "expected": "1) Returns undefined for invalid shapes; trailing or doubled separators on a valid path still parse. 2) All return undefined; empty tenantId returns undefined directly without falling through to other branches.",
     "priority": "P3",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-common-utils-regression.cjs",
+    "target_script": "scripts/test-common-utils.cjs",
     "status": "Proposed"
   },
   {
@@ -136,7 +136,7 @@
     "expected": "1) UntrustedHostError for each; fetch never called; message does not echo the password. 2) Upper-case and trailing slash accepted; lookalikes rejected; leading slashes and whitespace trimmed; resulting URL has no double slash. 3) init.redirect === 'error'; Authorization only on the first request; redirect failure surfaces as 'Network error: ...' with no second fetch.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-reltio-client-regression.cjs",
+    "target_script": "scripts/test-reltio-client.cjs",
     "status": "Proposed"
   },
   {
@@ -150,7 +150,7 @@
     "expected": "1) User files byte-identical; unterminated block leaves the file unchanged; only stamp-owned paths, legacy-marker files and emptied parent folders are removed.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-agent-skills-regression.cjs",
+    "target_script": "scripts/test-agent-skills.cjs",
     "status": "Proposed"
   },
   {
@@ -164,7 +164,7 @@
     "expected": "1) Hang gives 'Request timed out after 20ms: <url>'; network failure gives 'Network error: fetch failed (ECONNREFUSED)'; timer cleared in both. 2) Oversize gives 'too large'; stall gives 'Reading the response timed out'; reader cancelled; small body returned as UTF-8. 3) responseBody length <= 12,000, message 'Verify matches failed: HTTP 500'; 401 gives Unauthorized without body.",
     "priority": "P1",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-reltio-client-regression.cjs",
+    "target_script": "scripts/test-reltio-client.cjs",
     "status": "Proposed"
   },
   {
@@ -178,7 +178,7 @@
     "expected": "1) All return {environmentName:'Dev', tenantId:'t1'}; both / and backslash split the path. 2) Nested files land at expected relative paths, owned entries use forward slashes, CRLF frontmatter parses name and description.",
     "priority": "P2",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-common-utils-regression.cjs",
+    "target_script": "scripts/test-common-utils.cjs",
     "status": "Proposed"
   },
   {
@@ -192,7 +192,7 @@
     "expected": "1) Returns true without stack overflow and within a few seconds; documents the recursion depth assumption for real L3 configs. 2) Second run writes 0 managed-skill files (converge writes only differing files) and finishes within a few seconds in memory-fs.",
     "priority": "P3",
     "existing_coverage": "Partial",
-    "target_script": "scripts/test-common-utils-regression.cjs",
+    "target_script": "scripts/test-common-utils.cjs",
     "status": "Proposed"
   }
 ]
