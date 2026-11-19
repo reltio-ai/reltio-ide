@@ -11,7 +11,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-git-integration.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "GIT-002",
@@ -25,7 +25,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-git-ready-tenant-folder-structure.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "GIT-003",
@@ -39,7 +39,7 @@
     "priority": "P2",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-git-integration.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "GIT-004",
@@ -53,7 +53,7 @@
     "priority": "P2",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-git-integration.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "GIT-005",
@@ -67,7 +67,7 @@
     "priority": "P1",
     "existing_coverage": "None",
     "target_script": "scripts/test-git-integration.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "GIT-006",
@@ -81,7 +81,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-git-integration.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "GIT-007",
@@ -95,7 +95,7 @@
     "priority": "P1",
     "existing_coverage": "Covered",
     "target_script": "scripts/test-git-ready-tenant-folder-structure.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "GIT-008",
@@ -109,7 +109,7 @@
     "priority": "P2",
     "existing_coverage": "None",
     "target_script": "scripts/test-git-integration.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "GIT-009",
@@ -123,6 +123,6 @@
     "priority": "P3",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-git-integration.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   }
 ]

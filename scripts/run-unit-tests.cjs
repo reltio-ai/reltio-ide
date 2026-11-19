@@ -27,6 +27,7 @@ const SCRIPTS = [
 	'test-editor-navigation.cjs',
 	'test-extension-activation.cjs',
 	'test-extension-packaging.cjs',
+	'test-git-integration.cjs',
 	'test-git-ready-tenant-folder-structure.cjs',
 	'test-git-repository-source.cjs',
 	'test-harden-reltio-client-base-url.cjs',
