@@ -143,3 +143,25 @@ Copy the template, use the next free `BUG-NNN`, and fill every field. Write "unk
 - **Repro:** `isValidProcessId('abc.')` against `dist/`: `true`.
 - **Impact:** Low. The file name becomes `abc..bpmn20.xml`, which Windows accepts, so no write escapes the folder; it is a gap against the stated validation rule only, and whether a trailing dot should be refused is unknown.
 - **Test pointer:** WF-009 #2 in `scripts/test-workflow-input-trust.cjs` (trailing-dot id left out, "blocked by BUG-011")
+
+### BUG-012: Delete and Rename on "Browse Entities" act on the whole entity type
+
+- **Status:** Confirmed
+- **Found:** 2026-11-19 by RP-208563 while writing TREE-013
+- **Area / file:** Tenant Explorer & UX, `package.json` `contributes.menus` `view/item/context`, the `reltio.deleteNode` and `reltio.renameNode` entries (group `7_modification`); the row comes from `src/tree/configSubtree.ts`:`getEntityTypeChildren` (`new ConfigTreeItem('Browse Entities', 'entityBrowser', path, ...)`, about line 229)
+- **Expected:** Browse Entities is a virtual row (it opens the entity browser, not a JSON node), so Delete and Rename are not offered on it, the same way `reltio.item.lifecycleActions` is excluded.
+- **Actual:** Both clauses are `viewItem =~ /^reltio\.item\./ && viewItem != reltio.item.lifecycleActions`, which matches `reltio.item.entityBrowser`. The Browse Entities item carries the entity type's own `jsonPath`, so Delete removes the entire entity type from the L3 (after a modal "Delete "Browse Entities"?") and Rename rewrites the entity type's `label` and the last segment of its `uri`.
+- **Repro:** evaluate the `reltio.deleteNode` clause with `viewItem = reltio.item.entityBrowser`: true. In the IDE, right-click Browse Entities under an entity type, Delete, confirm: the entity type disappears.
+- **Impact:** Medium. A destructive action on a row that reads as a viewer; the confirmation names "Browse Entities", not the entity type that is actually deleted. Undo in the editor recovers it.
+- **Test pointer:** TREE-013 #8 in `scripts/test-tenant-explorer-ux.cjs` (`reltio.item.entityBrowser` left out of the deleteNode / renameNode comparison, "BUG-012")
+
+### BUG-013: "Reset OAuth Client" is missing on a signed-in browser-login environment with no tenants
+
+- **Status:** Confirmed
+- **Found:** 2026-11-19 by RP-208563 while writing TREE-013
+- **Area / file:** Tenant Explorer & UX, `package.json` `contributes.menus` `view/item/context`, the `reltio.resetOAuthClient` entry (group `1_auth@0`); the suffix is added in `src/tree/multiTenantNodes.ts`:`EnvironmentNode` (`.noTenants`, about line 30)
+- **Expected:** Every environment row with a configured OAuth client (`.oauthReady`) offers Reset OAuth Client. The `EnvironmentNode` comment says the `.noTenants` suffix is additive so that existing clauses keep matching.
+- **Actual:** The clause is `viewItem =~ /^reltio\.environment\..*\.oauthReady$/ && ...`; the `$` anchor rejects `reltio.environment.authorized.oauthReady.noTenants`. Configure OAuth Client does not match that value either (`authorized(\.noTenants)?$`), so the row has no OAuth client action at all. `reltio.reLoginWithBrowser` handles the suffix with `(\.noTenants)?`.
+- **Repro:** evaluate the clause with `viewItem = reltio.environment.authorized.oauthReady.noTenants`: false.
+- **Impact:** Low. A user signed in through the browser whose environment has no tenants yet cannot reset a wrong OAuth client from the row until a tenant is added or they sign out.
+- **Test pointer:** TREE-013 #8 in `scripts/test-tenant-explorer-ux.cjs` (`reltio.environment.authorized.oauthReady.noTenants` left out of the resetOAuthClient comparison, "BUG-013")

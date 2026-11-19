@@ -12,7 +12,10 @@
  * TREE-008 (corrupt or missing L3 gives an empty Business Config), TREE-009 (quick switch and
  * tenant row guidance; the real click flow is manual QA, Tier C), TREE-010 (no secrets in node
  * fields), TREE-011 (large-scale tree performance), TREE-012 (bad stored data, status bar timer,
- * Windows paths; real UI across OSes is manual QA, Tier C).
+ * Windows paths; real UI across OSes is manual QA, Tier C), TREE-013 (menu visibility for every
+ * node type: view/item/context incl. inline, view/title and commandPalette when-clauses evaluated
+ * against every contextValue the tree nodes can produce; Delete / Rename on Browse Entities is
+ * blocked by BUG-012, Reset OAuth Client on a no-tenants browser-login environment by BUG-013).
  *
  * The shared vscode stub is extended at runtime only (scripts/lib is unchanged): EventEmitter
  * gets the real API's payload forwarding and dispose semantics, `window.showTextDocument` is
@@ -55,6 +58,7 @@ const {
 	HistoryFolderNode,
 	HistorySnapshotNode,
 } = importDist('tree/multiTenantNodes');
+const workflowNodes = importDist('tree/workflowNodes');
 const { MultiTenantTreeProvider } = importDist('tree/multiTenantTreeProvider');
 const { TokenStore, GIT_SOURCE_TOKEN } = importDist('api/tokenStore');
 const { EnvironmentManager } = importDist('workspace/environmentManager');
@@ -112,6 +116,100 @@ const ENTITY_TYPE = {
 	cleanseConfig: { infos: [] },
 	unmerge: { enabled: true },
 };
+
+/** Members of a string-literal union type, read from the TypeScript source so the list never goes stale. */
+function unionMembers(relFile, typeName) {
+	const text = fs.readFileSync(path.join(repoRoot, relFile), 'utf8');
+	const m = new RegExp(`export type ${typeName}\\s*=([^;]+);`).exec(text);
+	assert.ok(m, `union ${typeName} found in ${relFile}`);
+	const body = m[1].replace(/\/\/.*$/gm, '');
+	return [...body.matchAll(/'([^']+)'/g)].map(x => x[1]);
+}
+
+/**
+ * VS Code when-clause evaluation, general enough for every clause in contributes.menus:
+ * `||` binds looser than `&&`, `!` negates a term or a parenthesized group, and a term is
+ * `key`, `key == value`, `key != value` or `key =~ /regex/`. A key that is not in `known`
+ * throws, so a clause using an unmodelled context key cannot silently evaluate to false.
+ */
+function evalWhenClause(when, ctx, known) {
+	const src = String(when);
+	const tokens = [];
+	let i = 0;
+	while (i < src.length) {
+		const c = src[i];
+		if (/\s/.test(c)) { i++; continue; }
+		const two = src.slice(i, i + 2);
+		if (['&&', '||', '==', '!=', '=~'].includes(two)) { tokens.push({ op: two }); i += 2; continue; }
+		if (c === '(' || c === ')' || c === '!') { tokens.push({ op: c }); i++; continue; }
+		if (c === '/' && tokens.length && tokens[tokens.length - 1].op === '=~') {
+			let j = i + 1;
+			while (j < src.length && src[j] !== '/') j += src[j] === '\\' ? 2 : 1;
+			const flags = /^[a-z]*/.exec(src.slice(j + 1))[0];
+			tokens.push({ re: new RegExp(src.slice(i + 1, j), flags) });
+			i = j + 1 + flags.length;
+			continue;
+		}
+		if (c === "'") {
+			const j = src.indexOf("'", i + 1);
+			tokens.push({ word: src.slice(i + 1, j) });
+			i = j + 1;
+			continue;
+		}
+		const w = /^[^\s()!=&|']+/.exec(src.slice(i));
+		if (!w) throw new Error(`unparsable when clause "${src}" at ${i}`);
+		tokens.push({ word: w[0] });
+		i += w[0].length;
+	}
+	let p = 0;
+	const peek = () => tokens[p];
+	const isOp = op => peek() && peek().op === op;
+	const lookup = key => {
+		if (key === 'true') return true;
+		if (key === 'false') return false;
+		if (!known.includes(key)) throw new Error(`unsupported context key "${key}" in "${src}"`);
+		return ctx[key];
+	};
+	const primary = () => {
+		if (isOp('!')) { p++; return !primary(); }
+		if (isOp('(')) {
+			p++;
+			const v = or();
+			if (!isOp(')')) throw new Error(`missing ) in "${src}"`);
+			p++;
+			return v;
+		}
+		const key = tokens[p++];
+		if (!key || key.word === undefined) throw new Error(`expected a key in "${src}"`);
+		if (isOp('==') || isOp('!=')) {
+			const op = tokens[p++].op;
+			const val = tokens[p++];
+			if (!val || val.word === undefined) throw new Error(`expected a value in "${src}"`);
+			const eq = String(lookup(key.word) ?? '') === val.word;
+			return op === '==' ? eq : !eq;
+		}
+		if (isOp('=~')) {
+			p++;
+			const re = tokens[p++];
+			if (!re || !re.re) throw new Error(`expected a regex in "${src}"`);
+			return re.re.test(String(lookup(key.word) ?? ''));
+		}
+		return Boolean(lookup(key.word));
+	};
+	const and = () => {
+		let v = primary();
+		while (isOp('&&')) { p++; v = primary() && v; }
+		return v;
+	};
+	const or = () => {
+		let v = and();
+		while (isOp('||')) { p++; v = and() || v; }
+		return v;
+	};
+	const result = or();
+	if (p !== tokens.length) throw new Error(`trailing tokens in "${src}"`);
+	return result;
+}
 
 (async () => {
 	installMemoryFs();
@@ -1027,6 +1125,295 @@ const ENTITY_TYPE = {
 		provider.onL3DocumentChanged({ uri: { path: '/c:/ws/a b/BusinessConfig.json.bak' } });
 		await sleep(250);
 		assert.strictEqual(events, 2, 'TREE-012 #3: a lookalike suffix does not match');
+	}
+
+	// ── TREE-013: menu visibility for every node type ──
+	{
+		const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+		const menus = pkg.contributes.menus;
+		const declared = new Set(pkg.contributes.commands.map(c => c.command));
+		const KNOWN_KEYS = ['view', 'viewItem', 'reltio.workspaceSource', 'resourceFilename', 'resourceExtname'];
+		const VIEW = 'reltioConfigTree';
+		const shows = (entry, ctx) => entry.when === undefined || evalWhenClause(entry.when, ctx, KNOWN_KEYS);
+
+		// #1 Every command a menu references is declared, and every when clause parses with known keys.
+		for (const [location, entries] of Object.entries(menus)) {
+			for (const e of entries) {
+				assert.ok(declared.has(e.command), `TREE-013 #1: ${location} ${e.command} is declared in contributes.commands`);
+				if (e.when !== undefined) {
+					assert.doesNotThrow(() => evalWhenClause(e.when, {}, KNOWN_KEYS),
+						`TREE-013 #1: ${location} ${e.command} when clause parses: ${e.when}`);
+				}
+			}
+		}
+
+		// #2 Every contextValue the tree can produce, built from the real node classes. Each record
+		// carries the constructor facts the intended visibility depends on.
+		const W = workflowNodes;
+		const records = [];
+		const add = (kind, node, facts = {}) => {
+			assert.ok(typeof node.contextValue === 'string' && node.contextValue.startsWith('reltio.'),
+				`TREE-013 #2: ${kind} contextValue is a reltio.* string, got ${node.contextValue}`);
+			if (records.some(r => r.value === node.contextValue)) return;
+			records.push({ kind, value: node.contextValue, node, ...facts });
+		};
+		const eStates = unionMembers('src/ux/uxState.ts', 'EState');
+		assert.ok(eStates.length >= 4, 'TREE-013 #2: EState members read from src');
+		for (const authorized of [true, false]) for (const browser of [true, false]) {
+			for (const s of eStates.filter(x => /AUTHED|READY/.test(x) === authorized)) {
+				add('env', new EnvironmentNode('e', authorized, browser, s),
+					{ authorized, browser, noTenants: s === 'E_AUTHED_NO_TENANTS' });
+			}
+		}
+		for (const hasL3 of [true, false]) for (const gitBound of [true, false]) {
+			add('tenant', new TenantNode('e', 't', hasL3, false, true, hasL3 ? 'T_READY' : 'T_NO_L3', false, undefined, undefined, gitBound),
+				{ hasL3, gitBound });
+		}
+		add('gitFolder', new GitFolderNode('e', ['repo', 'DP'], false));
+		add('businessConfig', new BusinessConfigFolderNode('e', 't'));
+		for (const n of [0, 2]) add('historyFolder', new HistoryFolderNode('e', 't', n), { empty: n === 0 });
+		for (const hasOlder of [true, false]) {
+			add('snapshot', new HistorySnapshotNode('e', 't', U('/h/s.json'), 's', hasOlder), { hasOlder });
+		}
+		const configTypes = unionMembers('src/tree/treeNodes.ts', 'ConfigNodeType');
+		assert.ok(configTypes.includes('entityType') && configTypes.includes('lifecycleActions'),
+			'TREE-013 #2: ConfigNodeType members read from src');
+		for (const root of ['entityTypes', 'relationTypes']) {
+			for (const t of configTypes) {
+				add('config', new ConfigTreeItem(t, t, [root, 0, 'x'], 0), { nodeType: t, underRelation: root === 'relationTypes' });
+			}
+		}
+		// The canonical fixture's real tree yields nothing outside that set.
+		{
+			const { model } = require('./lib/load-canonical-fixture.cjs').loadCanonicalFixture();
+			const walked = new Set();
+			const walk = items => {
+				for (const it of items) {
+					walked.add(it.contextValue);
+					walk(getConfigNodeChildren(model, it));
+				}
+			};
+			walk(getConfigRootChildren(model, U('/ws/first-test.json')));
+			assert.ok(walked.size > 5, 'TREE-013 #2: canonical fixture tree walked');
+			for (const v of walked) {
+				assert.ok(records.some(r => r.value === v), `TREE-013 #2: fixture contextValue ${v} is in the derived set`);
+			}
+		}
+		for (const hasUrl of [true, false]) for (const hasRepo of [true, false]) {
+			add('wfFolder', new W.WorkflowsFolderNode('e', 't', hasUrl ? 'https://a' : undefined, hasRepo ? { repoUrl: 'https://git/r.git', relativePath: 'Workflows' } : undefined),
+				{ hasUrl, hasRepo });
+		}
+		add('wfFetchAction', new W.WorkflowFetchActionNode('e', 't'));
+		add('wfConnectRepoAction', new W.WorkflowConnectRepoActionNode('e', 't'));
+		add('wfProcessDefsFolder', new W.ProcessDefinitionsFolderNode('e', 't', []));
+		add('wfJarsFolder', new W.JarDeploymentsFolderNode('e', 't', []));
+		add('wfUnregisteredJarsFolder', new W.UnregisteredJarsFolderNode('e', 't', []));
+		const definition = { type: 'p', displayName: 'P', generic: false };
+		for (const localState of ['none', 'clean', 'changed']) {
+			add('wfProcessDef', new W.ProcessDefinitionNode('e', 't', definition, localState), { changed: localState === 'changed' });
+		}
+		add('wfJar', new W.JarDeploymentNode('e', 't', { name: 'j', module: 'm' }));
+		add('wfUnregisteredJar', new W.UnregisteredJarNode('e', 't', { module: 'm.jar' }));
+		for (const kind of unionMembers('src/tree/workflowNodes.ts', 'WorkflowRepoGroupKind')) {
+			add('wfRepoGroup', new W.WorkflowRepoGroupNode('e', 't', kind, 1), { groupKind: kind });
+			add('wfRepoModule', new W.WorkflowRepoModuleNode('e', 't', kind, 'mod', 1), { groupKind: kind });
+		}
+		add('wfRepoJavaFile', new W.WorkflowRepoJavaFileNode('e', 't', {
+			simpleName: 'A', packageName: 'x', fileUri: U('/r/A.java'), fullyQualifiedName: 'x.A', moduleName: 'm', relativePath: 'A.java',
+		}));
+		const draft = { processId: 'p', processName: 'P', fileName: 'p.bpmn20.xml', fileUri: U('/w/p.bpmn20.xml') };
+		for (const source of ['local', 'repo']) add('wfDraft', new W.WorkflowDraftNode('e', 't', draft, source), { local: source === 'local' });
+
+		// Evaluate each view/item/context entry against each producible value. Inline entries are
+		// keyed `<command>@inline`; right-click entries by the command alone.
+		const itemMenu = menus['view/item/context'];
+		const keyOf = e => (String(e.group ?? '').startsWith('inline') ? `${e.command}@inline` : e.command);
+		const ctxFor = (r, ws) => ({ view: VIEW, viewItem: r.value, 'reltio.workspaceSource': ws });
+		const matched = (ws, filter = () => true) => {
+			const out = new Map();
+			for (const e of itemMenu) {
+				const k = keyOf(e);
+				if (!out.has(k)) out.set(k, new Set());
+				for (const r of records.filter(filter)) if (shows(e, ctxFor(r, ws))) out.get(k).add(r.value);
+			}
+			return out;
+		};
+		const tenantWs = matched('tenant');
+		const gitWs = matched('git');
+		const sorted = s => [...s].sort();
+		const valuesWhere = pred => sorted(new Set(records.filter(pred).map(r => r.value)));
+
+		// #3 No orphan entry; node types with actions have them; documented action-less rows have none.
+		for (const e of itemMenu) {
+			const hit = records.some(r => shows(e, ctxFor(r, 'tenant')) || shows(e, ctxFor(r, 'git')));
+			assert.ok(hit, `TREE-013 #3: ${e.command} (${e.group}) matches at least one producible contextValue: ${e.when}`);
+		}
+		// Rows that carry no context actions by design: structural git folders (GitFolderNode doc),
+		// the Business Config grouping row, click-to-act workflow rows, and the read-only repository
+		// rows (WorkflowRepo* docs, D6).
+		const ACTIONLESS = ['gitFolder', 'businessConfig', 'wfFetchAction', 'wfConnectRepoAction', 'wfRepoGroup', 'wfRepoModule', 'wfRepoJavaFile'];
+		for (const r of records) {
+			const entries = itemMenu.filter(e => shows(e, ctxFor(r, 'tenant')));
+			if (ACTIONLESS.includes(r.kind)) {
+				assert.deepStrictEqual(entries.map(keyOf), [], `TREE-013 #3: ${r.value} carries no context actions`);
+			} else {
+				assert.ok(entries.length > 0, `TREE-013 #3: ${r.value} (${r.kind}) has at least one context action`);
+			}
+		}
+
+		// #4 Signed-out / signed-in gating on environment rows (tenant workspace).
+		const envOf = k => sorted(tenantWs.get(k) ?? []).map(v => records.find(r => r.value === v)).filter(r => r.kind === 'env');
+		for (const k of ['reltio.loginWithBrowser', 'reltio.loginWithBrowser@inline', 'reltio.signInEnvironment@inline']) {
+			const envs = envOf(k);
+			assert.ok(envs.length > 0, `TREE-013 #4: ${k} shows on some environment`);
+			for (const r of envs) assert.ok(!r.authorized, `TREE-013 #4: sign-in ${k} must not show on signed-in ${r.value}`);
+		}
+		for (const k of ['reltio.reLoginWithBrowser', 'reltio.addTenant', 'reltio.addTenant@inline']) {
+			const envs = envOf(k);
+			assert.ok(envs.length > 0, `TREE-013 #4: ${k} shows on some environment`);
+			for (const r of envs) assert.ok(r.authorized, `TREE-013 #4: signed-in action ${k} must not show on signed-out ${r.value}`);
+		}
+		for (const r of records.filter(x => x.kind === 'env' && !x.authorized)) {
+			const inline = itemMenu.filter(e => String(e.group ?? '').startsWith('inline') && shows(e, ctxFor(r, 'tenant')));
+			assert.ok(inline.some(e => /signIn|login/i.test(e.command)), `TREE-013 #4: signed-out ${r.value} has an inline sign-in action`);
+		}
+
+		// #5 Git workspace: on environment, tenant and history rows only Remove Repository / Remove
+		// Tenant, Open L3 and the L3 create actions remain. configureOAuthClient is excluded: BUG-008.
+		const isEnvTenantHistory = r => ['env', 'tenant', 'historyFolder', 'snapshot'].includes(r.kind);
+		const gitScoped = matched('git', isEnvTenantHistory);
+		const L3_INSERTS = {
+			'reltio.addEntityType': 'entityTypesFolder', 'reltio.addRelationType': 'relationTypesFolder',
+			'reltio.insertInteractionType': 'interactionTypesFolder', 'reltio.insertHierarchyType': 'hierarchyTypesFolder',
+			'reltio.insertGraphType': 'graphTypesFolder', 'reltio.insertGroupingType': 'groupingTypesFolder',
+			'reltio.insertSource': 'sourcesFolder',
+		};
+		for (const [k, got] of gitScoped) {
+			let expected = [];
+			if (k === 'reltio.removeGitSource') expected = valuesWhere(r => r.kind === 'env');
+			else if (k === 'reltio.removeGitTenant') expected = valuesWhere(r => r.kind === 'tenant');
+			else if (k === 'reltio.openL3@inline' || L3_INSERTS[k]) expected = valuesWhere(r => r.kind === 'tenant' && r.hasL3);
+			if (k === 'reltio.configureOAuthClient') continue; // BUG-008
+			assert.deepStrictEqual(sorted(got), expected, `TREE-013 #5: ${k} in a git workspace`);
+		}
+		for (const k of ['reltio.removeGitSource', 'reltio.removeGitTenant']) {
+			assert.deepStrictEqual(sorted(tenantWs.get(k)), [], `TREE-013 #5: ${k} is git-workspace only`);
+		}
+
+		// #6 view/title: Setup Wizard unless the workspace is git-sourced, Remove Repository only then.
+		for (const ws of ['tenant', 'git', undefined]) {
+			for (const view of [VIEW, 'explorer']) {
+				const got = menus['view/title'].filter(e => shows(e, { view, 'reltio.workspaceSource': ws })).map(e => e.command);
+				const expected = view !== VIEW ? [] : ws === 'git' ? ['reltio.removeGitSource'] : ['reltio.launchSetupWizard'];
+				assert.deepStrictEqual(got, expected, `TREE-013 #6: view/title in view ${view}, workspaceSource ${ws}`);
+			}
+		}
+
+		// #7 commandPalette: tree-only commands are hidden everywhere, and each stays reachable from
+		// a tree row (a context entry or the row's click command).
+		const clickCommands = new Set(records.map(r => r.node.command?.command).filter(Boolean));
+		for (const e of menus.commandPalette) {
+			for (const ws of ['tenant', 'git', undefined]) {
+				assert.strictEqual(shows(e, { 'reltio.workspaceSource': ws }), false,
+					`TREE-013 #7: ${e.command} is hidden from the command palette (workspaceSource ${ws})`);
+			}
+			assert.ok(itemMenu.some(x => x.command === e.command) || clickCommands.has(e.command),
+				`TREE-013 #7: palette-hidden ${e.command} is reachable from a tree row`);
+		}
+
+		// #8 Full intended-visibility matrix in a tenant workspace, per entry key.
+		const cfg = (...types) => r => r.kind === 'config' && types.includes(r.nodeType);
+		const attrTargets = ['entityType', 'relationType', 'nestedAttribute', 'attributesFolder'];
+		const spec = {
+			'reltio.revealInEditor': r => r.kind === 'config',
+			'reltio.showOntologyFromTree': cfg('entityTypesFolder', 'relationTypesFolder'),
+			'reltio.insertSimpleAttribute': cfg(...attrTargets),
+			'reltio.insertNestedAttribute': cfg(...attrTargets),
+			// Reference attributes are not supported on relation types (treeNodes.ts contextValueFor).
+			'reltio.insertReferenceAttribute': r => cfg('entityType', 'nestedAttribute', 'attributesFolder')(r) && !r.value.endsWith('.relationType'),
+			'reltio.insertMatchGroup': cfg('entityType'),
+			'reltio.insertSurvivorshipGroup': cfg('entityType', 'relationType'),
+			'reltio.insertCleanseConfig': cfg('entityType'),
+			// lifecycleActions is read-only in the tree; Browse Entities is not a JSON node.
+			'reltio.deleteNode': r => r.kind === 'config' && !r.nodeType.endsWith('Folder') && !['lifecycleActions', 'entityBrowser'].includes(r.nodeType),
+			'reltio.renameNode': r => r.kind === 'config' && !r.nodeType.endsWith('Folder') && !['lifecycleActions', 'entityBrowser'].includes(r.nodeType),
+			'reltio.configureOAuthClient': r => r.kind === 'env' && !r.browser,
+			'reltio.resetOAuthClient': r => r.kind === 'env' && r.browser,
+			'reltio.loginWithBrowser': r => r.kind === 'env' && !r.authorized && r.browser,
+			'reltio.loginWithBrowser@inline': r => r.kind === 'env' && !r.authorized && r.browser,
+			'reltio.reLoginWithBrowser': r => r.kind === 'env' && r.authorized && r.browser,
+			'reltio.provideToken': r => r.kind === 'env',
+			'reltio.refreshEnvironment': r => r.kind === 'env',
+			'reltio.removeEnvironment': r => r.kind === 'env',
+			'reltio.addTenant': r => r.kind === 'env' && r.authorized,
+			'reltio.addTenant@inline': r => r.kind === 'env' && r.authorized && r.noTenants,
+			'reltio.signInEnvironment@inline': r => r.kind === 'env' && !r.authorized && !r.browser,
+			'reltio.connectTenantToGit': r => r.kind === 'tenant' && !r.gitBound,
+			'reltio.tenantNewBranch': r => r.kind === 'tenant' && r.gitBound,
+			'reltio.disconnectTenantFromGit': r => r.kind === 'tenant' && r.gitBound,
+			'reltio.removeTenant': r => r.kind === 'tenant',
+			'reltio.copyTenantId': r => r.kind === 'tenant',
+			'reltio.fetchL3': r => r.kind === 'tenant' && r.hasL3,
+			'reltio.fetchL3@inline': r => r.kind === 'tenant' && !r.hasL3,
+			'reltio.fetchConfigurationHistory': r => r.kind === 'tenant' && r.hasL3,
+			'reltio.applyL3Configuration': r => r.kind === 'tenant' && r.hasL3,
+			'reltio.openL3@inline': r => r.kind === 'tenant' && r.hasL3,
+			'reltio.fetchMoreConfigurationHistory': r => r.kind === 'historyFolder',
+			'reltio.historyCompareWithCurrent': r => r.kind === 'snapshot',
+			'reltio.historyCompareWithPrevious': r => r.kind === 'snapshot' && r.hasOlder,
+			'reltio.historySelectForCompare': r => r.kind === 'snapshot',
+			'reltio.historyCompareSelected': r => r.kind === 'snapshot',
+			'reltio.removeGitSource': () => false,
+			'reltio.removeGitTenant': () => false,
+			'reltio.fetchWorkflows@inline': r => r.kind === 'wfFolder',
+			'reltio.refreshWorkflows': r => r.kind === 'wfFolder' && r.hasUrl,
+			'reltio.refreshWorkflows@inline': r => r.kind === 'wfFolder' && r.hasUrl,
+			'reltio.editWorkflowAdapterUrl': r => r.kind === 'wfFolder',
+			'reltio.connectWorkflowRepository': r => r.kind === 'wfFolder' && !r.hasRepo,
+			'reltio.connectWorkflowRepository@inline': r => r.kind === 'wfFolder' && !r.hasRepo,
+			'reltio.refreshWorkflowRepoSync': r => r.kind === 'wfFolder' && r.hasRepo,
+			'reltio.openWorkflowRepoFolder': r => r.kind === 'wfFolder' && r.hasRepo,
+			'reltio.openWorkflowRepoInBrowser': r => r.kind === 'wfFolder' && r.hasRepo,
+			'reltio.disconnectWorkflowRepository': r => r.kind === 'wfFolder' && r.hasRepo,
+			'reltio.refreshProcessDefinitions': r => r.kind === 'wfProcessDefsFolder',
+			'reltio.refreshProcessDefinitions@inline': r => r.kind === 'wfProcessDefsFolder',
+			'reltio.newWorkflowDraft': r => r.kind === 'wfProcessDefsFolder',
+			'reltio.newWorkflowDraft@inline': r => r.kind === 'wfProcessDefsFolder',
+			'reltio.duplicateWorkflowDraft': r => r.kind === 'wfProcessDef',
+			'reltio.duplicateWorkflowDraft@inline': r => r.kind === 'wfProcessDef',
+			'reltio.deployWorkflow': r => (r.kind === 'wfProcessDef' && r.changed) || r.kind === 'wfDraft',
+			'reltio.deployWorkflow@inline': r => (r.kind === 'wfProcessDef' && r.changed) || r.kind === 'wfDraft',
+			'reltio.compareWorkflowBpmn': r => r.kind === 'wfProcessDef' && r.changed,
+			'reltio.discardWorkflowBpmnChanges': r => r.kind === 'wfProcessDef' && r.changed,
+			'reltio.refreshJarDeployments': r => r.kind === 'wfJarsFolder' || r.kind === 'wfUnregisteredJarsFolder',
+			'reltio.refreshJarDeployments@inline': r => r.kind === 'wfJarsFolder' || r.kind === 'wfUnregisteredJarsFolder',
+			'reltio.copyJarModulePath': r => r.kind === 'wfJar',
+			'reltio.copyJarModulePath@inline': r => r.kind === 'wfJar',
+			'reltio.registerJarDeployment': r => r.kind === 'wfUnregisteredJar',
+			'reltio.registerJarDeployment@inline': r => r.kind === 'wfUnregisteredJar',
+			'reltio.deleteWorkflowDraft': r => r.kind === 'wfDraft' && r.local,
+			'reltio.previewWorkflowDiagram': r => r.kind === 'wfProcessDef' || r.kind === 'wfDraft',
+		};
+		for (const k of Object.keys(L3_INSERTS)) {
+			spec[k] = r => cfg(L3_INSERTS[k])(r) || (r.kind === 'tenant' && r.hasL3);
+		}
+		for (const k of tenantWs.keys()) {
+			assert.ok(spec[k], `TREE-013 #8: view/item/context entry ${k} has a stated intended target (add it to the spec)`);
+		}
+		for (const k of Object.keys(spec)) {
+			assert.ok(tenantWs.has(k), `TREE-013 #8: intended menu entry ${k} exists in package.json`);
+		}
+		// Known product bugs, left out of the comparison only for the affected value.
+		const SKIP = {
+			'reltio.deleteNode': ['reltio.item.entityBrowser'], // BUG-012
+			'reltio.renameNode': ['reltio.item.entityBrowser'], // BUG-012
+			'reltio.resetOAuthClient': ['reltio.environment.authorized.oauthReady.noTenants'], // BUG-013
+		};
+		for (const [k, got] of tenantWs) {
+			const skip = SKIP[k] ?? [];
+			assert.deepStrictEqual(sorted(got).filter(v => !skip.includes(v)), valuesWhere(spec[k]).filter(v => !skip.includes(v)),
+				`TREE-013 #8: ${k} shows exactly on its intended rows`);
+		}
 	}
 
 	console.log('test-tenant-explorer-ux: OK');

@@ -166,5 +166,19 @@
     "existing_coverage": "None",
     "target_script": "scripts/test-tenant-explorer-ux.cjs",
     "status": "Implemented"
+  },
+  {
+    "id": "TREE-013",
+    "module": "Tenant Explorer & UX",
+    "source": "package.json contributes.menus view/item/context (incl. inline groups), view/title, commandPalette ; src/tree/multiTenantNodes.ts, treeNodes.ts contextValueFor, workflowNodes.ts contextValue ; extends TREE-007 (environment rows only) to every node type",
+    "title": "Menu visibility for every tree node type, workspace source and sign-in state",
+    "category": "Functional",
+    "subtype": "Feature",
+    "scenario": "1) Parse package.json menus; evaluate every when clause with a general when-clause evaluator (||, &&, !, parentheses, ==, !=, =~). 2) Build every node class (environment, tenant, Git folder, Business Config, History folder and snapshot, every ConfigNodeType under entity and relation types, every workflow node) for each state and collect the contextValues; walk the canonical fixture tree. 3) For each view/item/context entry, evaluate against each contextValue in a tenant and a git workspace. 4) Evaluate view/title for each view and workspace source, and commandPalette entries.",
+    "expected": "1) Every command referenced by any menu is declared and every when clause parses with known context keys. 2) Every node yields a reltio.* contextValue; the fixture tree yields nothing outside the derived set. 3) No entry is orphaned; every node type with actions has one, and the documented action-less rows (Git folder, Business Config, workflow action rows, repository Java rows) have none; sign-in entries only on signed-out environments and signed-in entries (re-login, add tenant) only on signed-in ones, each signed-out environment has an inline sign-in; in a git workspace environment, tenant and history rows show only Remove Repository / Remove Tenant, Open L3 and the L3 create actions; each entry shows exactly on its intended rows. 4) view/title shows Setup Wizard unless the workspace is git-sourced and Remove Repository only then, nothing outside the Reltio view; commandPalette entries are hidden everywhere and each stays reachable from a tree row. Delete/Rename on Browse Entities (BUG-012) and Reset OAuth Client on a no-tenants browser-login environment (BUG-013) are left out of the comparison.",
+    "priority": "P1",
+    "existing_coverage": "Partial",
+    "target_script": "scripts/test-tenant-explorer-ux.cjs",
+    "status": "Implemented"
   }
 ]
