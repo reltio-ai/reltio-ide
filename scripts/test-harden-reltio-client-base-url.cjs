@@ -8,6 +8,11 @@
  * Tier B: formatPutConfigurationFailureMessage() truncation is unchanged.
  * Tier C (manual): design.md Test plan — a real `*.reltio.environment` folder
  *         named after an untrusted host, and a legitimate non-reltio.com env.
+ *
+ * Regression rows (docs/test-proposals/common-utils.json): UTIL-010 URL hardening
+ * (userinfo, path, query and fragment rejected before fetch; case, slashes and
+ * whitespace normalized; lookalikes rejected) and redirect protection for the
+ * bearer token (section 10).
  */
 const assert = require('assert');
 const fs = require('fs');
@@ -212,6 +217,73 @@ function callHelpers(host) {
 			'reltio.trustedHostSuffixes must be scope "application" (User-settings only), ' +
 				'otherwise a workspace can set it via .vscode/settings.json and defeat the allowlist',
 		);
+	}
+
+	// 10. UTIL-010: URL hardening and redirect protection for bearer tokens.
+	{
+		/** The rejection `fn` produced, or undefined; lets each assertion message start with the row ID. */
+		const rejection = async fn => {
+			try {
+				await fn();
+			} catch (e) {
+				return e;
+			}
+			return undefined;
+		};
+		// 1. Userinfo, path, query and fragment are refused before any request.
+		for (const host of [
+			'https://user:pw@test.reltio.com',
+			'https://test.reltio.com/evil',
+			'test.reltio.com?x=1',
+			'https://test.reltio.com#f',
+		]) {
+			const { result: err, calls } = await withFetch(() => jsonResponse(200, []), () => rejection(() => listTenants(host, 'tok')));
+			assert.ok(
+				err instanceof UntrustedHostError && !err.message.includes('pw'),
+				`UTIL-010 #1: ${host} must be rejected with an UntrustedHostError that does not echo the password`,
+			);
+			assert.strictEqual(calls.length, 0, `UTIL-010 #1: ${host}: fetch must never be called`);
+		}
+
+		// 2. Normalization accepted, lookalikes rejected.
+		for (const [host, origin] of [
+			['TEST.RELTIO.COM', 'https://test.reltio.com'],
+			['test.reltio.com:8443', 'https://test.reltio.com:8443'],
+			[' //test.reltio.com ', 'https://test.reltio.com'],
+			['test.reltio.com/', 'https://test.reltio.com'],
+		]) {
+			const { calls } = await withFetch(() => jsonResponse(200, []), () => listTenants(host, 'tok'));
+			assert.strictEqual(calls.length, 1, `UTIL-010 #2: ${JSON.stringify(host)} must be accepted`);
+			assert.strictEqual(
+				calls[0].url,
+				`${origin}/reltio/enhancedTenants?showAll=true`,
+				`UTIL-010 #2: ${JSON.stringify(host)} resolves to ${origin} with no double slash`,
+			);
+		}
+		for (const host of ['reltio.com.evil.com', 'evilreltio.com']) {
+			const { result: err, calls } = await withFetch(() => jsonResponse(200, []), () => rejection(() => listTenants(host, 'tok')));
+			assert.ok(err instanceof UntrustedHostError, `UTIL-010 #2: lookalike ${host} must be rejected`);
+			assert.strictEqual(calls.length, 0, `UTIL-010 #2: lookalike ${host}: fetch must never be called`);
+		}
+
+		// 3. Redirects are refused, so the token is sent once, to the trusted host only.
+		{
+			const { calls } = await withFetch(
+				() => ({ status: 200, ok: true, text: async () => '{}' }),
+				() => fetchL3Configuration('test.reltio.com', 't', 'tok'),
+			);
+			assert.strictEqual(calls.length, 1, 'UTIL-010 #3: a single request');
+			assert.strictEqual(calls[0].init.redirect, 'error', "UTIL-010 #3: init.redirect === 'error'");
+			assert.strictEqual(calls[0].init.headers.Authorization, 'Bearer tok', 'UTIL-010 #3: Authorization on the first request');
+		}
+		{
+			const { result: err, calls } = await withFetch(
+				() => { throw new TypeError('fetch failed: redirect mode is set to error'); },
+				() => rejection(() => fetchL3Configuration('test.reltio.com', 't', 'tok')),
+			);
+			assert.ok(err && /^Network error: /.test(err.message), "UTIL-010 #3: a refused redirect surfaces as 'Network error: ...'");
+			assert.strictEqual(calls.length, 1, 'UTIL-010 #3: no second fetch after a refused redirect');
+		}
 	}
 
 	console.log('test-harden-reltio-client-base-url: OK');

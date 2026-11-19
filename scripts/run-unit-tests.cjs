@@ -10,10 +10,12 @@ const CODE_MODEL_FIRST = 'test-code-model-and-schema.cjs';
 
 /** Explicit registry — one script per OpenSpec feature change (alphabetical after code-model). */
 const SCRIPTS = [
+	'test-agent-skills.cjs',
 	'test-apply-tenant-configuration-action.cjs',
 	'test-attribute-skeleton-mandatory-fields.cjs',
 	'test-autocomplete-improvements.cjs',
 	'test-browser-oauth-login.cjs',
+	'test-common-utils.cjs',
 	'test-config-tree-view.cjs',
 	'test-configuration-history-review.cjs',
 	'test-context-menu-reorganization.cjs',
@@ -43,6 +45,7 @@ const SCRIPTS = [
 	'test-rdm-lookup-value-authoring.cjs',
 	'test-rdm-lookup-values.cjs',
 	'test-rdm-tree-view.cjs',
+	'test-reltio-client.cjs',
 	'test-replace-tenants-with-enhanced-tenants.cjs',
 	'test-schema-alignment-with-live-l3.cjs',
 	'test-setup-auth.cjs',

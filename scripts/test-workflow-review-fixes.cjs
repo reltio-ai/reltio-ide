@@ -13,6 +13,9 @@
  *   3. BPMN discovery ignores build output and is bounded; sync comparison ignores line endings;
  *      a failed clone puts the generated README back; per-key debounce.
  *   4. package.json: node-only commands are hidden from the Command Palette.
+ *
+ * Regression rows (docs/test-proposals/common-utils.json): UTIL-003 KeyedDebouncer independent keys,
+ * last-callback coalescing, cancel and dispose (section 2a).
  */
 const assert = require('assert');
 const fs = require('fs');
@@ -92,6 +95,48 @@ const ADAPTER = 'https://tst-01-workflow.reltio.com';
 		assert.strictEqual(planDeploy(bpmn('../evil'), 'x', deployed).ok, false, 'an unsafe id is refused');
 		const unknown = planDeploy(bpmn('foo'), 'foo', undefined);
 		assert.strictEqual(unknown.ok, false, 'an unfetched list must not be read as "nothing is deployed"');
+	}
+
+	// ── 2a. KeyedDebouncer regression rows (UTIL-003) ────────────────────────
+	{
+		// 1. Two keys inside one window: each callback runs exactly once.
+		let d = new KeyedDebouncer(20);
+		const runs = { A: 0, B: 0 };
+		d.schedule('A', () => runs.A++);
+		d.schedule('B', () => runs.B++);
+		await sleep(80);
+		assert.deepStrictEqual(runs, { A: 1, B: 1 }, 'UTIL-003 #1: both keys run exactly once; the second key does not drop the first');
+
+		// 2. Rapid reschedules of one key: only the last callback runs, once, timed from the last call.
+		const fired = [];
+		const scheduledAt = [];
+		let firedAt = 0;
+		for (const n of [1, 2, 3]) {
+			scheduledAt.push(Date.now());
+			d.schedule('A', () => { fired.push(n); firedAt = Date.now(); });
+			await sleep(10);
+		}
+		await sleep(80);
+		assert.deepStrictEqual(fired, [3], 'UTIL-003 #2: only callback 3 runs, once');
+		assert.ok(firedAt - scheduledAt[2] >= 18, `UTIL-003 #2: the delay is measured from the last schedule call (${firedAt - scheduledAt[2]}ms)`);
+
+		// 3. cancel, unknown keys, dispose, and reschedule after cancel.
+		const out = [];
+		d.schedule('A', () => out.push('A'));
+		d.schedule('B', () => out.push('B'));
+		d.cancel('A');
+		assert.doesNotThrow(() => d.cancel('unknown'), 'UTIL-003 #3: cancel on an unknown key does not throw');
+		await sleep(80);
+		assert.deepStrictEqual(out, ['B'], 'UTIL-003 #3: cancelled A never runs; B runs when not disposed');
+		d.schedule('A', () => out.push('A again'));
+		await sleep(80);
+		assert.deepStrictEqual(out, ['B', 'A again'], 'UTIL-003 #3: re-schedule after cancel works');
+		d.schedule('C', () => out.push('C'));
+		d.dispose();
+		assert.doesNotThrow(() => d.dispose(), 'UTIL-003 #3: a second dispose does not throw');
+		await sleep(80);
+		assert.deepStrictEqual(out, ['B', 'A again'], 'UTIL-003 #3: disposed work never runs');
+		d = undefined;
 	}
 
 	// ── 2. KeyedDebouncer ────────────────────────────────────────────────────
