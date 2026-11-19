@@ -47,6 +47,7 @@ const SCRIPTS = [
 	'test-setup-auth.cjs',
 	'test-setup-ux-redesign.cjs',
 	'test-skills-and-enablement-packs-library.cjs',
+	'test-tenant-explorer-ux.cjs',
 	'test-terms-of-use-gate.cjs',
 	'test-workflow-adapter-registry.cjs',
 	'test-workflow-authoring.cjs',
