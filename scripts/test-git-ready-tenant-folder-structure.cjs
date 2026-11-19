@@ -9,11 +9,33 @@
  * Tier B: the canonical fixture parses identically from the legacy path and the component-tree
  *         path, proving the rename is inert for parsing, the URI index and the config subtree.
  * Tier C (manual): openspec/changes/git-ready-tenant-folder-structure/design.md
+ *
+ * Regression rows (docs/test-proposals/git-integration.json): GIT-002 (isTenantFolderCloneable,
+ * hasUncommittedChanges, planMigration edge cases) in the "GIT-002" section; GIT-007 (prune keeps
+ * user content, re-materialize keeps a user README) is the existing 17.x and 9.2 checks.
  */
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const { importDist } = require('./lib/import-dist.cjs');
+
+// GIT-002 stubs git for hasUncommittedChanges. gitConfigSource.ts and tenantGitBinding.ts bind
+// `promisify(execFile)` at require time, so the indirection goes in before the first importDist.
+// By default it forwards to the real execFile with the result shape the real promisified one gives,
+// so every pre-existing check below behaves exactly as before.
+const childProcess = require('child_process');
+const realExecFile = childProcess.execFile;
+const forwardExecFile = (file, args, options, callback) =>
+	realExecFile(file, args, options, (err, stdout, stderr) => {
+		if (err) {
+			err.stdout = stdout;
+			err.stderr = stderr;
+			return callback(err);
+		}
+		return callback(null, { stdout, stderr });
+	});
+let execFileHandler = forwardExecFile;
+childProcess.execFile = (...args) => execFileHandler(...args);
 const { loadCanonicalFixture, repoRoot } = require('./lib/load-canonical-fixture.cjs');
 
 const vscode = require('./lib/vscode-stub.cjs');
@@ -600,6 +622,105 @@ const {
 		true,
 		'IDE state alone does not make a tenant non-cloneable',
 	);
+
+	// ------------------------------------------------ GIT-002 never clobber user work
+
+	// #1 isTenantFolderCloneable edge cases.
+	mem = installMemoryFs();
+	assert.strictEqual(await binding.isTenantFolderCloneable(U('/wsG/env/missing')), true, 'GIT-002 #1: a missing folder is cloneable');
+	const readmesOnly = U('/wsG/env/t1');
+	await materializeTenantTree(readmesOnly);
+	await vscode.workspace.fs.writeFile(U(`${readmesOnly.fsPath}/.reltio-ide/history/x.json`), Buffer.from('{}'));
+	assert.strictEqual(await binding.isTenantFolderCloneable(readmesOnly), true, 'GIT-002 #1: generated READMEs plus .reltio-ide is cloneable');
+	const withConfig = U('/wsG/env/t2');
+	await materializeTenantTree(withConfig);
+	await vscode.workspace.fs.writeFile(U(`${withConfig.fsPath}/${BUSINESS_CONFIG_FILE}`), Buffer.from('{}'));
+	assert.strictEqual(await binding.isTenantFolderCloneable(withConfig), false, 'GIT-002 #1: BusinessConfig.json makes it non-cloneable');
+	const extraFile = U('/wsG/env/t3');
+	await materializeTenantTree(extraFile);
+	await vscode.workspace.fs.writeFile(U(`${extraFile.fsPath}/LifeCycle Actions/notes.txt`), Buffer.from('mine'));
+	assert.strictEqual(await binding.isTenantFolderCloneable(extraFile), false, 'GIT-002 #1: a file beside a README makes it non-cloneable');
+	const topFile = U('/wsG/env/t4');
+	await vscode.workspace.fs.writeFile(U(`${topFile.fsPath}/notes.md`), Buffer.from('mine'));
+	assert.strictEqual(await binding.isTenantFolderCloneable(topFile), false, 'GIT-002 #1: a top-level file makes it non-cloneable');
+	{
+		const realReadDirectory = mem.readDirectory;
+		mem.readDirectory = async () => {
+			const e = new Error('EACCES: permission denied');
+			e.code = 'NoPermissions';
+			throw e;
+		};
+		try {
+			await assert.rejects(
+				() => binding.isTenantFolderCloneable(readmesOnly),
+				/EACCES/,
+				'GIT-002 #1: a non-ENOENT read error propagates',
+			);
+		} finally {
+			mem.readDirectory = realReadDirectory;
+		}
+	}
+
+	// #2 hasUncommittedChanges with stubbed git.
+	{
+		const calls = [];
+		let respond;
+		execFileHandler = (_file, args, _options, callback) => {
+			calls.push(args.join(' '));
+			try {
+				callback(null, { stdout: respond(), stderr: '' });
+			} catch (e) {
+				callback(e);
+			}
+		};
+		try {
+			respond = () => '';
+			assert.strictEqual(await binding.hasUncommittedChanges(U('/wsG/env/t1')), false, 'GIT-002 #2: a non-repo folder is not dirty');
+			assert.strictEqual(calls.length, 0, 'GIT-002 #2: git is not run for a non-repo folder');
+			const repo = U('/wsG/env/repo');
+			await vscode.workspace.fs.createDirectory(U(`${repo.fsPath}/.git`));
+			assert.strictEqual(await binding.hasUncommittedChanges(repo), false, 'GIT-002 #2: empty status --porcelain is clean');
+			assert.deepStrictEqual(calls, ['status --porcelain'], 'GIT-002 #2: dirtiness comes from git status --porcelain');
+			respond = () => ' M Business Config/BusinessConfig.json\n';
+			assert.strictEqual(await binding.hasUncommittedChanges(repo), true, 'GIT-002 #2: status output means dirty');
+			respond = () => {
+				throw new Error('fatal: not a git repository');
+			};
+			assert.strictEqual(await binding.hasUncommittedChanges(repo), true, 'GIT-002 #2: a git failure is treated as dirty');
+		} finally {
+			execFileHandler = forwardExecFile;
+		}
+	}
+
+	// #3 planMigration edge cases.
+	{
+		const gMigration = importDist('workspace/layoutMigration');
+		const onlyTwo = U('/wsG/env/legacy2');
+		await vscode.workspace.fs.writeFile(U(`${onlyTwo.fsPath}/L3.reltio.json`), Buffer.from('{}'));
+		await vscode.workspace.fs.writeFile(U(`${onlyTwo.fsPath}/history/h.reltio.json`), Buffer.from('{}'));
+		let p = await gMigration.planMigration('e', 'legacy2', onlyTwo);
+		assert.deepStrictEqual(
+			p.moves.map(m => [m.legacy, m.destination]),
+			[['L3.reltio.json', BUSINESS_CONFIG_FILE], ['history', HISTORY_DIR]],
+			'GIT-002 #3: only present legacy entries are planned',
+		);
+		const clash = U('/wsG/env/clash');
+		await vscode.workspace.fs.writeFile(U(`${clash.fsPath}/L3.reltio.json`), Buffer.from('{"old":1}'));
+		await vscode.workspace.fs.writeFile(U(`${clash.fsPath}/L3.reltio.layout.json`), Buffer.from('{}'));
+		await vscode.workspace.fs.writeFile(U(`${clash.fsPath}/${BUSINESS_CONFIG_FILE}`), Buffer.from('{"new":1}'));
+		p = await gMigration.planMigration('e', 'clash', clash);
+		assert.deepStrictEqual(
+			p.moves.map(m => m.legacy),
+			['L3.reltio.layout.json'],
+			'GIT-002 #3: a move whose destination already exists is skipped',
+		);
+		const done = U('/wsG/env/done');
+		await materializeTenantTree(done);
+		await vscode.workspace.fs.writeFile(U(`${done.fsPath}/${BUSINESS_CONFIG_FILE}`), Buffer.from('{}'));
+		await vscode.workspace.fs.writeFile(U(`${done.fsPath}/${BASELINE_FILE}`), Buffer.from('{}'));
+		p = await gMigration.planMigration('e', 'done', done);
+		assert.deepStrictEqual(p.moves, [], 'GIT-002 #3: a migrated tree yields empty moves');
+	}
 
 	// ------------------------------------------- 16.x enclosing repository: detect and defuse
 

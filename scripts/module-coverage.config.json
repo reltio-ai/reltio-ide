@@ -47,7 +47,7 @@
 				"workspace/tenantFolderStructure.ts",
 				"workspace/layoutMigration.ts"
 			],
-			"floor": 73
+			"floor": 91
 		},
 		{
 			"name": "Tenant Explorer & UX",
