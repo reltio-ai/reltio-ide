@@ -88,7 +88,7 @@
 				"workspace/reltioAgentSync.ts",
 				"api/reltioClient.ts"
 			],
-			"floor": 86
+			"floor": 97
 		},
 		{
 			"name": "Extension Activation",

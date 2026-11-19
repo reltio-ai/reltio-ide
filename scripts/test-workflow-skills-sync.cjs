@@ -14,6 +14,10 @@
  *   5.  AGENTS.md with user content keeps it; a file that held only the block is deleted.
  *   6.  Concurrent syncs never interleave; identical startup requests share one run.
  *   7.  A failed startup sync is logged and warned once; a forced resync rejects to its caller.
+ *   8.  UTIL-011 (docs/test-proposals/common-utils.json): syncing as cursor, vscode and other hosts
+ *       never touches user files outside owned paths and `.reltio/`: AGENTS.md without markers, a file
+ *       with an unterminated block, customer `.cursor` rules and `.github` workflows stay byte-identical;
+ *       only stamp-owned paths, legacy-marker files and the folders their removal emptied go.
  */
 const assert = require('assert');
 const Module = require('module');
@@ -176,6 +180,49 @@ function world(options = {}) {
 			vscode.window.showWarningMessage = realWarn;
 			console.error = realError;
 		}
+	}
+
+	// ── 8. UTIL-011: nothing outside owned paths and .reltio is touched ───────
+	{
+		const w = await world();
+		// Valid skills, so every host installs (and later retires) real skill copies.
+		await w.put('/ext/skills/reltio-default/workflow-assistant/SKILL.md', '---\nname: reltio-workflow-assistant\ndescription: Assistant.\n---\nbody\n');
+		const userFiles = {
+			'/ws/AGENTS.md': '# Team agents\n\nNo markers here.\n',
+			'/ws/CLAUDE.md': `# Mine\n${BEGIN}\nnever closed\nuser text\n`,
+			'/ws/.cursor/rules/team.mdc': '---\ndescription: team rule\n---\n',
+			'/ws/.cursor/skills/reltio-customer/SKILL.md': '---\nname: reltio-customer\ndescription: mine\n---\n',
+			'/ws/.github/workflows/ci.yml': 'on: push\n',
+		};
+		for (const [p, text] of Object.entries(userFiles)) await w.put(p, text);
+		// A legacy 1.0.24 pointer: the one kind of non-owned file the sync may remove.
+		const legacy = '/ws/.cursor/skills/reltio-legacy/SKILL.md';
+		await w.put(legacy, POINTER.replace('workflow-bpmn-authoring', 'legacy'));
+
+		const realEnv = { ...vscode.env };
+		const stampPath = '/ws/.reltio/reltio-agent/.sync-state.json';
+		try {
+			for (const [uriScheme, appName] of [['cursor', 'Cursor'], ['vscode', 'Visual Studio Code'], ['other', 'Other Editor']]) {
+				Object.assign(vscode.env, { uriScheme, appName });
+				const owned = w.has(stampPath) ? JSON.parse(w.text(stampPath)).ownedAgentFiles ?? [] : [];
+				const before = [...w.mem._files.keys()].filter(f => f.startsWith('/ws/') && !f.startsWith('/ws/.reltio/'));
+				await syncReltioAgentAssets(context);
+				for (const [p, text] of Object.entries(userFiles)) {
+					assert.ok(w.has(p) && w.text(p) === text, `UTIL-011 #1: ${uriScheme}: ${p} is byte-identical`);
+				}
+				for (const f of before.filter(f => !w.mem._files.has(f))) {
+					const rel = f.slice('/ws/'.length);
+					const isOwned = owned.some(o => rel === o || rel.startsWith(`${o}/`));
+					assert.ok(isOwned || f === legacy, `UTIL-011 #1: ${uriScheme}: removed ${rel}, which is neither stamp-owned nor a legacy-marker file`);
+				}
+			}
+		} finally {
+			for (const k of ['uriScheme', 'appName']) delete vscode.env[k];
+			Object.assign(vscode.env, realEnv);
+		}
+		assert.ok(!w.has(legacy), 'UTIL-011 #1: the legacy-marker file is removed');
+		assert.ok(!w.has('/ws/.cursor/skills/reltio-legacy'), 'UTIL-011 #1: the folder its removal emptied is removed');
+		assert.ok(!w.has('/ws/.github/skills') && w.has('/ws/.github/workflows/ci.yml'), 'UTIL-011 #1: retired .github copies go, .github itself stays');
 	}
 
 	console.log('test-workflow-skills-sync: OK');

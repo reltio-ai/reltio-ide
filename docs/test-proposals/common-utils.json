@@ -11,7 +11,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-common-utils.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "UTIL-002",
@@ -25,7 +25,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-agent-skills.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "UTIL-003",
@@ -39,7 +39,7 @@
     "priority": "P2",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-common-utils.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "UTIL-004",
@@ -53,7 +53,7 @@
     "priority": "P2",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-agent-skills.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "UTIL-005",
@@ -67,7 +67,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-common-utils.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "UTIL-006",
@@ -81,7 +81,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-agent-skills.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "UTIL-007",
@@ -95,7 +95,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-agent-skills.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "UTIL-008",
@@ -109,7 +109,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-reltio-client.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "UTIL-009",
@@ -123,7 +123,7 @@
     "priority": "P3",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-common-utils.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "UTIL-010",
@@ -137,7 +137,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-reltio-client.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "UTIL-011",
@@ -151,7 +151,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-agent-skills.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "UTIL-012",
@@ -165,7 +165,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-reltio-client.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "UTIL-013",
@@ -179,7 +179,7 @@
     "priority": "P2",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-common-utils.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "UTIL-014",
@@ -193,6 +193,6 @@
     "priority": "P3",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-common-utils.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   }
 ]
