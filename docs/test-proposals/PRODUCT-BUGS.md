@@ -25,7 +25,7 @@ Copy the template, use the next free `BUG-NNN`, and fill every field. Write "unk
 
 ### BUG-001: `rebuildUriIndex` debounce timer is not disposed
 
-- **Status:** Confirmed (2026-11-19, RP-208563 ACT-011 #1: a Reltio edit followed by disposing every `context.subscriptions` entry still rebuilds once 300 ms later; assertion skipped in `scripts/test-extension-activation.cjs`)
+- **Status:** Confirmed (2026-11-19, RP-208563 ACT-011 #1: a Reltio edit followed by disposing every `context.subscriptions` entry still rebuilds once 300 ms later; assertion skipped in `scripts/test-extension-activation.cjs`) Jira: RP-209776.
 - **Found:** 2026-11-18 by RP-208282 review
 - **Area / file:** Navigation, the `rebuildUriIndex` debounce in the extension wiring
 - **Expected:** The pending timer is cleared when the extension deactivates or the document closes.
@@ -69,7 +69,7 @@ Copy the template, use the next free `BUG-NNN`, and fill every field. Write "unk
 
 ### BUG-005: `UriIndex.build` throws on an empty or whitespace-only document
 
-- **Status:** Confirmed
+- **Status:** Confirmed Jira: RP-209770.
 - **Found:** 2026-11-19 by RP-208563 while writing BIZCFG-001
 - **Area / file:** Business Configuration, `src/parser/configParser.ts`:`parseDocument` (returns `ast` undefined for empty input) and `src/navigation/uriIndex.ts`:`UriIndex.build` / `walkAst` (dereferences it)
 - **Expected:** `parseDocument('')` and `parseDocument('   ')` give `model` `{}` and `UriIndex.build(model, ast)` runs without an exception (BIZCFG-001 #2).
@@ -80,7 +80,7 @@ Copy the template, use the next free `BUG-NNN`, and fill every field. Write "unk
 
 ### BUG-006: Walkthrough is not suppressed for a user with OAuth credentials but no environment in the workspace
 
-- **Status:** Confirmed
+- **Status:** Confirmed Jira: RP-209773.
 - **Found:** 2026-11-19 by RP-208563 while writing ACT-008
 - **Area / file:** Extension Activation, `src/extension.ts`:`activate` walkthrough suppression block (`reltio.walkthroughSeen`, about line 5260)
 - **Expected:** With empty globalState, a workspace with no environment but with OAuth client credentials in SecretStorage sets `reltio.walkthroughSeen` to true (ACT-008 #2(b)).
@@ -91,7 +91,7 @@ Copy the template, use the next free `BUG-NNN`, and fill every field. Write "unk
 
 ### BUG-007: `L3.json` and `BusinessConfig.json` are not recognized on backslash (Windows) paths
 
-- **Status:** Confirmed
+- **Status:** Confirmed Jira: RP-209768.
 - **Found:** 2026-11-19 by RP-208563 while writing ACT-011
 - **Area / file:** Extension Activation, `src/extension.ts`:`isReltioDocument` (about line 268)
 - **Expected:** `C:\ws\env\tenant\L3.json` and `C:\ws\env\tenant\BusinessConfig.json` count as Reltio documents, as their forward-slash forms do.
@@ -102,7 +102,7 @@ Copy the template, use the next free `BUG-NNN`, and fill every field. Write "unk
 
 ### BUG-008: "Configure OAuth Client" environment menu entry is not gated off in git workspaces
 
-- **Status:** Confirmed
+- **Status:** Confirmed Jira: RP-209772.
 - **Found:** 2026-11-19 by RP-208563 while writing TREE-007
 - **Area / file:** Tenant Explorer & UX, `package.json` `contributes.menus` `view/item/context`, the `reltio.configureOAuthClient` entry (group `1_auth@0`)
 - **Expected:** Like every other tenant-connectivity entry on environment rows, it is hidden when `reltio.workspaceSource == 'git'`.
@@ -113,7 +113,7 @@ Copy the template, use the next free `BUG-NNN`, and fill every field. Write "unk
 
 ### BUG-009: Recents push throws on non-array stored data
 
-- **Status:** Confirmed
+- **Status:** Confirmed Jira: RP-209774.
 - **Found:** 2026-11-19 by RP-208563 while writing TREE-012
 - **Area / file:** Tenant Explorer & UX, `src/ux/recents.ts`:`pushRecentHost` and `pushRecentTenant`
 - **Expected:** A malformed `reltio.recentHosts` / `reltio.recentTenants` value in globalState is ignored or replaced, and the push succeeds.
@@ -124,7 +124,7 @@ Copy the template, use the next free `BUG-NNN`, and fill every field. Write "unk
 
 ### BUG-010: BPMN parsing takes seconds on unterminated comments or an unclosed `<process`
 
-- **Status:** Confirmed
+- **Status:** Confirmed Jira: RP-209769.
 - **Found:** 2026-11-19 by RP-208563 while writing WF-009
 - **Area / file:** Workflows, `src/workflow/bpmnModel.ts`:`blankIgnoredRegions` (the global `<!--[\s\S]*?-->` replace, about line 194) and `extractProcessModel` (the `PROCESS_TAG` regex `<(?:[\w.-]+:)?process\b([^>]*)>`, lines 130 and 207); `analyseBpmn` in `src/workflow/bpmnDiagnostics.ts` inherits both through `extractProcessModel`
 - **Expected:** `extractProcessModel`, `findXmlProblem` and `analyseBpmn` return within a generous budget (2 s each) on hostile 2 MB-class inputs (WF-009 #3).
@@ -135,7 +135,7 @@ Copy the template, use the next free `BUG-NNN`, and fill every field. Write "unk
 
 ### BUG-011: A process id ending in a dot is accepted
 
-- **Status:** Confirmed
+- **Status:** Confirmed Jira: RP-209777.
 - **Found:** 2026-11-19 by RP-208563 while writing WF-009
 - **Area / file:** Workflows, `src/workspace/workflowBpmnFiles.ts`:`PROCESS_ID_PATTERN` / `isValidProcessId` / `processIdValidationMessage` (lines 61-85)
 - **Expected:** An id with a trailing dot is rejected with a validation message, `processIdFromBpmnFileName` returns undefined for it, and `planBulkDownload` marks it unusable (WF-009 #2).
