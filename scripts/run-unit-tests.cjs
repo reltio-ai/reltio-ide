@@ -35,6 +35,7 @@ const SCRIPTS = [
 	'test-insert-interaction-type.cjs',
 	'test-lca-assistant.cjs',
 	'test-lca-workflow.cjs',
+	'test-lca.cjs',
 	'test-match-rule-generation-skill.cjs',
 	'test-multi-tenant-tree-view.cjs',
 	'test-no-create-wizards.cjs',

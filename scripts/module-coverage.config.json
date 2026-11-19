@@ -20,7 +20,7 @@
 				"lca/**",
 				"commands/lcaActions.ts"
 			],
-			"floor": 72
+			"floor": 84
 		},
 		{
 			"name": "Setup & Authentication",
