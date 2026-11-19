@@ -37,6 +37,7 @@ const SCRIPTS = [
 	'test-ontology-webview-hardening.cjs',
 	'test-replace-tenants-with-enhanced-tenants.cjs',
 	'test-schema-alignment-with-live-l3.cjs',
+	'test-setup-auth.cjs',
 	'test-setup-ux-redesign.cjs',
 	'test-skills-and-enablement-packs-library.cjs',
 	'test-terms-of-use-gate.cjs',

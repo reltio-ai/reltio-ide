@@ -11,7 +11,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-setup-auth.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "SETUP-002",
@@ -25,7 +25,7 @@
     "priority": "P1",
     "existing_coverage": "None",
     "target_script": "scripts/test-setup-auth.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "SETUP-003",
@@ -39,7 +39,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-setup-auth.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "SETUP-004",
@@ -53,7 +53,7 @@
     "priority": "P2",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-setup-auth.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "SETUP-005",
@@ -67,7 +67,7 @@
     "priority": "P1",
     "existing_coverage": "None",
     "target_script": "scripts/test-setup-auth.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "SETUP-006",
@@ -81,7 +81,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-setup-auth.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "SETUP-007",
@@ -95,7 +95,7 @@
     "priority": "P1",
     "existing_coverage": "None",
     "target_script": "scripts/test-setup-auth.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "SETUP-008",
@@ -109,7 +109,7 @@
     "priority": "P1",
     "existing_coverage": "None",
     "target_script": "scripts/test-setup-auth.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "SETUP-009",
@@ -123,7 +123,7 @@
     "priority": "P1",
     "existing_coverage": "None",
     "target_script": "scripts/test-setup-auth.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "SETUP-010",
@@ -137,7 +137,7 @@
     "priority": "P1",
     "existing_coverage": "None",
     "target_script": "scripts/test-setup-auth.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "SETUP-011",
@@ -165,6 +165,6 @@
     "priority": "P3",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-setup-auth.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   }
 ]
