@@ -11,7 +11,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-tenant-explorer-ux.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "TREE-002",
@@ -25,7 +25,7 @@
     "priority": "P1",
     "existing_coverage": "None",
     "target_script": "scripts/test-tenant-explorer-ux.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "TREE-003",
@@ -39,7 +39,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-tenant-explorer-ux.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "TREE-004",
@@ -53,7 +53,7 @@
     "priority": "P1",
     "existing_coverage": "None",
     "target_script": "scripts/test-tenant-explorer-ux.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "TREE-005",
@@ -67,7 +67,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-tenant-explorer-ux.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "TREE-006",
@@ -81,7 +81,7 @@
     "priority": "P2",
     "existing_coverage": "None",
     "target_script": "scripts/test-tenant-explorer-ux.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "TREE-007",
@@ -109,7 +109,7 @@
     "priority": "P1",
     "existing_coverage": "None",
     "target_script": "scripts/test-tenant-explorer-ux.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "TREE-009",
@@ -123,7 +123,7 @@
     "priority": "P2",
     "existing_coverage": "None",
     "target_script": "scripts/test-tenant-explorer-ux.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "TREE-010",
@@ -137,7 +137,7 @@
     "priority": "P1",
     "existing_coverage": "None",
     "target_script": "scripts/test-tenant-explorer-ux.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "TREE-011",
@@ -151,7 +151,7 @@
     "priority": "P2",
     "existing_coverage": "None",
     "target_script": "scripts/test-tenant-explorer-ux.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "TREE-012",
@@ -165,6 +165,6 @@
     "priority": "P3",
     "existing_coverage": "None",
     "target_script": "scripts/test-tenant-explorer-ux.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   }
 ]

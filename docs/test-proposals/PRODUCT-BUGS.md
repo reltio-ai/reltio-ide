@@ -99,3 +99,25 @@ Copy the template, use the next free `BUG-NNN`, and fill every field. Write "unk
 - **Repro:** fire the active-editor listener with a document whose `fileName` is `C:\ws\env\tenant\L3.json`: zero rebuilds (forward-slash form: one).
 - **Impact:** On Windows, where `TextDocument.fileName` uses backslashes, an opened `L3.json` / `BusinessConfig.json` gets no navigation index or unresolved-URI diagnostics until another trigger. Medium for Windows users.
 - **Test pointer:** ACT-011 #2 in `scripts/test-extension-activation.cjs` (assertion skipped, "blocked by BUG-007")
+
+### BUG-008: "Configure OAuth Client" environment menu entry is not gated off in git workspaces
+
+- **Status:** Confirmed
+- **Found:** 2026-11-19 by RP-208563 while writing TREE-007
+- **Area / file:** Tenant Explorer & UX, `package.json` `contributes.menus` `view/item/context`, the `reltio.configureOAuthClient` entry (group `1_auth@0`)
+- **Expected:** Like every other tenant-connectivity entry on environment rows, it is hidden when `reltio.workspaceSource == 'git'`.
+- **Actual:** The clause is `viewItem == reltio.environment.unauthorized.oauthBlocked || viewItem =~ /^reltio\.environment\.authorized(\.noTenants)?$/ && reltio.workspaceSource != 'git'`. `&&` binds tighter than `||`, so the git gate applies only to the second disjunct; an `unauthorized.oauthBlocked` environment row shows Configure OAuth Client in a git workspace.
+- **Repro:** evaluate the clause with `viewItem = reltio.environment.unauthorized.oauthBlocked` and `reltio.workspaceSource = 'git'`: true. Fix is likely parentheses around the two `viewItem` terms.
+- **Impact:** Low. Git-sourced environments normally carry the `GIT_SOURCE_TOKEN` sentinel and render as `authorized`, so the row is reached only if that token is missing; the user would then be offered OAuth setup for a repository that needs no authentication.
+- **Test pointer:** TREE-007 #1 in `scripts/test-tenant-explorer-ux.cjs` (`reltio.configureOAuthClient` excluded from the git-workspace check, "blocked by BUG-008")
+
+### BUG-009: Recents push throws on non-array stored data
+
+- **Status:** Confirmed
+- **Found:** 2026-11-19 by RP-208563 while writing TREE-012
+- **Area / file:** Tenant Explorer & UX, `src/ux/recents.ts`:`pushRecentHost` and `pushRecentTenant`
+- **Expected:** A malformed `reltio.recentHosts` / `reltio.recentTenants` value in globalState is ignored or replaced, and the push succeeds.
+- **Actual:** `pushRecentTenant` throws `TypeError: (map[host] ?? []).filter is not a function` when the stored value for that host is not an array; `pushRecentHost` throws `TypeError: loadRecentHosts(...).filter is not a function` when the stored hosts value is not an array.
+- **Repro:** `pushRecentTenant(memento seeded with { 'reltio.recentTenants': { h: 'x' } }, 'h', 't')`, or `pushRecentHost(memento seeded with { 'reltio.recentHosts': 'x' }, 'h')`.
+- **Impact:** Low. Only reachable after globalState is corrupted or written by another version; the setup flow that records recents would then fail with an exception.
+- **Test pointer:** none yet (TREE-012 #1 covers the empty store, copy-on-write and pushing next to a non-array key, which pass; pushing to the non-array key itself is not in the row's `expected`)
