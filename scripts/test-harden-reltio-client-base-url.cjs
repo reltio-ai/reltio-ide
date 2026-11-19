@@ -13,6 +13,13 @@
  * (userinfo, path, query and fragment rejected before fetch; case, slashes and
  * whitespace normalized; lookalikes rejected) and redirect protection for the
  * bearer token (section 10).
+ *
+ * Regression row (docs/test-proposals/extension-activation.json): ACT-010 security (section 11):
+ * #1 the trustedHostSuffixes default still holds reltio.com (scope is item 9 above); #2 static half:
+ * the workspaceState/globalState keys extension.ts writes are a known, token-free list, and
+ * SessionStore / OAuthCredentialsStore keep secrets in SecretStorage only. The dynamic half of #2
+ * (no token string reaches globalState, workspaceState or settings during a stub-driven session
+ * restore) is in test-extension-activation.cjs.
  */
 const assert = require('assert');
 const fs = require('fs');
@@ -284,6 +291,44 @@ function callHelpers(host) {
 			assert.ok(err && /^Network error: /.test(err.message), "UTIL-010 #3: a refused redirect surfaces as 'Network error: ...'");
 			assert.strictEqual(calls.length, 1, 'UTIL-010 #3: no second fetch after a refused redirect');
 		}
+	}
+
+	// 11. ACT-010: trusted-host allowlist default and no tokens outside SecretStorage.
+	{
+		const srcDir = path.join(__dirname, '..', 'src');
+		const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+		const setting = pkg.contributes.configuration.properties['reltio.trustedHostSuffixes'];
+		assert.ok(
+			Array.isArray(setting.default) && setting.default.includes('reltio.com'),
+			'ACT-010 #1: reltio.trustedHostSuffixes default must contain reltio.com',
+		);
+
+		// #2 Every workspaceState / globalState key extension.ts writes is on this list. A new key
+		// needs a deliberate entry here, so nobody parks a token in a Memento by accident.
+		const ALLOWED_STATE_KEYS = new Set([
+			'reltio.walkthroughSeen',
+			'reltio.setupGuideAutoOpened',
+			'reltio.enclosingRepoWarningDismissed',
+			'reltio.lastGitRemote',
+			'reltio.history.compareA.v1',
+		]);
+		const ext = fs.readFileSync(path.join(srcDir, 'extension.ts'), 'utf8');
+		const consts = new Map([...ext.matchAll(/const (\w+) = '([^']+)';/g)].map(m => [m[1], m[2]]));
+		const writes = [...ext.matchAll(/(?:workspaceState|globalState)\.update\(\s*([^,\s)]+)/g)].map(m => m[1]);
+		assert.ok(writes.length > 0, 'ACT-010 #2: found no state writes in extension.ts');
+		for (const arg of writes) {
+			const key = /^'([^']+)'$/.test(arg) ? arg.slice(1, -1) : consts.get(arg);
+			assert.ok(key, `ACT-010 #2: extension.ts writes state under a key that is not a literal or a string constant: ${arg}`);
+			assert.ok(ALLOWED_STATE_KEYS.has(key), `ACT-010 #2: extension.ts writes unexpected state key ${key}; add it to the allowlist only if it can never hold a token`);
+		}
+		// Refresh tokens and client credentials go to SecretStorage; the session store's Memento
+		// holds only the list of environment names.
+		const sessionSrc = fs.readFileSync(path.join(srcDir, 'api', 'sessionStore.ts'), 'utf8');
+		assert.ok(/this\.secrets\.store\(KEY_PREFIX \+ environmentName, token\)/.test(sessionSrc), 'ACT-010 #2: SessionStore must store the refresh token in SecretStorage');
+		const stateWrites = [...sessionSrc.matchAll(/this\.state\.update\(\s*(\w+)/g)].map(m => m[1]);
+		assert.ok(stateWrites.length > 0 && stateWrites.every(k => k === 'ENV_LIST_KEY'), `ACT-010 #2: SessionStore may write only ENV_LIST_KEY to its Memento (found ${stateWrites.join(', ')})`);
+		const credSrc = fs.readFileSync(path.join(srcDir, 'api', 'oauthCredentialsStore.ts'), 'utf8');
+		assert.ok(!/(?:globalState|workspaceState|\.state)\.update\(|getConfiguration\(/.test(credSrc), 'ACT-010 #2: OAuthCredentialsStore must not write credentials to a Memento or settings');
 	}
 
 	console.log('test-harden-reltio-client-base-url: OK');
