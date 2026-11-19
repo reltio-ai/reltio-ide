@@ -14,6 +14,8 @@
  *
  * Regression rows (docs/test-proposals/common-utils.json): UTIL-007 skill sync reports conflicts
  * and invalid skills instead of overwriting or substituting (testSkillConflictsAndProblems).
+ * Regression rows (docs/test-proposals/business-configuration.json): BIZCFG-004 configFile
+ * traversal and outside-workspace paths are refused before any call (testConfigFileContainment).
  */
 const assert = require('assert');
 const fs = require('fs');
@@ -114,6 +116,33 @@ async function testBridgeRejectsMalformedRequests() {
 		assert.strictEqual(result.error.kind, 'invalid-request', name);
 		assert.strictEqual(calls.length, 0, `${name}: nothing sent`);
 	}
+}
+
+/** BIZCFG-004: configFile traversal and outside-workspace paths never reach the tenant. */
+async function testConfigFileContainment() {
+	for (const configFile of ['../outside/x.json', 'a/../../b.json', 'C:\\other\\x.json', '/etc/passwd']) {
+		const { result, calls } = await run(request({ configFile }));
+		assert.deepStrictEqual(
+			[result.status, result.error && result.error.kind],
+			['failed', 'invalid-request'],
+			`BIZCFG-004 #1: ${configFile} is refused as an invalid request`,
+		);
+		assert.ok(/inside the workspace/.test(result.error.message), `BIZCFG-004 #1: ${configFile} names the "inside the workspace" rule: ${result.error.message}`);
+		assert.strictEqual(calls.length, 0, `BIZCFG-004 #1: ${configFile} never calls verify`);
+	}
+	const resolved = [];
+	const { result, calls } = await run(request({ configFile: 'tenant\\BusinessConfig.json' }), {
+		resolveTenant: async uri => { resolved.push(uri.path); return TENANT; },
+	});
+	assert.strictEqual(result.status, 'verified', 'BIZCFG-004 #1: the valid backslash path is accepted');
+	assert.deepStrictEqual(resolved, ['/ws/tenant/BusinessConfig.json'], 'BIZCFG-004 #1: the backslash path resolves under the root with forward slashes');
+	assert.ok(calls.length > 0, 'BIZCFG-004 #1: the valid path reaches verify');
+	const mixed = [];
+	const upper = await run(request({ configFile: '/WS/Tenant/BusinessConfig.json' }), {
+		resolveTenant: async uri => { mixed.push(uri.path); return TENANT; },
+	});
+	assert.strictEqual(upper.result.status, 'verified', 'BIZCFG-004 #1: an absolute path inside the root in another case is accepted');
+	assert.deepStrictEqual(mixed, ['/WS/Tenant/BusinessConfig.json'], 'BIZCFG-004 #1: the case-normalised comparison keeps the original path');
 }
 
 async function testBridgeVerifies() {
@@ -670,6 +699,7 @@ async function testSkillConflictsAndProblems() {
 (async () => {
 	await testBridgeGates();
 	await testBridgeRejectsMalformedRequests();
+	await testConfigFileContainment();
 	await testBridgeVerifies();
 	await testBridgeAuthAndFailures();
 	await testVerifyMatchesClient();

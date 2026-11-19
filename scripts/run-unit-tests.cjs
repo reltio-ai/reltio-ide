@@ -15,6 +15,7 @@ const SCRIPTS = [
 	'test-attribute-skeleton-mandatory-fields.cjs',
 	'test-autocomplete-improvements.cjs',
 	'test-browser-oauth-login.cjs',
+	'test-business-configuration.cjs',
 	'test-common-utils.cjs',
 	'test-config-tree-view.cjs',
 	'test-configuration-history-review.cjs',
