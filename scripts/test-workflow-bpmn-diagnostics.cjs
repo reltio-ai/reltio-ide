@@ -41,6 +41,12 @@
  *  13.  Declared in package.json, wired into all three document listeners, and
  *       registered in the runner's hardcoded SCRIPTS array.
  *
+ * Regression rows (docs/test-proposals/workflows.json):
+ *   WF-002  Every rule code has one fixture that yields exactly that code, with its fixed
+ *           severity and a range inside the document; the manager publishes and then clears
+ *           id-filename-mismatch as the process id is edited, ignores non-BPMN documents, and
+ *           disposes its collection.
+ *
  * Tier C (manual) — documented in design.md's test plan.
  */
 
@@ -648,6 +654,105 @@ ${LISTENERS.replace(/class="[^"]*"/g, 'class="com.reltio.workflow.activiti.servi
 	assert.strictEqual(collection.get(doc.uri), undefined);
 	assert.ok(collection.get(other.uri).length > 0, 'clearing one document must not clear another');
 	manager.dispose();
+}
+
+// ── WF-002: one fixture per code, and the manager's per-file refresh ───────
+{
+	const severities = {
+		'reltio-bpmn/not-executable': 'error',
+		'reltio-bpmn/id-filename-mismatch': 'error',
+		'reltio-bpmn/missing-process-id': 'error',
+		'reltio-bpmn/duplicate-id': 'error',
+		'reltio-bpmn/missing-flow-id': 'error',
+		'reltio-bpmn/missing-endpoint': 'error',
+		'reltio-bpmn/unresolved-endpoint': 'error',
+		'reltio-bpmn/gateway-outgoing-flows': 'error',
+		'reltio-bpmn/gateway-no-default': 'warning',
+		'reltio-bpmn/default-flow-missing': 'error',
+		'reltio-bpmn/default-flow-not-outgoing': 'error',
+		'reltio-bpmn/default-flow-has-condition': 'error',
+		'reltio-bpmn/user-task-listeners': 'error',
+		'reltio-bpmn/unknown-class': 'warning',
+		'reltio-bpmn/no-diagram': 'warning',
+		'reltio-bpmn/plane-mismatch': 'error',
+		'reltio-bpmn/no-shape': 'warning',
+	};
+	const review = { fileProcessId: 'review' };
+	const fixtures = [
+		['reltio-bpmn/not-executable', buildFixture({ isExecutable: 'false' }), review],
+		['reltio-bpmn/id-filename-mismatch', buildFixture({ processId: 'other' }), review],
+		['reltio-bpmn/missing-process-id', buildFixture({ processId: '' }), {}],
+		['reltio-bpmn/duplicate-id', buildFixture({ extra: '    <endEvent id="end" name="End again" />' }), review],
+		['reltio-bpmn/missing-flow-id', buildFixture({ extra: '    <sequenceFlow sourceRef="start" targetRef="end" />' }), review],
+		['reltio-bpmn/missing-endpoint', buildFixture({ extra: '    <sequenceFlow id="headless" targetRef="end" />' }), review],
+		['reltio-bpmn/unresolved-endpoint', buildFixture({ extra: '    <sequenceFlow id="ghost" sourceRef="start" targetRef="nope" />' }), review],
+		['reltio-bpmn/gateway-outgoing-flows', buildFixture({
+			extra: '    <sequenceFlow id="toPass" sourceRef="applyTask" targetRef="pass" />\n' +
+				'    <exclusiveGateway id="pass" default="fromPass" />\n' +
+				'    <sequenceFlow id="fromPass" sourceRef="pass" targetRef="end" />',
+		}), review],
+		['reltio-bpmn/gateway-no-default', buildFixture({ gatewayDefault: '' }), review],
+		['reltio-bpmn/default-flow-missing', buildFixture({ gatewayDefault: ' default="notAFlow"' }), review],
+		['reltio-bpmn/default-flow-not-outgoing', buildFixture({ gatewayDefault: ' default="flow1"' }), review],
+		['reltio-bpmn/default-flow-has-condition', buildFixture({ rejectCondition: '<conditionExpression>x</conditionExpression>' }), review],
+		['reltio-bpmn/user-task-listeners', buildFixture({ reviewListeners: '' }), review],
+		['reltio-bpmn/unknown-class', buildFixture({ applyClass: 'com.acme.Nope' }), review],
+		['reltio-bpmn/no-diagram', buildFixture({ diagram: false }), review],
+		['reltio-bpmn/plane-mismatch', buildFixture({ planeId: 'elsewhere' }), review],
+		['reltio-bpmn/no-shape', buildFixture().replace(/\s*<bpmndi:BPMNShape id="BPMNShape_applyTask"[\s\S]*?<\/bpmndi:BPMNShape>/, ''), review],
+	];
+	assert.deepStrictEqual(fixtures.map(([code]) => code).sort(), Object.keys(severities).sort(),
+		'WF-002 #1: one fixture per code in the stable code set');
+	for (const [code, xml, context] of fixtures) {
+		const found = analyseBpmn(xml, context);
+		assert.deepStrictEqual(found.map(f => f.code), [code], `WF-002 #1: ${code} fixture yields exactly its code, got ${JSON.stringify(found.map(f => f.code))}`);
+		assert.strictEqual(found[0].severity, severities[code], `WF-002 #1: ${code} has severity ${severities[code]}`);
+		assert.ok(found[0].offset >= 0 && found[0].length > 0 && found[0].offset + found[0].length <= xml.length,
+			`WF-002 #1: ${code} range lies inside the document`);
+	}
+	assert.deepStrictEqual(analyseBpmn(buildBpmnSkeleton('cleanOne', 'Clean One'), { fileProcessId: 'cleanOne' }).filter(f => f.severity === 'error'), [],
+		'WF-002 #1: the buildBpmnSkeleton draft yields no errors');
+
+	// #2: the manager over one document whose id is edited to match its file name.
+	const created = [];
+	const create = vscode.languages.createDiagnosticCollection;
+	vscode.languages.createDiagnosticCollection = name => {
+		const c = create(name);
+		c.disposed = false;
+		c.dispose = () => { c.disposed = true; c.entries.clear(); };
+		created.push(c);
+		return c;
+	};
+	let manager;
+	try {
+		manager = new BpmnDiagnosticsManager();
+	} finally {
+		vscode.languages.createDiagnosticCollection = create;
+	}
+	const collection = created[0];
+	let text = buildFixture({ processId: 'bar' });
+	const doc = {
+		uri: vscode.Uri.file('/ws/t/Workflows/bpmn/foo.bpmn20.xml'),
+		getText: () => text,
+		positionAt(offset) {
+			const before = text.slice(0, offset);
+			return new vscode.Position(before.split('\n').length - 1, offset - before.lastIndexOf('\n') - 1);
+		},
+	};
+	manager.update(doc);
+	assert.deepStrictEqual(collection.get(doc.uri).map(d => d.code), ['reltio-bpmn/id-filename-mismatch'],
+		'WF-002 #2: the first update publishes id-filename-mismatch');
+	text = buildFixture({ processId: 'foo' });
+	manager.update(doc);
+	assert.deepStrictEqual(collection.get(doc.uri), [], 'WF-002 #2: editing the id to foo clears it');
+
+	for (const name of ['foo.xml', 'foo.bpmn', 'foo.reltio.json']) {
+		const other = { ...doc, uri: vscode.Uri.file(`/ws/t/Workflows/bpmn/${name}`), getText: () => buildFixture({ processId: 'bar' }) };
+		manager.update(other);
+		assert.strictEqual(collection.get(other.uri), undefined, `WF-002 #2: ${name} is not a .bpmn20.xml and is ignored`);
+	}
+	manager.dispose();
+	assert.ok(collection.disposed && collection.entries.size === 0, 'WF-002 #2: dispose clears the collection');
 }
 
 // ── 13. Wired up ────────────────────────────────────────────────────────────

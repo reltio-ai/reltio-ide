@@ -61,6 +61,7 @@ const SCRIPTS = [
 	'test-workflow-bulk-download.cjs',
 	'test-workflow-input-trust.cjs',
 	'test-workflow-review-fixes.cjs',
+	'test-workflows.cjs',
 ];
 
 function main() {

@@ -12,7 +12,7 @@
 				"tree/processDefinitionRows.ts",
 				"workspace/workflow*.ts"
 			],
-			"floor": 91
+			"floor": 96
 		},
 		{
 			"name": "LCA",

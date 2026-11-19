@@ -5,6 +5,15 @@
  * Tier A: clone-URL validation + redaction, branch regex escaping, sidecar validation,
  *         toOpenableHttpsUrl, toHttpsBase origin-only, redirect:'error', bounded body reads,
  *         Retry-After on listJars, Windows device ids, rewriteProcessIdentity, BpmnContentProvider.
+ *
+ * Regression rows (docs/test-proposals/workflows.json):
+ *   WF-007  Repository config: .gitignore reconcile (idempotent, no-ops, sweep isolation), BPMN
+ *           discovery limits (build output, size, id-less, baseline, depth, candidate cap),
+ *           storableRepoUrl drops http(s) userinfo, toOpenableHttpsUrl opens https only.
+ *   WF-009  Hostile input: sidecar relativePath, server process ids and BPMN text cannot escape
+ *           or stall. Blocked in part: a trailing-dot id is accepted (blocked by BUG-011), and
+ *           100k unterminated "<!--" or 100k "<process " without ">" take seconds to parse
+ *           (blocked by BUG-010); those assertions are skipped.
  */
 const assert = require('assert');
 const { importDist } = require('./lib/import-dist.cjs');
@@ -26,6 +35,13 @@ const { listAvailableJars, listProcessDefinitions, getProcessDefinitionXml } = i
 const { isValidProcessId, processIdValidationMessage, processIdFromBpmnFileName } = importDist('workspace/workflowBpmnFiles');
 const { rewriteProcessIdentity } = importDist('workspace/workflowDrafts');
 const { BpmnContentProvider } = importDist('providers/bpmnContentProvider');
+const { storableRepoUrl, relativePathProblem } = importDist('workspace/workflowRepoConfig');
+const { reconcileAllWorkflowRepoGitignores } = importDist('workspace/workflowRepoGitignore');
+const { discoverBpmnFilesDetailed } = importDist('workspace/workflowRepoDiscovery');
+const { planBulkDownload } = importDist('workspace/workflowBulkDownload');
+const { extractProcessModel } = importDist('workflow/bpmnModel');
+const { findXmlProblem } = importDist('workflow/bpmnWellFormed');
+const { analyseBpmn } = importDist('workflow/bpmnDiagnostics');
 
 const ADAPTER = 'https://demo-01-workflow.reltio.com';
 const ENV = 'https://demo-01.reltio.com';
@@ -411,6 +427,157 @@ async function captureClone(url, branch) {
 		assert.strictEqual(p.provideTextDocumentContent(again), '<b/>');
 		p.store('env.reltio.com', 'T1', 'other', '<c/>');
 		assert.strictEqual(fired, 1, 'a different URI does not fire');
+	});
+
+	// ── WF-007 repository config ───────────────────────────────────────────
+	test('WF-007 #1 .gitignore reconcile: idempotent, no-ops without outer .git or sidecar, sweep isolation', async () => {
+		const root = vscode.Uri.file('/wf7/env/tenant');
+		const sidecar = vscode.Uri.joinPath(root, 'WorkflowRepo.reltio.json');
+		const gi = '/wf7/env/tenant/.gitignore';
+		const cfg = { version: 1, repoUrl: 'https://bitbucket.org/acme/wf.git', relativePath: 'Workflows' };
+
+		let mem = installMemoryFs();
+		await mem.createDirectory(vscode.Uri.joinPath(root, '.git'));
+		await mem.writeFile(sidecar, Buffer.from(JSON.stringify(cfg)));
+		await reconcileWorkflowRepoGitignore(root, sidecar);
+		await reconcileWorkflowRepoGitignore(root, sidecar);
+		const lines = mem._files.get(gi).toString().split('\n').filter(l => l === 'Workflows/');
+		assert.strictEqual(lines.length, 1, 'WF-007 #1: "Workflows/" is added exactly once over two runs');
+
+		mem = installMemoryFs();
+		await mem.writeFile(sidecar, Buffer.from(JSON.stringify(cfg)));
+		await reconcileWorkflowRepoGitignore(root, sidecar);
+		assert.ok(!mem._files.has(gi), 'WF-007 #1: no outer .git writes nothing');
+
+		mem = installMemoryFs();
+		await mem.createDirectory(vscode.Uri.joinPath(root, '.git'));
+		await reconcileWorkflowRepoGitignore(root, sidecar);
+		assert.ok(!mem._files.has(gi), 'WF-007 #1: no sidecar writes nothing');
+
+		// The sweep: tenant "bad" throws while writing its .gitignore, tenant "good" is still reconciled.
+		mem = installMemoryFs();
+		const rootOf = t => vscode.Uri.file(`/wf7s/${t}`);
+		for (const t of ['bad', 'good']) {
+			await mem.createDirectory(vscode.Uri.joinPath(rootOf(t), '.git'));
+			await mem.writeFile(vscode.Uri.joinPath(rootOf(t), 'WorkflowRepo.reltio.json'), Buffer.from(JSON.stringify(cfg)));
+		}
+		const writeFile = mem.writeFile;
+		mem.writeFile = async (u, b) => {
+			if (u.fsPath.startsWith('/wf7s/bad/')) throw new Error('EACCES');
+			return writeFile(u, b);
+		};
+		const manager = {
+			scanEnvironments: async () => [{ name: 'env', tenants: [{ tenantId: 'bad' }, { tenantId: 'good' }] }],
+			getTenantRootUri: (_e, t) => rootOf(t),
+			getWorkflowRepoConfigUri: (_e, t) => vscode.Uri.joinPath(rootOf(t), 'WorkflowRepo.reltio.json'),
+		};
+		try {
+			await reconcileAllWorkflowRepoGitignores(manager);
+		} catch (e) {
+			assert.fail(`WF-007 #1: reconcileAll must not throw when one tenant fails: ${e.message}`);
+		} finally {
+			mem.writeFile = writeFile;
+		}
+		assert.ok(mem._files.has('/wf7s/good/.gitignore') && mem._files.get('/wf7s/good/.gitignore').toString().includes('Workflows/'),
+			'WF-007 #1: reconcileAll continues after one tenant throws');
+	});
+
+	test('WF-007 #2 discovery skips build output, oversized, id-less, baseline and too-deep files; caps candidates', async () => {
+		const bpmnText = id => `<definitions><process id="${id}" isExecutable="true"><startEvent id="s"/></process></definitions>`;
+		const mem = installMemoryFs();
+		const put = (p, text) => mem.writeFile(vscode.Uri.file(`/wf7r${p}`), typeof text === 'string' ? Buffer.from(text) : text);
+		await put('/mod/pom.xml', '<project/>');
+		await put('/mod/src/main/resources/a.xml', bpmnText('a'));
+		await put('/mod/target/classes/a.xml', bpmnText('a'));
+		await put('/node_modules/x.xml', bpmnText('x'));
+		await put('/big.xml', Buffer.concat([Buffer.from(bpmnText('big')), Buffer.alloc(2 * 1024 * 1024, 32)]));
+		await put('/schema.xml', '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><process name="noId"/></xs:schema>');
+		await put('/bpmn/z.bpmn20.baseline.xml', bpmnText('z'));
+		let deep = '';
+		for (let i = 1; i <= 12; i++) deep += `/d${i}`;
+		await put(`${deep}/deep.xml`, bpmnText('deep'));
+		const found = await discoverBpmnFilesDetailed(vscode.Uri.file('/wf7r'));
+		assert.deepStrictEqual(found.files.map(f => [f.processId, f.moduleName]), [['a', 'mod']],
+			'WF-007 #2: only src a.xml is returned, with its pom module');
+		assert.ok(found.files[0].fileUri.fsPath.includes('/mod/src/main/resources/'), 'WF-007 #2: the src copy, not target/');
+		assert.strictEqual(found.truncated, false, 'WF-007 #2: a small repository is not truncated');
+
+		const mem2 = installMemoryFs();
+		for (let i = 0; i < 2001; i++) await mem2.writeFile(vscode.Uri.file(`/wf7c/f${i}.xml`), Buffer.from('<x/>'));
+		assert.strictEqual((await discoverBpmnFilesDetailed(vscode.Uri.file('/wf7c'))).truncated, true,
+			'WF-007 #2: 2001 candidates set truncated');
+	});
+
+	test('WF-007 #3 storableRepoUrl drops http(s) userinfo and keeps ssh; only https is openable', () => {
+		assert.strictEqual(storableRepoUrl('https://user:tok@host/r.git'), 'https://host/r.git', 'WF-007 #3: https loses userinfo');
+		assert.strictEqual(storableRepoUrl('http://user@host/r.git'), 'http://host/r.git', 'WF-007 #3: http loses userinfo');
+		assert.strictEqual(storableRepoUrl('git@host:org/r.git'), 'git@host:org/r.git', 'WF-007 #3: ssh keeps git@');
+		assert.strictEqual(toOpenableHttpsUrl('https://alice@host/r.git'), 'https://host/r.git', 'WF-007 #3: https openable, username stripped');
+		for (const u of ['ssh://git@host/r.git', 'git@host:org/r.git', 'file:///etc/passwd', 'javascript:alert(1)']) {
+			assert.strictEqual(toOpenableHttpsUrl(u), undefined, `WF-007 #3: ${u} is not openable`);
+		}
+	});
+
+	// ── WF-009 hostile input ───────────────────────────────────────────────
+	test('WF-009 #1 hostile sidecar relativePath values are refused; "Workflows" is accepted', async () => {
+		const hostile = ['..\\x', 'a/../b', '/abs', 'C:\\x', 'a\nb', '!x', '#x'];
+		const sidecar = vscode.Uri.file('/wf9/tenant/WorkflowRepo.reltio.json');
+		for (const value of hostile) {
+			assert.ok(relativePathProblem(value), `WF-009 #1: ${JSON.stringify(value)} returns a problem string`);
+			const mem = installMemoryFs();
+			await mem.writeFile(sidecar, Buffer.from(JSON.stringify({ version: 1, repoUrl: 'https://host/r.git', relativePath: value })));
+			assert.strictEqual(await loadWorkflowRepoConfig(sidecar), undefined, `WF-009 #1: ${JSON.stringify(value)} sidecar does not load`);
+			assert.ok((await inspectWorkflowRepoConfig(sidecar)).invalidReason, `WF-009 #1: ${JSON.stringify(value)} sidecar gives a reason`);
+		}
+		assert.strictEqual(relativePathProblem('Workflows'), undefined, 'WF-009 #1: "Workflows" is accepted');
+	});
+
+	test('WF-009 #2 hostile server process ids are rejected everywhere', async () => {
+		// 'trailing.' is not listed: a trailing-dot id is accepted today (blocked by BUG-011).
+		const ids = ['a/b', 'a\\b', '..', 'a\u0000b', 'con', 'NUL', 'Com1', 'x'.repeat(201)];
+		for (const id of ids) {
+			assert.ok(processIdValidationMessage(id), `WF-009 #2: ${JSON.stringify(id.slice(0, 20))} gets a validation message`);
+			assert.strictEqual(processIdFromBpmnFileName(`${id}.bpmn20.xml`), undefined, `WF-009 #2: ${JSON.stringify(id.slice(0, 20))} is not read back from a file name`);
+		}
+		const plan = planBulkDownload(ids, []);
+		assert.deepStrictEqual(plan.toDownload, [], 'WF-009 #2: planBulkDownload downloads none of them');
+		assert.strictEqual(plan.unusable.length, ids.length, 'WF-009 #2: planBulkDownload marks every one unusable');
+
+		const { result } = await withFetch(
+			() => textResponse(200, JSON.stringify({ status: 'OK', data: [{ type: '../evil' }, { type: 'con' }, { type: 'good_one' }] })),
+			() => listProcessDefinitions(ADAPTER, 'T1', ENV, 'tok'),
+		);
+		assert.deepStrictEqual(result.map(d => d.type), ['good_one'], 'WF-009 #2: the adapter listing drops unsafe ids');
+	});
+
+	test('WF-009 #3 hostile BPMN text returns within budget, expands no entity', () => {
+		const head = '<definitions><process id="p" isExecutable="true">';
+		const inputs = {
+			// Skipped, blocked by BUG-010: 100k unterminated '<!--' and 100k '<process ' with no '>'
+			// take about 8 s and 30 s in extractProcessModel / analyseBpmn.
+			bigAttribute: `${head}<userTask id="t" name="${'a'.repeat(1024 * 1024)}"/></process></definitions>`,
+			deepNesting: `${head}${'<subProcess id="s">'.repeat(50000)}${'</subProcess>'.repeat(50000)}</process></definitions>`,
+		};
+		const calls = [['extractProcessModel', extractProcessModel], ['findXmlProblem', findXmlProblem], ['analyseBpmn', x => analyseBpmn(x, { fileProcessId: 'p' })]];
+		for (const [label, xml] of Object.entries(inputs)) {
+			for (const [name, fn] of calls) {
+				const started = Date.now();
+				assert.doesNotThrow(() => fn(xml), `WF-009 #3: ${name} on ${label} does not throw`);
+				const ms = Date.now() - started;
+				assert.ok(ms < 2000, `WF-009 #3: ${name} on ${label} took ${ms} ms (budget 2000)`);
+			}
+		}
+		const body = `${head}<startEvent id="s" name="&y;"/><sequenceFlow id="f" sourceRef="s" targetRef="e"/><endEvent id="e"/></process></definitions>`;
+		const withDoctype = `<!DOCTYPE definitions [<!ENTITY x "PWNED"><!ENTITY y "&x;&x;">]>${body}`;
+		const a = extractProcessModel(withDoctype);
+		const b = extractProcessModel(body);
+		assert.strictEqual(a.nodes[0].name, '&y;', 'WF-009 #3: no entity is expanded');
+		assert.deepStrictEqual(
+			[a.processId, a.nodes.map(n => [n.id, n.name]), a.flows.map(f => [f.id, f.sourceRef, f.targetRef])],
+			[b.processId, b.nodes.map(n => [n.id, n.name]), b.flows.map(f => [f.id, f.sourceRef, f.targetRef])],
+			'WF-009 #3: a DOCTYPE does not change the parsed model',
+		);
+		for (const [name, fn] of calls) assert.doesNotThrow(() => fn(withDoctype), `WF-009 #3: ${name} on a DOCTYPE does not throw`);
 	});
 
 	let failed = 0;

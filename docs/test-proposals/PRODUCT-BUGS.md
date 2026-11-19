@@ -121,3 +121,25 @@ Copy the template, use the next free `BUG-NNN`, and fill every field. Write "unk
 - **Repro:** `pushRecentTenant(memento seeded with { 'reltio.recentTenants': { h: 'x' } }, 'h', 't')`, or `pushRecentHost(memento seeded with { 'reltio.recentHosts': 'x' }, 'h')`.
 - **Impact:** Low. Only reachable after globalState is corrupted or written by another version; the setup flow that records recents would then fail with an exception.
 - **Test pointer:** none yet (TREE-012 #1 covers the empty store, copy-on-write and pushing next to a non-array key, which pass; pushing to the non-array key itself is not in the row's `expected`)
+
+### BUG-010: BPMN parsing takes seconds on unterminated comments or an unclosed `<process`
+
+- **Status:** Confirmed
+- **Found:** 2026-11-19 by RP-208563 while writing WF-009
+- **Area / file:** Workflows, `src/workflow/bpmnModel.ts`:`blankIgnoredRegions` (the global `<!--[\s\S]*?-->` replace, about line 194) and `extractProcessModel` (the `PROCESS_TAG` regex `<(?:[\w.-]+:)?process\b([^>]*)>`, lines 130 and 207); `analyseBpmn` in `src/workflow/bpmnDiagnostics.ts` inherits both through `extractProcessModel`
+- **Expected:** `extractProcessModel`, `findXmlProblem` and `analyseBpmn` return within a generous budget (2 s each) on hostile 2 MB-class inputs (WF-009 #3).
+- **Actual:** Both regexes rescan to the end of the text from every failed start position, so the cost is quadratic. 100,000 unterminated `<!--` (400 KB): `extractProcessModel` about 8.7 s, `analyseBpmn` about 8.5 s. `<definitions>` plus 100,000 `<process ` with no `>` (900 KB): about 32.7 s each. `findXmlProblem` returns in about 1 ms on both. A 1 MB attribute value, 50,000-deep nesting and a DOCTYPE with entities are fine.
+- **Repro:** `extractProcessModel('<definitions><process id="p">' + '<!--'.repeat(100000))` or `extractProcessModel('<definitions>' + '<process '.repeat(100000))` against `dist/`.
+- **Impact:** Opening, previewing or linting a crafted or badly truncated `.bpmn20.xml` (for example from a connected repository) blocks the extension host for seconds to a minute. Medium.
+- **Test pointer:** WF-009 #3 in `scripts/test-workflow-input-trust.cjs` (these two inputs skipped, "blocked by BUG-010")
+
+### BUG-011: A process id ending in a dot is accepted
+
+- **Status:** Confirmed
+- **Found:** 2026-11-19 by RP-208563 while writing WF-009
+- **Area / file:** Workflows, `src/workspace/workflowBpmnFiles.ts`:`PROCESS_ID_PATTERN` / `isValidProcessId` / `processIdValidationMessage` (lines 61-85)
+- **Expected:** An id with a trailing dot is rejected with a validation message, `processIdFromBpmnFileName` returns undefined for it, and `planBulkDownload` marks it unusable (WF-009 #2).
+- **Actual:** `/^[A-Za-z_][A-Za-z0-9_.-]{0,63}$/` allows a final `.`, so `isValidProcessId('abc.')` is true and `processIdValidationMessage('abc.')` is undefined.
+- **Repro:** `isValidProcessId('abc.')` against `dist/`: `true`.
+- **Impact:** Low. The file name becomes `abc..bpmn20.xml`, which Windows accepts, so no write escapes the folder; it is a gap against the stated validation rule only, and whether a trailing dot should be refused is unknown.
+- **Test pointer:** WF-009 #2 in `scripts/test-workflow-input-trust.cjs` (trailing-dot id left out, "blocked by BUG-011")
