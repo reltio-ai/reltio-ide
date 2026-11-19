@@ -25,7 +25,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-business-configuration.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "BIZCFG-003",
@@ -39,7 +39,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-ontology-view.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "BIZCFG-004",
@@ -53,7 +53,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-match-rule-generation-skill.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "BIZCFG-005",
@@ -67,7 +67,7 @@
     "priority": "P2",
     "existing_coverage": "None",
     "target_script": "scripts/test-business-configuration.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "BIZCFG-006",
@@ -81,7 +81,7 @@
     "priority": "P2",
     "existing_coverage": "None",
     "target_script": "scripts/test-business-configuration.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "BIZCFG-007",
@@ -95,7 +95,7 @@
     "priority": "P2",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-business-configuration.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "BIZCFG-008",
@@ -109,7 +109,7 @@
     "priority": "P3",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-agent-skills.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "BIZCFG-009",
@@ -123,7 +123,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-business-configuration.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "BIZCFG-010",
@@ -151,7 +151,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-business-configuration.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "BIZCFG-012",
@@ -165,7 +165,7 @@
     "priority": "P2",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-business-configuration.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "BIZCFG-013",
@@ -179,6 +179,6 @@
     "priority": "P2",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-business-configuration.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   }
 ]

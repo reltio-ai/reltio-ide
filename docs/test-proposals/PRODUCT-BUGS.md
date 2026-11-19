@@ -66,3 +66,14 @@ Copy the template, use the next free `BUG-NNN`, and fill every field. Write "unk
 - **Repro:** break the behavior it claims to cover and see whether the script still passes.
 - **Impact:** A regression in the ontology view could go unnoticed.
 - **Test pointer:** none yet
+
+### BUG-005: `UriIndex.build` throws on an empty or whitespace-only document
+
+- **Status:** Confirmed
+- **Found:** 2026-11-19 by RP-208563 while writing BIZCFG-001
+- **Area / file:** Business Configuration, `src/parser/configParser.ts`:`parseDocument` (returns `ast` undefined for empty input) and `src/navigation/uriIndex.ts`:`UriIndex.build` / `walkAst` (dereferences it)
+- **Expected:** `parseDocument('')` and `parseDocument('   ')` give `model` `{}` and `UriIndex.build(model, ast)` runs without an exception (BIZCFG-001 #2).
+- **Actual:** `parseDocument` returns `model` `{}` but `ast` `undefined` (`parseTree` returns undefined for empty text), and `UriIndex.build` throws `TypeError: Cannot read properties of undefined (reading 'type')` in `walkAst`.
+- **Repro:** `const { model, ast } = parseDocument(''); new UriIndex().build(model, ast);` against `dist/` (or open an empty `*.reltio.json`, which runs `rebuildUriIndex` in `src/extension.ts` with no guard).
+- **Impact:** Opening or clearing a `*.reltio.json` to empty makes `rebuildUriIndex` throw, so navigation providers and diagnostics are not refreshed for that document. Low to medium.
+- **Test pointer:** BIZCFG-001 #2 in `scripts/test-business-configuration.cjs` (assertion skipped, "blocked by BUG-005")
