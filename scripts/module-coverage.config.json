@@ -95,7 +95,7 @@
 			"patterns": [
 				"extension.ts"
 			],
-			"floor": 0
+			"floor": 31
 		}
 	]
 }

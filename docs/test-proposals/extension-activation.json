@@ -11,7 +11,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-extension-activation.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "ACT-002",
@@ -25,7 +25,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-extension-activation.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "ACT-003",
@@ -39,7 +39,7 @@
     "priority": "P2",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-extension-activation.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "ACT-004",
@@ -53,7 +53,7 @@
     "priority": "P2",
     "existing_coverage": "None",
     "target_script": "scripts/test-extension-activation.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "ACT-005",
@@ -67,7 +67,7 @@
     "priority": "P2",
     "existing_coverage": "None",
     "target_script": "scripts/test-extension-activation.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "ACT-006",
@@ -81,7 +81,7 @@
     "priority": "P1",
     "existing_coverage": "None",
     "target_script": "scripts/test-extension-activation.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "ACT-007",
@@ -95,7 +95,7 @@
     "priority": "P1",
     "existing_coverage": "None",
     "target_script": "scripts/test-extension-activation.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "ACT-008",
@@ -137,7 +137,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-harden-reltio-client-base-url.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "ACT-011",
@@ -165,6 +165,6 @@
     "priority": "P3",
     "existing_coverage": "None",
     "target_script": "scripts/test-extension-activation.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   }
 ]

@@ -25,7 +25,7 @@ Copy the template, use the next free `BUG-NNN`, and fill every field. Write "unk
 
 ### BUG-001: `rebuildUriIndex` debounce timer is not disposed
 
-- **Status:** Suspected (flagged during framework review, not yet reproduced)
+- **Status:** Confirmed (2026-11-19, RP-208563 ACT-011 #1: a Reltio edit followed by disposing every `context.subscriptions` entry still rebuilds once 300 ms later; assertion skipped in `scripts/test-extension-activation.cjs`)
 - **Found:** 2026-11-18 by RP-208282 review
 - **Area / file:** Navigation, the `rebuildUriIndex` debounce in the extension wiring
 - **Expected:** The pending timer is cleared when the extension deactivates or the document closes.
@@ -36,7 +36,7 @@ Copy the template, use the next free `BUG-NNN`, and fill every field. Write "unk
 
 ### BUG-002: `isReltioDocument` may mishandle backslash paths
 
-- **Status:** Suspected (flagged during framework review, not yet reproduced)
+- **Status:** Suspected (2026-11-19, RP-208563 ACT-011 #2: not reproduced for `*.reltio.json`, which matches with backslashes; the confirmed backslash defect is the `L3.json` / `BusinessConfig.json` basename match, logged as BUG-007)
 - **Found:** 2026-11-18 by RP-208282 review
 - **Area / file:** Common Utils, `isReltioDocument`
 - **Expected:** A `*.reltio.json` path is recognized on Windows (backslash) and POSIX (slash) alike.
@@ -77,3 +77,25 @@ Copy the template, use the next free `BUG-NNN`, and fill every field. Write "unk
 - **Repro:** `const { model, ast } = parseDocument(''); new UriIndex().build(model, ast);` against `dist/` (or open an empty `*.reltio.json`, which runs `rebuildUriIndex` in `src/extension.ts` with no guard).
 - **Impact:** Opening or clearing a `*.reltio.json` to empty makes `rebuildUriIndex` throw, so navigation providers and diagnostics are not refreshed for that document. Low to medium.
 - **Test pointer:** BIZCFG-001 #2 in `scripts/test-business-configuration.cjs` (assertion skipped, "blocked by BUG-005")
+
+### BUG-006: Walkthrough is not suppressed for a user with OAuth credentials but no environment in the workspace
+
+- **Status:** Confirmed
+- **Found:** 2026-11-19 by RP-208563 while writing ACT-008
+- **Area / file:** Extension Activation, `src/extension.ts`:`activate` walkthrough suppression block (`reltio.walkthroughSeen`, about line 5260)
+- **Expected:** With empty globalState, a workspace with no environment but with OAuth client credentials in SecretStorage sets `reltio.walkthroughSeen` to true (ACT-008 #2(b)).
+- **Actual:** The flag stays unset. `hasAnyOAuth` is computed only by calling `oauthCredentialsStore.hasClientCredentials(e.name)` for each scanned environment, so with zero environments the loop never runs, and with one or more environments `envs.length > 0` already sets the flag. The credential check can never change the outcome.
+- **Repro:** activate with an empty folder, empty globalState and SecretStorage holding `reltio.oauth.dev.reltio.com.clientId` / `clientSecret`; read `globalState.get('reltio.walkthroughSeen')`: `undefined`.
+- **Impact:** An upgrade user who opens a new, empty folder sees the first-run walkthrough again. Low.
+- **Test pointer:** ACT-008 #2(b) in `scripts/test-extension-activation.cjs` (assertion skipped, "blocked by BUG-006")
+
+### BUG-007: `L3.json` and `BusinessConfig.json` are not recognized on backslash (Windows) paths
+
+- **Status:** Confirmed
+- **Found:** 2026-11-19 by RP-208563 while writing ACT-011
+- **Area / file:** Extension Activation, `src/extension.ts`:`isReltioDocument` (about line 268)
+- **Expected:** `C:\ws\env\tenant\L3.json` and `C:\ws\env\tenant\BusinessConfig.json` count as Reltio documents, as their forward-slash forms do.
+- **Actual:** The basename is taken with `doc.fileName.split(/[\/]/)`, whose character class holds only `/`, so a backslash path yields the whole path as the "basename" and never equals `l3.json` / `businessconfig.json`. No UriIndex rebuild, navigation refresh or diagnostics run for those documents. `*.reltio.json` is unaffected (it uses `endsWith`).
+- **Repro:** fire the active-editor listener with a document whose `fileName` is `C:\ws\env\tenant\L3.json`: zero rebuilds (forward-slash form: one).
+- **Impact:** On Windows, where `TextDocument.fileName` uses backslashes, an opened `L3.json` / `BusinessConfig.json` gets no navigation index or unresolved-URI diagnostics until another trigger. Medium for Windows users.
+- **Test pointer:** ACT-011 #2 in `scripts/test-extension-activation.cjs` (assertion skipped, "blocked by BUG-007")

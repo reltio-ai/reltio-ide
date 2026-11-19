@@ -25,6 +25,7 @@ const SCRIPTS = [
 	'test-custom-workflow-repository.cjs',
 	'test-docs-light-theme-screenshots-and-setup-guide.cjs',
 	'test-editor-navigation.cjs',
+	'test-extension-activation.cjs',
 	'test-extension-packaging.cjs',
 	'test-git-ready-tenant-folder-structure.cjs',
 	'test-git-repository-source.cjs',
