@@ -142,7 +142,7 @@ import {
 } from './workspace/configurationHistory';
 import { createModeSyncTrigger, syncReltioAgentAssets, type ReltioAgentSyncReport } from './workspace/reltioAgentSync';
 import { AGENT_SKILLS_SETTING, OVERRIDES_SEGMENTS } from './workspace/agentSkillDiscovery';
-import { MATCH_VERIFICATION_SETTING, registerMatchVerificationBridge } from './workspace/matchVerification';
+import { MATCH_VERIFICATION_SETTING, registerMatchVerificationBridge, resolveTenantForConfigFile } from './workspace/matchVerification';
 import { registerReltioAutoSave } from './workspace/reltioAutoSave';
 import {
 	isGitRepo,
@@ -896,7 +896,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					// Rescan so a tenant connected since activation resolves. Identity comes from the
 					// markers, never from the request, so the token only reaches its own environment.
 					await environmentManager.scanEnvironments();
-					return environmentManager.locFromPath(configFile.path);
+					return resolveTenantForConfigFile(environmentManager, configFile);
 				},
 				getToken: env => tokenStore.getToken(env),
 				tryRefresh,

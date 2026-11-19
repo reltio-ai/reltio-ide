@@ -38,6 +38,10 @@
 
 - [x] B1.1 Agent assets were not restored after the workspace folder was emptied and a tenant reconnected in the same window: the sync ran once per session. `createModeSyncTrigger` (in `reltioAgentSync.ts`) re-arms it whenever the workspace loses its mode. Found in Tier C testing on 2026-10-06; regression test `testModeSyncTrigger`, mutation-checked.
 
+## Bugfix Round 3 (Windows tenant lookup, 2026-11-19)
+
+- [x] B3.1 Match verification answered "not inside a connected tenant folder" on Windows although the tenant was connected: the bridge called `locFromPath(configFile.path)`, but the index is keyed on `.fsPath` (`/c:/...` never matches `c:/...`). Now `resolveTenantForConfigFile` passes `.fsPath`; regression test `testResolveTenantWindowsPath`, mutation-checked.
+
 ## 6. Knowledge base alignment (2026-10-06)
 
 - [x] 6.1 Compare the skill with Reltio's Match Rules Knowledge Base; fold in the missing classes, operators, patterns, cleansers and relevance details (design D11).

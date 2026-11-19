@@ -243,6 +243,17 @@ function toFailure(e: unknown, pairLabel: string): Extract<MatchVerificationResu
 }
 
 /**
+ * Maps a request's config file to its connected tenant. The reverse index behind `locFromPath`
+ * is keyed on `.fsPath`; passing `.path` never matches on Windows (`/c:/...` vs `c:\...`).
+ */
+export function resolveTenantForConfigFile(
+	environmentManager: { locFromPath(fsPath: string): { environmentName: string; tenantId: string } | undefined },
+	configFile: vscode.Uri,
+): { environmentName: string; tenantId: string } | undefined {
+	return environmentManager.locFromPath(configFile.fsPath);
+}
+
+/**
  * Handles one parsed `request.json`. Never throws: every outcome, including a malformed request,
  * becomes a result the agent can read and act on.
  */

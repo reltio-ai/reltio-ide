@@ -145,6 +145,31 @@ async function testConfigFileContainment() {
 	assert.deepStrictEqual(mixed, ['/WS/Tenant/BusinessConfig.json'], 'BIZCFG-004 #1: the case-normalised comparison keeps the original path');
 }
 
+/**
+ * Regression: the bridge looked a config file up with `uri.path`, but the tenant index is keyed
+ * on `.fsPath`. On Windows `.path` is `/c:/ws/...`, so every request failed with "not inside a
+ * connected tenant folder" although the tenant was connected.
+ */
+async function testResolveTenantWindowsPath() {
+	const { EnvironmentManager } = importDist('workspace/environmentManager');
+	installMemoryFs();
+	const em = new EnvironmentManager(vscode.Uri.file('C:\\ws'));
+	await em.createEnvironment('win.reltio.com');
+	await em.createTenant('win.reltio.com', 'TenantW');
+	const inside = vscode.Uri.file('C:\\ws\\win\\TenantW\\Business Config\\BusinessConfig.json');
+	assert.ok(inside.path.startsWith('/C:'), 'fixture: a Windows Uri.path carries a leading slash before the drive letter');
+	assert.deepStrictEqual(
+		bridge.resolveTenantForConfigFile(em, inside),
+		{ environmentName: 'win.reltio.com', tenantId: 'TenantW' },
+		'a Windows config file resolves to its connected tenant',
+	);
+	assert.strictEqual(
+		bridge.resolveTenantForConfigFile(em, vscode.Uri.file('C:\\ws\\elsewhere\\x.json')),
+		undefined,
+		'a file outside every tenant still resolves to undefined',
+	);
+}
+
 async function testBridgeVerifies() {
 	// The request tries to choose its own target. Identity must come from the extension's resolver.
 	const verdicts = {
@@ -700,6 +725,7 @@ async function testSkillConflictsAndProblems() {
 	await testBridgeGates();
 	await testBridgeRejectsMalformedRequests();
 	await testConfigFileContainment();
+	await testResolveTenantWindowsPath();
 	await testBridgeVerifies();
 	await testBridgeAuthAndFailures();
 	await testVerifyMatchesClient();
