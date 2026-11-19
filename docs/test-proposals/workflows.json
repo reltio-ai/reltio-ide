@@ -11,7 +11,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-workflows.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "WF-002",
@@ -25,7 +25,7 @@
     "priority": "P2",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-workflow-bpmn-diagnostics.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "WF-003",
@@ -39,7 +39,7 @@
     "priority": "P2",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-workflow-bpmn-diagram.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "WF-004",
@@ -53,7 +53,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-workflow-tree-redesign.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "WF-005",
@@ -67,7 +67,7 @@
     "priority": "P1",
     "existing_coverage": "Covered",
     "target_script": "scripts/test-workflow-tree-redesign.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "WF-006",
@@ -81,7 +81,7 @@
     "priority": "P1",
     "existing_coverage": "Covered",
     "target_script": "scripts/test-workflow-bulk-download.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "WF-007",
@@ -95,7 +95,7 @@
     "priority": "P1",
     "existing_coverage": "Partial",
     "target_script": "scripts/test-workflow-input-trust.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "WF-008",
@@ -151,7 +151,7 @@
     "priority": "P2",
     "existing_coverage": "Covered",
     "target_script": "scripts/test-workflow-input-trust.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   },
   {
     "id": "WF-012",
@@ -165,6 +165,6 @@
     "priority": "P3",
     "existing_coverage": "None",
     "target_script": "scripts/test-workflows.cjs",
-    "status": "Proposed"
+    "status": "Implemented"
   }
 ]
