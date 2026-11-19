@@ -2,6 +2,13 @@
 'use strict';
 /**
  * LCA agent workflow gates, package naming, L3 registration, and lifecycleActions tree leaf.
+ *
+ * Regression rows (docs/test-proposals/lca.json), added at the end of this script:
+ *  - LCA-003 tenantRootFromConfig marker walk, validateHook/hooksForKind, proposeLifecycleChange ops, L3 path predicates
+ *  - LCA-005 isExplicitApproval/classifyTurn, ordered generate/deploy/updateL3 gates with messages
+ *  - LCA-006 resolveObjectType/resolveAttributes misses and ambiguity, assessPhysicalAccess per cloud
+ *  - LCA-009 package, slug, git-marker and context-file traversal guards
+ *  - LCA-010 discoverTenantL3 cap, skipped folders and depth bound
  */
 const assert = require('assert');
 const { importDist } = require('./lib/import-dist.cjs');
@@ -899,5 +906,440 @@ assert.match(gcpMissing.consoleUpdate, /service account/i);
 const gcpReady = assessPhysicalAccess('{"projectId":"demo","serviceAccountEmail":"reltio@demo.iam.gserviceaccount.com"}', 'gcp');
 assert.strictEqual(gcpReady.present, true);
 assert.strictEqual(gcpReady.consoleUpdate, undefined);
+
+// ===========================================================================
+// Regression rows from docs/test-proposals/lca.json
+// ===========================================================================
+
+// LCA-003 #1: tenantRootFromConfig
+{
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lca-root-'));
+	const tenant = path.join(root, 'acme');
+	assert.strictEqual(
+		path.resolve(lca.tenantRootFromConfig(path.join(tenant, 'Business Config', 'BusinessConfig.json'))),
+		path.resolve(tenant),
+		'LCA-003 #1: Business Config/BusinessConfig.json gives the tenant folder',
+	);
+	assert.strictEqual(
+		path.resolve(lca.tenantRootFromConfig(path.join(tenant, 'L3.reltio.json'))),
+		path.resolve(tenant),
+		'LCA-003 #1: L3.reltio.json gives its folder',
+	);
+	const markerRoot = path.join(root, 'repo');
+	const sevenDeep = path.join(markerRoot, 'a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7');
+	fs.mkdirSync(sevenDeep, { recursive: true });
+	fs.writeFileSync(path.join(markerRoot, '.reltio-config-source.json'), '{}');
+	assert.strictEqual(
+		path.resolve(lca.tenantRootFromConfig(path.join(sevenDeep, 'conf.json'))),
+		path.resolve(markerRoot),
+		'LCA-003 #1: marker directory found within 8 levels',
+	);
+	const nineDeep = path.join(sevenDeep, 'a8');
+	fs.mkdirSync(nineDeep, { recursive: true });
+	assert.strictEqual(
+		path.resolve(lca.tenantRootFromConfig(path.join(nineDeep, 'conf.json'))),
+		path.resolve(nineDeep),
+		'LCA-003 #1: marker beyond 8 levels is not used; file dirname returned',
+	);
+	const plain = path.join(root, 'plain', 'x');
+	fs.mkdirSync(plain, { recursive: true });
+	assert.strictEqual(
+		path.resolve(lca.tenantRootFromConfig(path.join(plain, 'conf.json'))),
+		path.resolve(plain),
+		'LCA-003 #1: no marker gives the file dirname',
+	);
+}
+
+// LCA-003 #2: validateHook and hooksForKind
+{
+	const { hooksForKind } = lca;
+	assert.strictEqual(validateHook('entity', 'validate').ok, true, 'LCA-003 #2: entity validate ok');
+	const relValidate = validateHook('relation', 'validate');
+	assert.strictEqual(relValidate.ok, false, 'LCA-003 #2: relation validate refused');
+	assert.match(relValidate.message, /not a supported relation hook/, 'LCA-003 #2: relation validate message');
+	assert.strictEqual(validateHook('relation', 'beforeSave').ok, true, 'LCA-003 #2: relation beforeSave ok');
+	assert.strictEqual(validateHook('changeRequest', 'afterDCRSave').ok, true, 'LCA-003 #2: DCR afterDCRSave ok');
+	const dcrBefore = validateHook('changeRequest', 'beforeSave');
+	assert.strictEqual(dcrBefore.ok, false, 'LCA-003 #2: DCR beforeSave refused');
+	assert.match(dcrBefore.message, /only support afterDCRSave/, 'LCA-003 #2: DCR message');
+	for (const hook of ['beforesave', 'bogus']) {
+		const r = validateHook('entity', hook);
+		assert.strictEqual(r.ok, false, `LCA-003 #2: ${hook} refused`);
+		assert.match(r.message, /case-sensitive/, `LCA-003 #2: ${hook} message mentions case-sensitive`);
+	}
+	assert.strictEqual(validateHook('entity', 'afterDCRSave').ok, false, 'LCA-003 #2: entity afterDCRSave refused');
+	assert.ok(hooksForKind('entity').includes('validate'), 'LCA-003 #2: entity list has validate');
+	assert.ok(hooksForKind('relation').includes('beforeSave'), 'LCA-003 #2: relation list has beforeSave');
+	assert.ok(!hooksForKind('relation').includes('validate'), 'LCA-003 #2: relation list excludes validate');
+	assert.deepStrictEqual([...hooksForKind('changeRequest')], ['afterDCRSave'], 'LCA-003 #2: DCR list is afterDCRSave only');
+}
+
+// LCA-003 #3: proposeLifecycleChange ops
+{
+	const current = {
+		beforeSave: ['Lambda/BinaryJSON/a', { actions: ['Lambda/BinaryJSON/b', 'Lambda/BinaryJSON/c'], filter: 'equals(type,1)' }],
+		afterSave: ['Lambda/BinaryJSON/only'],
+	};
+	const snapshot = JSON.stringify(current);
+	const propose = input => proposeLifecycleChange({ current, kind: 'entity', ...input });
+
+	const add = propose({ hook: 'beforeSave', op: 'add', action: 'Lambda/BinaryJSON/new' });
+	assert.strictEqual(add.ok, true, 'LCA-003 #3: add ok');
+	assert.deepStrictEqual(add.proposed.beforeSave[2], 'Lambda/BinaryJSON/new', 'LCA-003 #3: add appends');
+	const filtered = propose({ hook: 'afterSave', op: 'filter', action: 'Lambda/BinaryJSON/f', filter: 'exists(attributes.X)' });
+	assert.strictEqual(filtered.ok, true, 'LCA-003 #3: filter ok');
+	assert.deepStrictEqual(filtered.proposed.afterSave[1], { actions: ['Lambda/BinaryJSON/f'], filter: 'exists(attributes.X)' }, 'LCA-003 #3: filter entry shape');
+	const dupInFilter = propose({ hook: 'beforeSave', op: 'add', action: 'Lambda/BinaryJSON/b' });
+	assert.strictEqual(dupInFilter.ok, false, 'LCA-003 #3: duplicate add (inside filter entry) refused');
+	assert.strictEqual(dupInFilter.duplicate, true, 'LCA-003 #3: duplicate flagged');
+	assert.deepStrictEqual(dupInFilter.proposed, current, 'LCA-003 #3: duplicate proposed equals current');
+
+	const removeString = propose({ hook: 'beforeSave', op: 'remove', action: 'Lambda/BinaryJSON/a' });
+	assert.strictEqual(removeString.ok, true, 'LCA-003 #3: remove string ok');
+	assert.deepStrictEqual(removeString.proposed.beforeSave, [current.beforeSave[1]], 'LCA-003 #3: string entry removed');
+	const removeInner = propose({ hook: 'beforeSave', op: 'remove', action: 'Lambda/BinaryJSON/b' });
+	assert.strictEqual(removeInner.ok, true, 'LCA-003 #3: remove inside {actions, filter} ok');
+	assert.deepStrictEqual(
+		removeInner.proposed.beforeSave,
+		['Lambda/BinaryJSON/a', { actions: ['Lambda/BinaryJSON/c'], filter: 'equals(type,1)' }],
+		'LCA-003 #3: inner action removed, filter kept',
+	);
+	const removeLast = propose({ hook: 'afterSave', op: 'remove', action: 'Lambda/BinaryJSON/only' });
+	assert.strictEqual(removeLast.ok, true, 'LCA-003 #3: remove last ok');
+	assert.ok(!('afterSave' in removeLast.proposed), 'LCA-003 #3: removing the last entry deletes the hook key');
+	assert.strictEqual(removeLast.destructive, true, 'LCA-003 #3: remove is destructive');
+	const removeMissing = propose({ hook: 'beforeSave', op: 'remove', action: 'Lambda/BinaryJSON/none' });
+	assert.strictEqual(removeMissing.ok, false, 'LCA-003 #3: remove missing refused');
+	assert.deepStrictEqual(removeMissing.proposed, current, 'LCA-003 #3: remove missing proposed equals current');
+
+	const replaced = propose({ hook: 'beforeSave', op: 'replace', replacement: ['Lambda/BinaryJSON/z'] });
+	assert.strictEqual(replaced.ok, true, 'LCA-003 #3: replace ok');
+	assert.strictEqual(replaced.destructive, true, 'LCA-003 #3: replace is destructive');
+	assert.deepStrictEqual(replaced.proposed.beforeSave, ['Lambda/BinaryJSON/z'], 'LCA-003 #3: replace sets the list');
+
+	const noAction = propose({ hook: 'beforeSave', op: 'add' });
+	assert.strictEqual(noAction.ok, false, 'LCA-003 #3: add with no action refused');
+	assert.match(noAction.message, /incomplete/, 'LCA-003 #3: add with no action reports incomplete');
+	assert.deepStrictEqual(noAction.proposed, current, 'LCA-003 #3: incomplete proposed equals current');
+
+	assert.strictEqual(JSON.stringify(current), snapshot, 'LCA-003 #3: input never mutated');
+}
+
+// LCA-003 #4: isTenantL3Path and isComponentConfigPath
+{
+	const tenantL3 = [
+		['/ws/samples/dev.reltio.environment/t1.reltio.tenant/L3.reltio.json', false, 'samples'],
+		['/ws/resources/velocity-packs/t1.reltio.tenant/L3.reltio.json', false, 'velocity-packs'],
+		['/ws/dev.reltio.environment/t1.reltio.tenantx/L3.reltio.json', false, 'lookalike tenant folder'],
+		['/ws/dev.reltio.environment/t1.reltio.tenant/L3.reltio.json.bak', false, 'lookalike file name'],
+		['C:\\ws\\dev.reltio.environment\\t1.reltio.tenant\\L3.reltio.json', true, 'backslash path'],
+		['C:\\ws\\samples\\t1.reltio.tenant\\L3.reltio.json', false, 'backslash samples path'],
+		['/ws/dev.reltio.environment/t1.reltio.tenant/L3.reltio.json', true, 'valid legacy layout'],
+	];
+	for (const [p, want, label] of tenantL3) {
+		assert.strictEqual(isTenantL3Path(p), want, `LCA-003 #4: isTenantL3Path ${label}`);
+	}
+	const component = [
+		['/ws/samples/dev/t1/Business Config/BusinessConfig.json', false, 'samples'],
+		['/ws/resources/velocity-packs/life/Business Config/BusinessConfig.json', false, 'velocity-packs'],
+		['/ws/dev/t1/Business Configs/BusinessConfig.json', false, 'lookalike folder'],
+		['/ws/dev/t1/MyBusiness Config/BusinessConfig.json', false, 'lookalike prefix folder'],
+		['C:\\ws\\dev\\t1\\Business Config\\BusinessConfig.json', true, 'backslash path'],
+		['C:\\ws\\velocity-packs\\life\\Business Config\\BusinessConfig.json', false, 'backslash pack path'],
+		['/ws/dev/t1/Business Config/BusinessConfig.json', true, 'valid component layout'],
+	];
+	for (const [p, want, label] of component) {
+		assert.strictEqual(isComponentConfigPath(p), want, `LCA-003 #4: isComponentConfigPath ${label}`);
+	}
+}
+
+// LCA-005 #1: isExplicitApproval and classifyTurn
+{
+	const { isExplicitApproval } = lca;
+	assert.strictEqual(isExplicitApproval('yes'), true, 'LCA-005 #1: plain yes is approval');
+	assert.strictEqual(isExplicitApproval('Proceed'), true, 'LCA-005 #1: plain proceed is approval');
+	for (const text of ['yes but wait', 'yes?', 'ok deploy it', 'yes update L3', 'What does beforeSave do?', 'Generate an LCA for HCP beforeSave']) {
+		assert.strictEqual(isExplicitApproval(text), false, `LCA-005 #1: "${text}" is not approval`);
+	}
+	assert.strictEqual(classifyTurn('yes'), 'approve', 'LCA-005 #1: yes classifies as approve');
+	for (const text of ['yes but wait', 'yes?', 'ok deploy it', 'yes update L3']) {
+		assert.notStrictEqual(classifyTurn(text), 'approve', `LCA-005 #1: "${text}" does not classify as approve`);
+	}
+	assert.strictEqual(classifyTurn('What does beforeSave do?'), 'ask', 'LCA-005 #1: question classifies as ask');
+	assert.strictEqual(classifyTurn('Generate an LCA for HCP beforeSave'), 'generate', 'LCA-005 #1: generate request');
+	assert.strictEqual(classifyTurn('ok deploy it'), 'deploy', 'LCA-005 #1: deploy request');
+}
+
+// LCA-005 #2: ordered gates
+{
+	const ready = {
+		intent: 'generate',
+		targetType: 'HCP',
+		hook: 'beforeSave',
+		attributesRead: ['FirstName'],
+	};
+	const vo = createWorkflow({ ...ready, intent: 'validation-only', state: 'DESIGN_APPROVED', designApproved: true, objectAttributesConfirmed: true });
+	for (const g of ['generate', 'deploy', 'updateL3']) {
+		const r = gate(vo, g);
+		assert.strictEqual(r.allowed, false, `LCA-005 #2: validation-only ${g} closed`);
+		assert.match(r.message, /DVF/, `LCA-005 #2: validation-only ${g} names DVF`);
+	}
+	const reg = createWorkflow({ ...ready, intent: 'register', state: 'DESIGN_APPROVED', designApproved: true, objectAttributesConfirmed: true });
+	for (const g of ['generate', 'deploy']) {
+		const r = gate(reg, g);
+		assert.strictEqual(r.allowed, false, `LCA-005 #2: register ${g} closed`);
+		assert.match(r.message, /Direct registration/, `LCA-005 #2: register ${g} message`);
+	}
+	const gaps = gate(createWorkflow({ intent: 'generate', state: 'DESIGN_APPROVED', designApproved: true, objectAttributesConfirmed: true }), 'generate');
+	assert.strictEqual(gaps.allowed, false, 'LCA-005 #2: missing requirements closed');
+	assert.match(gaps.message, /Missing targetType, hook, attributes/, 'LCA-005 #2: message names each missing requirement');
+
+	let wf = createWorkflow({ ...ready, state: 'OBJECT_ATTRIBUTES_PENDING_CONFIRMATION' });
+	let r = gate(wf, 'generate');
+	assert.strictEqual(r.allowed, false, 'LCA-005 #2: unconfirmed attributes closed');
+	assert.match(r.message, /Confirm the object type and attributes/, 'LCA-005 #2: unconfirmed attributes message');
+	wf = markDesignPending(markObjectAttributesConfirmed(wf));
+	r = gate(wf, 'generate');
+	assert.strictEqual(r.allowed, false, 'LCA-005 #2: unapproved design closed');
+	assert.match(r.message, /design/i, 'LCA-005 #2: unapproved design message');
+	wf = markDesignApproved(wf);
+	const kotlin = gate({ ...wf, implementationLanguage: 'Kotlin' }, 'generate');
+	assert.strictEqual(kotlin.allowed, false, 'LCA-005 #2: non-Java closed');
+	assert.match(kotlin.message, /must be Java/, 'LCA-005 #2: non-Java message');
+	assert.strictEqual(gate(wf, 'generate').allowed, true, 'LCA-005 #2: generate opens after design approval');
+
+	wf = markImplementationGenerated(wf);
+	r = gate(wf, 'deploy');
+	assert.strictEqual(r.allowed, false, 'LCA-005 #2: deploy closed before DEPLOYMENT_PENDING');
+	assert.match(r.message, /explicit approval/, 'LCA-005 #2: deploy message');
+	assert.strictEqual(gate({ ...wf, deploymentApproved: true }, 'deploy').allowed, false, 'LCA-005 #2: approval without DEPLOYMENT_PENDING closed');
+	assert.strictEqual(gate(markDeploymentPending(wf, false), 'deploy').allowed, false, 'LCA-005 #2: DEPLOYMENT_PENDING without approval closed');
+	wf = markDeploymentPending(wf, true);
+	assert.strictEqual(gate(wf, 'deploy').allowed, true, 'LCA-005 #2: deploy opens with DEPLOYMENT_PENDING plus approval');
+
+	wf = markDeployed(wf, 'hcp-fn');
+	const approvedNoConn = markTenantConfigPending(wf, { beforeSave: ['Lambda/BinaryJSON/hcp-fn'] }, true);
+	r = gate(approvedNoConn, 'updateL3');
+	assert.strictEqual(r.allowed, false, 'LCA-005 #2: updateL3 closed without connectivity even when approved');
+	assert.match(r.message, /connectivity/i, 'LCA-005 #2: updateL3 message names connectivity');
+	wf = markConnectivityConfirmed(wf);
+	r = gate(wf, 'updateL3');
+	assert.strictEqual(r.allowed, false, 'LCA-005 #2: updateL3 closed before the diff is approved');
+	assert.match(r.message, /lifecycleActions diff/, 'LCA-005 #2: updateL3 message names the diff');
+	assert.strictEqual(gate(markTenantConfigPending(wf, {}, false), 'updateL3').allowed, false, 'LCA-005 #2: unapproved diff closed');
+	assert.strictEqual(gate(markTenantConfigPending(wf, {}, true), 'updateL3').allowed, true, 'LCA-005 #2: updateL3 opens after connectivity and approval');
+}
+
+// LCA-006 #1: lookup misses
+{
+	const filler = Array.from({ length: 30 }, (_, i) => ({ uri: `configuration/entityTypes/Filler${String(i).padStart(2, '0')}`, label: `Filler${i}` }));
+	const lookupModel = {
+		entityTypes: [
+			...filler,
+			{ uri: 'configuration/entityTypes/HCP', label: 'Health Care Provider', attributes: [
+				{ name: 'Address', uri: 'configuration/entityTypes/HCP/attributes/Address', attributes: [
+					{ name: 'City', uri: 'configuration/entityTypes/HCP/attributes/Address/attributes/City' },
+				] },
+			] },
+			{ uri: 'configuration/entityTypes/Course', label: 'Course' },
+			{ uri: 'configuration/entityTypes/Shared', label: 'Shared' },
+		],
+		relationTypes: [
+			{ uri: 'configuration/relationTypes/Topics', label: 'Topics' },
+			{ uri: 'configuration/relationTypes/Shared', label: 'Shared' },
+		],
+	};
+	const near = resolveObjectType(lookupModel, 'CourseTopics');
+	assert.strictEqual(near.ok, false, 'LCA-006 #1: near miss not resolved');
+	assert.ok(near.suggestions.length <= 25, `LCA-006 #1: at most 25 suggestions, got ${near.suggestions.length}`);
+	assert.strictEqual(near.suggestions.length, 25, 'LCA-006 #1: suggestions are capped at 25');
+	assert.match(near.suggestions[0], /Course/, 'LCA-006 #1: near matches first (Course)');
+	assert.match(near.suggestions[1], /Topics/, 'LCA-006 #1: near matches first (Topics)');
+	const lower = resolveObjectType(lookupModel, 'hcp');
+	assert.strictEqual(lower.ok, true, 'LCA-006 #1: wrong case resolves');
+	assert.strictEqual(lower.object.uri, 'configuration/entityTypes/HCP', 'LCA-006 #1: wrong case resolves HCP');
+	const byLabel = resolveObjectType(lookupModel, 'health care provider');
+	assert.strictEqual(byLabel.ok, true, 'LCA-006 #1: label match (case-insensitive) resolves');
+	const ambiguous = resolveObjectType(lookupModel, 'Shared');
+	assert.strictEqual(ambiguous.ok, false, 'LCA-006 #1: name in two collections is ambiguous');
+	assert.deepStrictEqual(
+		[...ambiguous.suggestions].sort(),
+		['configuration/entityTypes/Shared', 'configuration/relationTypes/Shared'],
+		'LCA-006 #1: ambiguous lists the URIs',
+	);
+	const filteredKind = resolveObjectType(lookupModel, 'Shared', 'relation');
+	assert.strictEqual(filteredKind.ok, true, 'LCA-006 #1: kind filter resolves');
+	assert.strictEqual(filteredKind.object.kind, 'relation', 'LCA-006 #1: kind filter picks the relation');
+
+	const nested = resolveAttributes(lower.object, ['Address.City']);
+	assert.strictEqual(nested.ok, true, 'LCA-006 #1: nested path resolves');
+	assert.deepStrictEqual(nested.attributes[0].path, ['Address', 'City'], 'LCA-006 #1: nested attribute path');
+	const missingAttrs = resolveAttributes(lower.object, ['City', 'NopeOne', 'NopeTwo']);
+	assert.strictEqual(missingAttrs.ok, false, 'LCA-006 #1: missing attribute fails');
+	assert.match(missingAttrs.message, /NopeOne, NopeTwo/, 'LCA-006 #1: all missing attributes named');
+	assert.ok(!/City,/.test(missingAttrs.message), 'LCA-006 #1: found attribute not reported missing');
+}
+
+// LCA-006 #2: assessPhysicalAccess
+{
+	const awsFull = { awsAccountId: '123456789012', roleArn: 'arn:aws:iam::123456789012:role/R', region: 'us-east-1', externalId: 'ext-secret-77' };
+	const check = (obj, provider, want, label) => {
+		const text = typeof obj === 'string' || obj === undefined ? obj : JSON.stringify(obj);
+		const r = assessPhysicalAccess(text, provider);
+		assert.strictEqual(r.present, want, `LCA-006 #2: ${label}`);
+		if (want) {
+			assert.strictEqual(r.consoleUpdate, undefined, `LCA-006 #2: ${label} has no console update`);
+		} else {
+			assert.ok(typeof r.consoleUpdate === 'string' && r.consoleUpdate.length > 0, `LCA-006 #2: ${label} gives a console-update instruction`);
+		}
+		const out = JSON.stringify(r);
+		for (const value of ['123456789012', 'ext-secret-77', 'client-abc-99', 'demo-proj-42', 'tenant-guid-55']) {
+			assert.ok(!out.includes(value), `LCA-006 #2: ${label} output never includes config values`);
+		}
+		return r;
+	};
+	check(awsFull, 'aws', true, 'aws complete');
+	check({ ...awsFull, awsAccountId: '12345678901' }, 'aws', false, 'aws 11-digit account');
+	check({ ...awsFull, roleArn: 'role/R' }, 'aws', false, 'aws role without arn');
+	check({ ...awsFull, region: 'useast1' }, 'aws', false, 'aws bad region');
+	check({ awsAccountId: awsFull.awsAccountId, roleArn: awsFull.roleArn, region: awsFull.region }, 'aws', false, 'aws missing externalId');
+	check({ lca: { aws: awsFull } }, 'aws', true, 'aws nested fields');
+	check({ projectId: 'demo-proj-42', serviceAccountEmail: 'sa@demo-proj-42.iam.gserviceaccount.com' }, 'gcp', true, 'gcp complete');
+	check({ projectId: 'your-project', serviceAccountEmail: 'sa@x.iam.gserviceaccount.com' }, 'gcp', false, 'gcp placeholder project');
+	check({ customerTenantId: 'tenant-guid-55', customerFunctionAppId: 'app-guid' }, 'azure', true, 'azure entra form');
+	check({ tokenUrl: 'https://login.example.com/token', clientId: 'client-abc-99' }, 'azure', true, 'azure oauth form');
+	check({ tokenUrl: 'http://login.example.com/token', clientId: 'client-abc-99' }, 'azure', false, 'azure oauth form without https');
+	check({ customerTenantId: 'tenant-guid-55' }, 'azure', false, 'azure entra form incomplete');
+	const undef = check(undefined, 'aws', false, 'undefined text');
+	assert.match(undef.consoleUpdate, /Console/, 'LCA-006 #2: aws instruction points at the Console');
+	check('{not json', 'gcp', false, 'invalid JSON');
+}
+
+// LCA-009 #1: package name guards
+{
+	const evil = buildJavaPackage({ customerName: '../Evil; Corp', typeName: 'HCP' });
+	assert.strictEqual(evil, 'com.reltio.lca.evilcorp.hcp', 'LCA-009 #1: customer name stripped to [a-z0-9]');
+	assert.strictEqual(buildJavaPackage({ customerName: 'Acme', typeName: 'class' }), 'com.reltio.lca.acme.nclass', 'LCA-009 #1: keyword gets n prefix');
+	assert.strictEqual(buildJavaPackage({ customerName: 'Acme', typeName: '9Type' }), 'com.reltio.lca.acme.n9type', 'LCA-009 #1: leading digit gets n prefix');
+	assert.strictEqual(buildJavaPackage({ customerName: 'Acme', typeName: '' }), 'com.reltio.lca.acme.lca', 'LCA-009 #1: empty segment becomes lca');
+	for (const pkgName of [evil, buildJavaPackage({ customerName: '..//\\x', typeName: '../..' })]) {
+		for (const seg of pkgName.split('.')) {
+			assert.match(seg, /^[a-z][a-z0-9]*$/, `LCA-009 #1: segment "${seg}" is [a-z0-9]`);
+		}
+	}
+	assert.throws(() => buildJavaPackage({ customerName: '   ', tenantId: '  ', typeName: 'HCP' }), /customer name or tenant id/, 'LCA-009 #1: blank owner throws');
+	assert.strictEqual(isForbiddenGenericPackage('com.example.x'), true, 'LCA-009 #1: com.example.* flagged');
+}
+
+// LCA-009 #2: slug and project directory
+{
+	const tenantRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'lca-slug-'));
+	const config = path.join(tenantRoot, 'Business Config', 'BusinessConfig.json');
+	const lcaRoot = path.join(tenantRoot, 'LifeCycle Actions');
+	const cases = [
+		['../../etc', 'beforeSave', undefined],
+		['a/b', 'afterSave', '..'],
+		['a\\b\\..\\c', 'beforeSave', 'x\\..\\y'],
+		['  ', '  ', '  '],
+	];
+	for (const [type, hook, name] of cases) {
+		const slug = lca.lcaProjectSlug(type, hook, name);
+		assert.match(slug, /^[a-z0-9-]+$/, `LCA-009 #2: slug "${slug}" is [a-z0-9-]`);
+		assert.ok(!slug.includes('..'), `LCA-009 #2: slug "${slug}" has no ..`);
+		assert.ok(slug.endsWith('lca'), `LCA-009 #2: slug "${slug}" ends with lca`);
+		const dir = lca.lcaProjectDirectory(config, type, hook, name);
+		assert.strictEqual(path.dirname(dir), lcaRoot, `LCA-009 #2: ${slug} directory is directly under LifeCycle Actions`);
+	}
+	assert.strictEqual(lca.lcaProjectSlug('../../etc', 'beforeSave'), 'etc-beforesave-lca', 'LCA-009 #2: traversal slug ends -lca');
+	assert.strictEqual(lca.lcaProjectSlug('  ', '  ', '  '), 'lca', 'LCA-009 #2: all-blank parts give lca');
+}
+
+// LCA-009 #3: locationsFromGitMarker
+{
+	const { locationsFromGitMarker } = lca;
+	const base = fs.mkdtempSync(path.join(os.tmpdir(), 'lca-marker-'));
+	const repo = path.join(base, 'repo');
+	const write = (p, text = '{}') => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, text); };
+	write(path.join(base, 'outside', 'BusinessConfig.json'));
+	write(path.join(base, 'abs', 'L3.reltio.json'));
+	write(path.join(repo, 'samples', 'BusinessConfig.json'));
+	write(path.join(repo, 'config', 'other.json'));
+	write(path.join(repo, 'config', 'BusinessConfig.json'));
+	const marker = path.join(repo, '.reltio-config-source.json');
+	write(marker, JSON.stringify({
+		sources: [
+			{ l3RelativePath: '../outside/BusinessConfig.json', tenantId: 't1' },
+			{ l3RelativePath: path.join(base, 'abs', 'L3.reltio.json'), tenantId: 't2' },
+			{ l3RelativePath: 'samples/BusinessConfig.json', tenantId: 't3' },
+			{ l3RelativePath: 'config/other.json', tenantId: 't4' },
+			{ l3RelativePath: 'config/BusinessConfig.json', tenantId: 'good', environmentName: 'dev' },
+		],
+	}));
+	const found = locationsFromGitMarker(marker);
+	assert.deepStrictEqual(found.map(f => f.tenantId), ['good'], 'LCA-009 #3: only the valid in-directory file returned');
+	assert.strictEqual(path.resolve(found[0].path), path.resolve(repo, 'config', 'BusinessConfig.json'), 'LCA-009 #3: valid path');
+	write(marker, '{ invalid');
+	assert.deepStrictEqual(locationsFromGitMarker(marker), [], 'LCA-009 #3: invalid JSON marker returns []');
+}
+
+// LCA-009 #4: projectContextFile and LcaContextStore
+{
+	const { projectContextFile, readProjectContext, writeProjectContext, emptyProjectContext } = lca;
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lca-ctxfile-'));
+	const ctxDir = path.resolve(dir, '.reltio', 'lca-context');
+	for (const tenantId of ['../../evil', 'a b/c\\d', 'x:y*z']) {
+		const file = projectContextFile(dir, tenantId);
+		assert.strictEqual(path.resolve(path.dirname(file)), ctxDir, `LCA-009 #4: "${tenantId}" stays under <dir>/.reltio/lca-context`);
+		assert.match(path.basename(file), /^[a-zA-Z0-9._-]+\.json$/, `LCA-009 #4: "${tenantId}" name sanitized`);
+	}
+	assert.strictEqual(path.basename(projectContextFile(dir, 'a b/c\\d')), 'a_b_c_d.json', 'LCA-009 #4: slashes and spaces become _');
+
+	const ctx = { ...emptyProjectContext(dir, '../../evil'), customerName: 'Evil Co' };
+	writeProjectContext(ctx);
+	assert.ok(fs.existsSync(projectContextFile(dir, '../../evil')), 'LCA-009 #4: written inside the context folder');
+	assert.ok(!fs.existsSync(path.join(dir, '..', '..', 'evil.json')), 'LCA-009 #4: nothing written outside');
+	assert.strictEqual(readProjectContext(dir, '../../evil').customerName, 'Evil Co', 'LCA-009 #4: read back');
+	const reopened = new LcaContextStore().open(dir, '../../evil', { disk: true });
+	assert.strictEqual(reopened.context.customerName, 'Evil Co', 'LCA-009 #4: store reads it back');
+
+	// 'a/b' and 'a b' share the sanitized file name; the stored tenantId keeps them apart.
+	writeProjectContext({ ...emptyProjectContext(dir, 'a/b'), customerName: 'Slash' });
+	assert.strictEqual(readProjectContext(dir, 'a b'), undefined, 'LCA-009 #4: mismatched tenantId returns undefined');
+	const other = fs.mkdtempSync(path.join(os.tmpdir(), 'lca-ctxother-'));
+	const otherFile = projectContextFile(other, 'a/b');
+	fs.mkdirSync(path.dirname(otherFile), { recursive: true });
+	fs.copyFileSync(projectContextFile(dir, 'a/b'), otherFile);
+	assert.strictEqual(readProjectContext(other, 'a/b'), undefined, 'LCA-009 #4: mismatched directory returns undefined');
+}
+
+// LCA-010: discoverTenantL3 bound, skipped folders and depth
+{
+	const many = fs.mkdtempSync(path.join(os.tmpdir(), 'lca-many-'));
+	for (let i = 0; i < 25; i++) {
+		const t = path.join(many, 'dev.reltio.environment', `t${i}.reltio.tenant`);
+		fs.mkdirSync(t, { recursive: true });
+		fs.writeFileSync(path.join(t, 'L3.reltio.json'), '{}');
+	}
+	assert.strictEqual(discoverTenantL3(many).length, 20, 'LCA-010 #1: result length capped at 20');
+
+	const tree = fs.mkdtempSync(path.join(os.tmpdir(), 'lca-skip-'));
+	const plant = rel => {
+		const t = path.join(tree, ...rel);
+		fs.mkdirSync(t, { recursive: true });
+		fs.writeFileSync(path.join(t, 'L3.reltio.json'), '{}');
+	};
+	for (const skip of ['node_modules', '.git', 'dist', 'target', 'samples']) {
+		plant([skip, `${skip.replace('.', '')}.reltio.tenant`]);
+	}
+	plant(['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'deep.reltio.tenant']);
+	plant(['e1', 'e2', 'e3', 'e4', 'e5', 'e6', 'e7', 'edge.reltio.tenant']);
+	const found = discoverTenantL3(tree).map(f => f.tenantId);
+	assert.deepStrictEqual(found, ['edge'], `LCA-010 #2: only the in-bound tenant is found, got ${JSON.stringify(found)}`);
+
+	const project = path.join(tree, 'e1', 'e2', 'e3', 'e4', 'e5', 'e6', 'e7', 'edge.reltio.tenant', 'LifeCycle Actions', 'p-lca');
+	fs.mkdirSync(project, { recursive: true });
+	const up = discoverTenantL3(project);
+	assert.deepStrictEqual(up.map(f => f.tenantId), ['edge'], 'LCA-010 #3: project subfolder walks up to its tenant folder');
+}
 
 console.log('test-lca-workflow: OK');
