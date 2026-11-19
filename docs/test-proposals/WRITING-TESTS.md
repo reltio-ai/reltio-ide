@@ -46,8 +46,14 @@ STEP 3: Write the tests. Rules (do not deviate):
   2. Only add or change files in scripts/: new test scripts, their registration in
      scripts/run-unit-tests.cjs, and existing test scripts only for rows classified
      SIMILAR. Never edit src/, scripts/lib/, package.json, workflows, .vscodeignore, the
-     area JSON files or the workbook. If a row exposes a product bug, pin nothing
-     silently: stop and report it.
+     area JSON files or the workbook. The one other file you may edit is
+     docs/test-proposals/PRODUCT-BUGS.md (see rule 2b).
+  2b. If a row exposes a product bug (the code does not do what the row's `expected`
+     says), do not fix src/ and do not write a test that asserts the buggy behavior.
+     Append an entry to docs/test-proposals/PRODUCT-BUGS.md using its template (next free
+     BUG-NNN, every field filled, "unknown" where you do not know), mention it in the
+     test's docblock as "blocked by BUG-NNN", skip that row's assertion, and continue
+     with the other rows. Never delete or rewrite existing entries.
   2a. When modifying an existing script (SIMILAR rows): extend it in its own style. Add
      the new assertions and the row IDs to its docblock. Never delete, loosen or reorder
      existing assertions, never change its fixtures or helpers in a way that alters what
@@ -77,8 +83,9 @@ STEP 4: Prove each test can fail. For every row implemented:
   restored output for each row.
 
 STEP 5: Report. List the rows implemented and the script covering each, which rows were
-SAME (nothing written), which scripts were modified instead of created, the branch name,
-and anything you could not do. I update the proposals JSON, the workbook and the Drive
+SAME (nothing written), which scripts were modified instead of created, any product bugs
+logged in PRODUCT-BUGS.md (BUG IDs and the rows they block), the branch name, and
+anything you could not do. I update the proposals JSON, the workbook and the Drive
 copy myself, so do not touch them.
 ```
 
@@ -127,7 +134,12 @@ The assistant writes tests only. It does not edit the area JSON files or the wor
 - regenerates the workbook with `python docs/test-proposals/build-workbook.py`;
 - updates the shared Drive copy.
 
+## Product bugs found while testing
+
+Bugs go in one running file, `docs/test-proposals/PRODUCT-BUGS.md`, for all areas and all developers. The assistant appends an entry (template inside the file) instead of fixing `src/` or pinning the buggy behavior in a test. Commit the entry with the tests on the same branch. After that, the developer decides whether to raise a ticket and updates the entry's Status.
+
 ## Related
 
+- `docs/test-proposals/PRODUCT-BUGS.md`: running log of product bugs found while testing.
 - `docs/test-proposals/README.md`: row schema, priority rubric, how to regenerate the workbook.
 - `ARCHITECTURE.md` "Regression gate and coverage": how the gate, floors and areas work.
