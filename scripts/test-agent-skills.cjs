@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * Regression area: Common Utils (docs/test-proposals/common-utils.json)
+ * Regression area: Common Utils
  *
  * Tier A: `syncReltioAgentAssets` over an in-memory file system, plus the Reltio client header set.
  *   UTIL-002  stamp logic: a version bump recopies, an unchanged stamp skips, skills and packs

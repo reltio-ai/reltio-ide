@@ -9,12 +9,12 @@
  * Tier C (manual): design.md Test plan — a real `*.reltio.environment` folder
  *         named after an untrusted host, and a legitimate non-reltio.com env.
  *
- * Regression rows (docs/test-proposals/common-utils.json): UTIL-010 URL hardening
+ * Regression rows: UTIL-010 URL hardening
  * (userinfo, path, query and fragment rejected before fetch; case, slashes and
  * whitespace normalized; lookalikes rejected) and redirect protection for the
  * bearer token (section 10).
  *
- * Regression row (docs/test-proposals/extension-activation.json): ACT-010 security (section 11):
+ * Regression row: ACT-010 security (section 11):
  * #1 the trustedHostSuffixes default still holds reltio.com (scope is item 9 above); #2 static half:
  * the workspaceState/globalState keys extension.ts writes are a known, token-free list, and
  * SessionStore / OAuthCredentialsStore keep secrets in SecretStorage only. The dynamic half of #2

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * Regression area: Common Utils (docs/test-proposals/common-utils.json)
+ * Regression area: Common Utils
  *
  * Tier A: `src/api/reltioClient.ts` against a stubbed `fetch`.
  *   UTIL-008  response validation, HTTP status mapping, put-configuration error formatting and

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * Regression area: Extension Activation (docs/test-proposals/extension-activation.json)
+ * Regression area: Extension Activation
  *
  * Tier A (static, no VS Code host):
  *   ACT-001  command manifest: declared, registered, allowlisted and menu/welcome-referenced ids agree.

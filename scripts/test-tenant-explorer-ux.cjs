@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * Regression: Tenant Explorer & UX (docs/test-proposals/tenant-explorer-ux.json).
+ * Regression: Tenant Explorer & UX.
  *
  * Rows: TREE-001 (config subtree ordering, gating, attribute grouping, parents, abstract URIs),
  * TREE-002 (config and tree node id / contextValue scheme, tenant-scoped ids), TREE-003

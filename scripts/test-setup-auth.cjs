@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * Regression: Setup & Authentication (docs/test-proposals/setup-authentication.json)
+ * Regression: Setup & Authentication
  * Rows: SETUP-001, SETUP-002, SETUP-003, SETUP-004, SETUP-005, SETUP-006, SETUP-007, SETUP-008,
  *       SETUP-009, SETUP-010, SETUP-012
  * Not automated: SETUP-011 (120 s login timeout) is manual (Tier C).

@@ -5,7 +5,7 @@
  * Tier A: buildGraphModel invariants on canonical fixture
  * Tier C (manual): webview pan/zoom, inspectors — openspec/changes/ontology-view/
  *
- * Regression rows (docs/test-proposals/business-configuration.json): BIZCFG-003 graph model ids,
+ * Regression rows: BIZCFG-003 graph model ids,
  * edges and attribute counts, connection merging, saved layout (applyLayout / loadLayout /
  * saveLayout on memory-fs) and webview pure-logic safety (testBizcfg003).
  */

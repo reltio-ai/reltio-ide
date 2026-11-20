@@ -23,7 +23,7 @@
  *   8. package.json menus reach the right rows.
  *   9. The bundled skills tell the user to connect before any Java is written.
  *
- * Regression rows (docs/test-proposals/workflows.json):
+ * Regression rows:
  *   WF-004  A move that fails part-way through adoption is rolled back: moved entries return to
  *           staging, the generated README is rewritten, the error propagates, drafts untouched.
  */

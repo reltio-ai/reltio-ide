@@ -41,7 +41,7 @@
  *  13.  Declared in package.json, wired into all three document listeners, and
  *       registered in the runner's hardcoded SCRIPTS array.
  *
- * Regression rows (docs/test-proposals/workflows.json):
+ * Regression rows:
  *   WF-002  Every rule code has one fixture that yields exactly that code, with its fixed
  *           severity and a range inside the document; the manager publishes and then clears
  *           id-filename-mismatch as the process id is edited, ignores non-BPMN documents, and

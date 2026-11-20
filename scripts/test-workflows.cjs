@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * Regression tests: Workflows area (docs/test-proposals/workflows.json).
+ * Regression tests: Workflows area.
  *
  *   WF-001  Workspace file safety: the disconnect cleanup plan drops unsafe paths and pairs a
  *           baseline with its BPMN; local BPMN files pair with their baselines; a draft is never

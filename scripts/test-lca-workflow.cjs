@@ -3,7 +3,7 @@
 /**
  * LCA agent workflow gates, package naming, L3 registration, and lifecycleActions tree leaf.
  *
- * Regression rows (docs/test-proposals/lca.json), added at the end of this script:
+ * Regression rows, added at the end of this script:
  *  - LCA-003 tenantRootFromConfig marker walk, validateHook/hooksForKind, proposeLifecycleChange ops, L3 path predicates
  *  - LCA-005 isExplicitApproval/classifyTurn, ordered generate/deploy/updateL3 gates with messages
  *  - LCA-006 resolveObjectType/resolveAttributes misses and ambiguity, assessPhysicalAccess per cloud
@@ -908,7 +908,7 @@ assert.strictEqual(gcpReady.present, true);
 assert.strictEqual(gcpReady.consoleUpdate, undefined);
 
 // ===========================================================================
-// Regression rows from docs/test-proposals/lca.json
+// Regression rows
 // ===========================================================================
 
 // LCA-003 #1: tenantRootFromConfig

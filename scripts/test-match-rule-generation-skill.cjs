@@ -12,9 +12,9 @@
  *         covers every status, reason, failure kind and outcome the bridge can emit.
  * Tier C (manual): openspec/changes/match-rule-generation-skill/design.md
  *
- * Regression rows (docs/test-proposals/common-utils.json): UTIL-007 skill sync reports conflicts
+ * Regression rows: UTIL-007 skill sync reports conflicts
  * and invalid skills instead of overwriting or substituting (testSkillConflictsAndProblems).
- * Regression rows (docs/test-proposals/business-configuration.json): BIZCFG-004 configFile
+ * Regression rows: BIZCFG-004 configFile
  * traversal and outside-workspace paths are refused before any call (testConfigFileContainment).
  */
 const assert = require('assert');

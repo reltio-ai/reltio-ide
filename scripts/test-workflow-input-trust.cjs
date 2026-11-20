@@ -6,7 +6,7 @@
  *         toOpenableHttpsUrl, toHttpsBase origin-only, redirect:'error', bounded body reads,
  *         Retry-After on listJars, Windows device ids, rewriteProcessIdentity, BpmnContentProvider.
  *
- * Regression rows (docs/test-proposals/workflows.json):
+ * Regression rows:
  *   WF-007  Repository config: .gitignore reconcile (idempotent, no-ops, sweep isolation), BPMN
  *           discovery limits (build output, size, id-less, baseline, depth, candidate cap),
  *           storableRepoUrl drops http(s) userinfo, toOpenableHttpsUrl opens https only.

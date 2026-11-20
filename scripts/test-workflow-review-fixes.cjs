@@ -14,7 +14,7 @@
  *      a failed clone puts the generated README back; per-key debounce.
  *   4. package.json: node-only commands are hidden from the Command Palette.
  *
- * Regression rows (docs/test-proposals/common-utils.json): UTIL-003 KeyedDebouncer independent keys,
+ * Regression rows: UTIL-003 KeyedDebouncer independent keys,
  * last-callback coalescing, cancel and dispose (section 2a).
  */
 const assert = require('assert');

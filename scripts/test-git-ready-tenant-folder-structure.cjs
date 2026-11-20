@@ -10,7 +10,7 @@
  *         path, proving the rename is inert for parsing, the URI index and the config subtree.
  * Tier C (manual): openspec/changes/git-ready-tenant-folder-structure/design.md
  *
- * Regression rows (docs/test-proposals/git-integration.json): GIT-002 (isTenantFolderCloneable,
+ * Regression rows: GIT-002 (isTenantFolderCloneable,
  * hasUncommittedChanges, planMigration edge cases) in the "GIT-002" section; GIT-007 (prune keeps
  * user content, re-materialize keeps a user README) is the existing 17.x and 9.2 checks.
  */
