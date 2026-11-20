@@ -56,3 +56,6 @@ CLAUDE.md
 
 # Coverage output
 coverage/
+
+# Regression test proposals (local only)
+docs/test-proposals/
