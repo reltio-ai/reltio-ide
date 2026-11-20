@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * Regression: LCA (docs/test-proposals/lca.json).
+ * Regression: LCA.
  *
  * Rows: LCA-001 (isContainedPath, findTypeJsonPath, replaceLifecycleActions on the shared fixture),
  * LCA-002 (buildDeployPlan aws/gcp args, presentEnvKeys placeholder handling), LCA-004 (deploy

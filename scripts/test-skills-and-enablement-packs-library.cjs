@@ -3,7 +3,7 @@
 /**
  * OpenSpec change: skills-and-enablement-packs-library
  * Tier A/B: velocity manifest validation, agent assets JSON, default skills exist
- * Regression rows (docs/test-proposals/business-configuration.json): BIZCFG-008 per-pack declared
+ * Regression rows: BIZCFG-008 per-pack declared
  * bytes equal each BusinessConfig.json size; both bundle version fields are non-empty.
  * Tier C (manual): syncReltioAgentAssets in workspace — ARCHITECTURE.md agent assets
  */
@@ -16,7 +16,7 @@ const { repoRoot } = require('./lib/load-sample.cjs');
 const errors = validateVelocityPacks();
 assert.strictEqual(errors, 0, 'velocity packs manifest');
 
-// BIZCFG-008 (docs/test-proposals/business-configuration.json): the summed check above can hide
+// BIZCFG-008: the summed check above can hide
 // two packs whose errors cancel out, so each pack's declared bytes must equal its own file size.
 {
 	const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));

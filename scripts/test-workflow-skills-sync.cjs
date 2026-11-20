@@ -14,7 +14,7 @@
  *   5.  AGENTS.md with user content keeps it; a file that held only the block is deleted.
  *   6.  Concurrent syncs never interleave; identical startup requests share one run.
  *   7.  A failed startup sync is logged and warned once; a forced resync rejects to its caller.
- *   8.  UTIL-011 (docs/test-proposals/common-utils.json): syncing as cursor, vscode and other hosts
+ *   8.  UTIL-011: syncing as cursor, vscode and other hosts
  *       never touches user files outside owned paths and `.reltio/`: AGENTS.md without markers, a file
  *       with an unterminated block, customer `.cursor` rules and `.github` workflows stay byte-identical;
  *       only stamp-owned paths, legacy-marker files and the folders their removal emptied go.

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * Regression: Git Integration (docs/test-proposals/git-integration.json).
+ * Regression: Git Integration.
  *
  * Rows: GIT-001 (clone URL allow-list, redaction, pre-spawn refusal), GIT-003 (git failure mapping),
  * GIT-004 (markers, .gitignore entries, layout constants), GIT-005 (bindTenantToGit: clone, adopt,

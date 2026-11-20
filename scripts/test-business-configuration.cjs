@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * Regression area: Business Configuration (docs/test-proposals/business-configuration.json)
+ * Regression area: Business Configuration
  *
  * Tier A/B: parser and JSON edit primitives, edit commands on an in-memory document, UriIndex,
  * diagnostics and auto-save on the vscode stub, configuration history snapshots on memory-fs,

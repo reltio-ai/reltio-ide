@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * Regression area: Common Utils (docs/test-proposals/common-utils.json)
+ * Regression area: Common Utils
  *
  * Tier A: the pure helpers under src/util/ and the path handling of agent skill discovery.
  *   UTIL-001  jsonDeepEqual, tryParseJson and dotted tenant-name parsing in pathTenantLocFromL3Path.

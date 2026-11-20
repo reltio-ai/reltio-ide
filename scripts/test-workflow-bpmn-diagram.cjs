@@ -63,7 +63,7 @@
  *  16.  The webview never interpolates document text into HTML, and checks the
  *       origin of every message before reading it.
  *
- * Regression rows (docs/test-proposals/workflows.json):
+ * Regression rows:
  *   WF-003  Edge cases: two processes plus a comment plus DI in one file; attribute decoding
  *           without double unescape, single quotes, prefixed vs unprefixed class; boundary
  *           events attached to a host touch its edge and their flows are straight lines, an
