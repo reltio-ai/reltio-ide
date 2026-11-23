@@ -80,3 +80,8 @@ Requested: Get Lookup Values shows each value's canonical value and its contribu
 - [x] C1.2 The table's columns become Canonical Value, Canonical Source, Source, Value at Source; the code moves to hover text, and stands in, marked, when there is no canonical value
 - [x] C1.3 Update `spec.md`, `ARCHITECTURE.md`, `scripts/test-rdm-lookup-values.cjs` and `scripts/test-rdm-lookup-value-authoring.cjs`; `npm test`, compile
 - [ ] C1.4 Manual QA: Get Lookup Values on a lookup type with canonical and non-canonical codes; hover shows the code; a code without mappings reads "no canonical value"
+
+## Review Round — PR #20
+
+- [x] R.1 Forget a tenant's service URI after a failed RDM request (not a 401), and every tenant's of an environment when its session ends (design D9)
+- [x] R.2 Tests in `scripts/test-rdm-configuration-fetch.cjs`; `ARCHITECTURE.md`

@@ -197,6 +197,13 @@ The team loads lookup values from files exported from RDM, not hand-made ones, s
 - **Per lookup type, everything else as before:** each type is fetched, planned, posted in its own chunks and re-fetched; outcomes are judged per type so the same code in two types never confirms the other. The first failing request still stops the load.
 - **The earlier layout is refused** with a message naming the new columns, rather than read: the feature is unreleased, and two formats would double what the skill must explain.
 
+### D14: PR review (#20) — re-read after approval, blank flags, size first (Review Round 3)
+
+- **Re-read after approval.** The POST replaces a code's whole value, and the dialog can stay open for minutes, so a load built on the read before the dialog could delete what someone stored meanwhile. After **Load**, each lookup type is read again and the plan rebuilt. If it adds the same things (`whatPlanAdds`: per code, its classification and the mappings it stores, plus every conflict and dropped flag), the rebuilt values go out, carrying the newer changes. Otherwise nothing is sent and the result is `changed-since-plan`, since the user approved a different load. The window left is one request long, as for Add Value. A merged value keeps the `version` it was read with; whether RDM refuses a stale one is an open question, and the check does not rely on it.
+- **Blank flags.** A blank `downStreamDefaultValue` meant true on every mapping, so a new code mapping one source to two codes was sent with two downstream defaults for that source. Now a blank means true only for the code's first mapping from each source. A flag that comes from a blank cell is marked `defaulted` on the draft, and `mergeLookupValue` drops it silently when the stored value keeps its own: the user never asked for it, so a warning would be noise.
+- **Size first.** The file's size is checked with `stat` before it is read, so a file over 2 MB is refused without being loaded into memory.
+- **A failed request forgets the service address** (`forgetServiceUri`), so the next request looks it up again.
+
 ## Risks / Trade-offs
 
 - **[Risk]** An agent sends `load` without showing the plan → **Mitigation**: the modal dialog (D7); the load re-plans itself (D6).
@@ -211,6 +218,8 @@ The team loads lookup values from files exported from RDM, not hand-made ones, s
 Additive. Existing workspaces receive the skill through the `skillsBundleVersion` bump on their next sync. The setting defaults to on; turning it off makes every request answer `not-run` / `disabled`. Rollback is a revert plus another bundle bump, which removes the skill from workspaces through the existing ownership rules.
 
 ## Open Questions
+
+- Does `POST {serviceUri}/lookups/{rdmTenantId}` refuse a value whose `version` is older than the stored one? If it does, that is a second guard behind D14's re-read, and the code comment in `lookupLoadBridge.ts` should say so.
 
 - Does the RDM service reject a mapping whose source is not declared in the RDM configuration, or store it? (Warnings only either way; QA records it.)
 - Does `GET …/lookups/{rdmTenantId}/{lookupType}` return an empty list or an error for a lookup type the tenant does not have yet? (Either way the post then fails with the service's detail.)

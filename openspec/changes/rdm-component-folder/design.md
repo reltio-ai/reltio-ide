@@ -80,6 +80,10 @@ So the flag and the layout's suite are left as they are, and the placeholder kee
 
 `RDM` schema binds `**/RDM/*/config.json`. `config.json` is a common filename, so the glob is scoped to a directory under an `RDM/` folder. The legacy `RDM.*.reltio.json` binding stays, with its exclusion from the L3 binding, for files the relocation reported as conflicting.
 
+### D8: Connect flows keep local edits and run one at a time (PR review #20)
+
+Get Configuration asks before overwriting RDM files with local changes; the connect flows never did, so re-adding a tenant replaced RDM edits silently. Connect flows now pass `keepLocalChanges`, which skips any RDM configuration that is dirty in an editor or differs from its baseline, and warns once naming the files kept. The fetches were also started unawaited, so a wizard connecting several tenants ran them all at once, each with its own progress notification and possibly its own sign-in prompt. `queueRdmFetchOnConnect` chains them: one tenant at a time, one silent refresh and retry on a 401, and at most one sign-in prompt per environment while the queue is busy. The prompt itself is not awaited, so a notification left open does not hold up the next tenant.
+
 ## Risks / Trade-offs
 
 - **[Risk]** A `**/RDM/*/config.json` glob in `jsonValidation` could match an unrelated `config.json` in a user folder named `RDM` → **Mitigation**: the pattern requires the `RDM/<id>/config.json` depth. Only the Extension Development Host shows how VS Code applies it, so it is a manual QA step.

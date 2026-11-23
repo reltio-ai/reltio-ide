@@ -246,7 +246,7 @@ const { EnvironmentManager, rdmFileName } = importDist('workspace/environmentMan
 	const wrapper = code.slice(code.indexOf('async function connectTenantConfiguration('));
 	const body = wrapper.slice(0, wrapper.indexOf('\n\t}\n'));
 	assert.ok(
-		/if \(result === 'written'\)\s*\{\s*void fetchRdmForTenant\(/.test(body),
+		/if \(result === 'written'\)\s*\{\s*queueRdmFetchOnConnect\(/.test(body),
 		'RDM starts only after a successful Business Config write',
 	);
 	assert.ok(/return result;/.test(body), 'the Business Config result is returned unchanged');

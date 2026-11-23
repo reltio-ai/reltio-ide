@@ -73,3 +73,10 @@
 - [ ] 9.10 Manual QA: confirm no Delete or Rename appears on any RDM node, and that L3 Apply is unaffected
 - [ ] 9.11 Manual QA: with an expired token, confirm the 401 reaches the existing re-login flow
 - [x] 9.12 `npx openspec validate rdm-configuration-authoring --strict`
+
+## Review Round — PR #20
+
+- [x] R.1 After a successful PUT, read the configuration back and write `config.json` and its baseline from the response; on a failed read-back, keep the pushed text as baseline and warn (design D8)
+- [x] R.2 Refuse the Git-repository placeholder token with a message in Apply, Get Lookup Values and Add Value
+- [x] R.3 Tests in `scripts/test-rdm-configuration-authoring.cjs` and `scripts/test-rdm-configuration-fetch.cjs`; `ARCHITECTURE.md`
+- [ ] R.4 Manual QA: add a lookup type, Apply, then Apply again with no change — no "server changed" warning, and `config.json` shows the server's new `version`

@@ -16,6 +16,7 @@ import {
 	sourceSuggestions,
 	storedCodes,
 	type LookupValueDraft,
+	type LookupValueMappingDraft,
 	type LookupValuesPlan,
 	type MappingNote,
 	type PlannedValue,
@@ -338,14 +339,24 @@ export function readLookupCsv(text: string, byteLength: number): LookupCsv {
 				continue;
 			}
 			mappingAt.set(key, r.line);
+			// Blank flags: only the code's first mapping is canonical, and only its first
+			// mapping from each source is the downstream default, so a new code never gets
+			// two of either. A flag set this way is marked, so an existing code that keeps
+			// its own flag doesn't warn about one the user never asked for.
+			const isCanonical = canonical ?? draft.mappings.length === 0;
+			const isDownstream = downstream ?? !draft.mappings.some(m => m.source === source);
+			const defaulted: NonNullable<LookupValueMappingDraft['defaulted']> = [
+				...(canonical == null && isCanonical ? (['canonical'] as const) : []),
+				...(downstream == null && isDownstream ? (['downstream default'] as const) : []),
+			];
 			draft.mappings.push({
 				source,
 				code: codeAtSource,
 				value: value || atSource,
-				// Blank: only the code's first mapping is canonical.
-				canonicalValue: canonical ?? draft.mappings.length === 0,
-				downStreamDefaultValue: downstream ?? true,
+				canonicalValue: isCanonical,
+				downStreamDefaultValue: isDownstream,
 				enabled: mappingEnabled ?? true,
+				...(defaulted.length > 0 ? { defaulted } : {}),
 			});
 			t.mappingLines[code].push(r.line);
 		}

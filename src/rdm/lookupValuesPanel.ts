@@ -104,10 +104,17 @@ export function isCurrentLookupValuesRender(render: LookupValuesRender): boolean
 	return !!currentPanel && currentRender?.token === render.token;
 }
 
+/** How a result reads: a failure, something to check, or news. */
+export type LookupValuesResultLevel = 'error' | 'warning' | 'info';
+
 /** Show `message` above the form of `render`, keeping the form as it is. No-op if the page is gone. */
-export function postLookupValuesResult(render: LookupValuesRender, message: string): void {
+export function postLookupValuesResult(
+	render: LookupValuesRender,
+	message: string,
+	level: LookupValuesResultLevel = 'error',
+): void {
 	if (currentPanel && isCurrentLookupValuesRender(render)) {
-		void currentPanel.webview.postMessage({ type: 'submitResult', message });
+		void currentPanel.webview.postMessage({ type: 'submitResult', message, level });
 	}
 }
 
@@ -249,6 +256,10 @@ export function renderLookupValuesHtml(
 		.status.error {
 			background: var(--vscode-inputValidation-errorBackground);
 			border: 1px solid var(--vscode-inputValidation-errorBorder);
+		}
+		.status.warning {
+			background: var(--vscode-inputValidation-warningBackground);
+			border: 1px solid var(--vscode-inputValidation-warningBorder);
 		}
 		.status.info {
 			background: var(--vscode-inputValidation-infoBackground);
@@ -453,7 +464,8 @@ const PANEL_SCRIPT = `
 		if (!message || typeof message !== 'object' || typeof message.message !== 'string') return;
 		if (message.type === 'submitResult') {
 			setBusy(false);
-			showStatus(message.message, 'error');
+			// Only a known level becomes a class name; anything else reads as an error.
+			showStatus(message.message, ['error', 'warning', 'info'].indexOf(message.level) >= 0 ? message.level : 'error');
 		} else if (message.type === 'restoreForm' && Array.isArray(message.values)) {
 			blocks.replaceChildren();
 			message.values.forEach(function (value) { addCodeBlock(value); });

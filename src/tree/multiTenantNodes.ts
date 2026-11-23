@@ -224,8 +224,9 @@ export class HistorySnapshotNode extends vscode.TreeItem {
 // These deliberately sit outside `ConfigTreeItem`. That class derives its
 // contextValue through `contextValueFor()`, which mints `reltio.item.*` for
 // every non-folder node — and `reltio.deleteNode` / `reltio.renameNode` attach
-// to `/^reltio\.item\./` by regex. RDM data is read-only (nothing is ever PUT
-// back to the RDM service), so those commands must not be reachable here. A
+// to `/^reltio\.item\./` by regex. RDM rows are changed only through their own
+// commands (Add a new Lookup Type, Add a new Source, Apply RDM Configuration),
+// never by the L3 Delete and Rename, so those must not be reachable here. A
 // separate `reltio.rdm.*` namespace makes that structural rather than a matter
 // of keeping two regexes in sync.
 // ---------------------------------------------------------------------------

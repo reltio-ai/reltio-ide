@@ -83,7 +83,12 @@ import {
 	postRdmLookupValues,
 } from './api/reltioClient';
 import { prettyPrintJsonIfPossible } from './api/formatJson';
-import { recallRdmServiceUri, rememberRdmServiceUri } from './rdm/rdmServiceCache';
+import {
+	forgetRdmServiceUri,
+	forgetRdmServiceUris,
+	recallRdmServiceUri,
+	rememberRdmServiceUri,
+} from './rdm/rdmServiceCache';
 import {
 	isCurrentLookupValuesRender,
 	postLookupValuesResult,
@@ -91,6 +96,7 @@ import {
 	showLookupValuesPanel,
 	type LookupValuesContext,
 	type LookupValuesRender,
+	type LookupValuesResultLevel,
 	type LookupValuesView,
 } from './rdm/lookupValuesPanel';
 import {
@@ -590,6 +596,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const folder = getWorkspaceFolder();
 	const environmentManager = folder ? new EnvironmentManager(folder.uri) : null;
 	const tokenStore = new TokenStore();
+	// The remembered RDM service addresses end with the session that found them.
+	tokenStore.onSessionCleared(forgetRdmServiceUris);
 	const sessionStore = new SessionStore(context.secrets, context.globalState);
 	const oauthCredentialsStore = new OAuthCredentialsStore(context.secrets);
 	const uxMode = vscode.workspace.getConfiguration('reltio').get<string>('uxMode', 'default');
@@ -978,6 +986,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				getToken: env => tokenStore.getToken(env),
 				tryRefresh,
 				resolveServiceUri: resolveRdmServiceUri,
+				forgetServiceUri: forgetRdmServiceUri,
 				// The only path to a write: a modal the agent cannot answer.
 				approve: async approval => {
 					const { message, detail } = approvalText(approval);
@@ -1033,11 +1042,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				void vscode.window.showErrorMessage('This lookup type has no URI to resolve a name from.');
 				return;
 			}
-			const token = tokenStore.getToken(node.environmentName);
-			if (!token) {
-				void vscode.window.showErrorMessage('Provide a token for this environment first.');
-				return;
-			}
+			const token = rdmSessionToken(node.environmentName, message => void vscode.window.showErrorMessage(message));
+			if (!token) return;
 
 			const serviceUri = await resolveRdmServiceUri(node.environmentName, node.tenantId, token);
 			if (serviceUri === '401') {
@@ -1065,6 +1071,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					await handle401(node.environmentName);
 					return;
 				}
+				forgetRdmServiceAfter(e, node.environmentName, node.tenantId);
 				// Deliberately no panel here: an empty table would assert that this
 				// lookup type has no values, which a failed request cannot establish.
 				void vscode.window.showErrorMessage(
@@ -1488,6 +1495,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		environmentName: string,
 		tenantId: string,
 		token: string,
+		options: { keepLocalChanges?: boolean } = {},
 	): Promise<RdmWriteResult> {
 		if (!environmentManager) return 'error';
 
@@ -1501,8 +1509,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			// The physical configuration is the only place the RDM service is found, and some
 			// accounts may not read it (RP-195788 saw the tenant list refuse users outside
 			// *.reltio.com). This chain runs on every fetch and connect, so a 403 is treated
-			// like a tenant without RDM: silent, rather than an error on each of them.
+			// like a tenant without RDM: silent, rather than an error on each of them. One
+			// line goes to the output channel, so support can tell the two apart.
 			if (e instanceof ReltioApiError && e.statusCode === 403) {
+				logRdm(
+					`${environmentName}/${tenantId}: RDM not fetched. This account can't read the tenant's physical configuration (HTTP 403), which is where the RDM service is found.`,
+				);
 				return 'none';
 			}
 			void vscode.window.showErrorMessage(
@@ -1511,8 +1523,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			return 'error';
 		}
 
-		const { serviceUri, rdmTenantIds } = extractRdmConfig(physical);
-		if (!serviceUri || rdmTenantIds.length === 0) {
+		const { serviceUri, rdmTenantIds, rejectedRdmTenantIds } = extractRdmConfig(physical);
+		if (!serviceUri || rdmTenantIds.length + rejectedRdmTenantIds.length === 0) {
 			// No RDM for this tenant. Silent by design — this runs on every fetch.
 			return 'none';
 		}
@@ -1522,30 +1534,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 		let unauthorized = false;
 		let written = 0;
-		const failures: string[] = [];
+		// An id that can't be a folder name is never written (see `extractRdmConfig`).
+		const failures = rejectedRdmTenantIds.map(id => `${JSON.stringify(id)} (not a valid RDM tenant ID)`);
+		const kept: string[] = [];
 
 		for (const rdmTenantId of rdmTenantIds) {
+			// Connect flows don't ask before writing, so they leave local edits alone;
+			// Get Configuration asks first and then overwrites.
+			if (options.keepLocalChanges && (await hasLocalRdmChanges(environmentName, tenantId, rdmTenantId))) {
+				kept.push(rdmFileName(rdmTenantId));
+				continue;
+			}
 			try {
 				const body = await fetchRdmConfiguration(serviceUri, rdmTenantId, token);
-				const formatted = prettyPrintJsonIfPossible(body);
-				const uri = await environmentManager.writeRdm(
-					environmentName,
-					tenantId,
-					rdmTenantId,
-					formatted,
-				);
-				await environmentManager.writeRdmBaseline(
-					environmentName,
-					tenantId,
-					rdmTenantId,
-					formatted,
-				);
-				const open = vscode.workspace.textDocuments.find(
-					d => d.uri.toString() === uri.toString(),
-				);
-				if (open && !open.isClosed) {
-					await vscode.commands.executeCommand('workbench.action.files.revert', uri);
-				}
+				await storeRdmFromServer(environmentName, tenantId, rdmTenantId, body);
 				written++;
 			} catch (e) {
 				if (e instanceof ReltioApiError && e.statusCode === 401) {
@@ -1563,26 +1565,62 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			treeProvider.refresh();
 			uxBus.fire();
 		}
+		if (kept.length > 0) {
+			logRdm(`${environmentName}/${tenantId}: kept local changes to ${kept.join(', ')}; the server copy was not fetched.`);
+			void vscode.window.showWarningMessage(
+				`Kept your local changes to ${kept.join(', ')} for "${tenantId}", so the server copy was not fetched. ` +
+					'Apply them with Apply RDM Configuration, or run Get Configuration to replace them.',
+			);
+		}
 		if (unauthorized) {
 			return '401';
 		}
 		if (failures.length > 0) {
 			void vscode.window.showErrorMessage(
-				`RDM configuration was not fetched for ${failures.length} of ${rdmTenantIds.length} RDM tenant(s): ${failures.join('; ')}`,
+				`RDM configuration was not fetched for ${failures.length} of ${rdmTenantIds.length + rejectedRdmTenantIds.length} RDM tenant(s): ${failures.join('; ')}`,
 			);
 			return written > 0 ? 'written' : 'error';
 		}
-		return 'written';
+		return written > 0 ? 'written' : 'none';
 	}
 
 	/**
-	 * Fetch a tenant's RDM configuration after its Business Config was written.
-	 *
-	 * Shared by every path that writes a Business Config — Get Configuration, sign-in
-	 * auto-add and Add Tenant — so RDM follows a tenant the same way everywhere it is
-	 * connected. Callers invoke it only after `writeL3FromApi` returned `'written'`: an
-	 * L3 failure skips RDM, and an RDM failure is reported on its own without undoing
-	 * the L3 result. A tenant without RDM stays silent.
+	 * Write one RDM configuration exactly as the server returned it, with its baseline,
+	 * and reload an open editor so it shows what was written. Used by the fetch, and by
+	 * Apply RDM Configuration, which reads the server again after its PUT.
+	 */
+	async function storeRdmFromServer(
+		environmentName: string,
+		tenantId: string,
+		rdmTenantId: string,
+		body: string,
+	): Promise<void> {
+		if (!environmentManager) return;
+		const formatted = prettyPrintJsonIfPossible(body);
+		const uri = await environmentManager.writeRdm(environmentName, tenantId, rdmTenantId, formatted);
+		await environmentManager.writeRdmBaseline(environmentName, tenantId, rdmTenantId, formatted);
+		const open = vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString());
+		if (open && !open.isClosed) {
+			await vscode.commands.executeCommand('workbench.action.files.revert', uri);
+		}
+	}
+
+	/** Whether an RDM configuration has edits a fetch would lose: unsaved in an editor, or not yet applied. */
+	async function hasLocalRdmChanges(environmentName: string, tenantId: string, rdmTenantId: string): Promise<boolean> {
+		if (!environmentManager) return false;
+		const uri = environmentManager.getRdmUri(environmentName, tenantId, rdmTenantId);
+		if (vscode.workspace.textDocuments.some(d => d.uri.toString() === uri.toString() && d.isDirty)) {
+			return true;
+		}
+		return hasUnpublishedLocalChanges(uri, environmentManager.getRdmBaselineUri(environmentName, tenantId, rdmTenantId));
+	}
+
+	/**
+	 * Fetch a tenant's RDM configuration after Get Configuration wrote its Business
+	 * Config, and after its drift guard let the user decide about local changes. Called
+	 * only once `writeL3FromApi` returned `'written'`: an L3 failure skips RDM, and an
+	 * RDM failure is reported on its own without undoing the L3 result. A tenant without
+	 * RDM stays silent. Connect flows use `queueRdmFetchOnConnect` instead.
 	 */
 	async function fetchRdmForTenant(
 		environmentName: string,
@@ -1590,12 +1628,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		token: string,
 	): Promise<void> {
 		const rdmResult = await vscode.window.withProgress(
-			{ location: vscode.ProgressLocation.Notification, title: 'Fetching RDM configuration…' },
+			{ location: vscode.ProgressLocation.Notification, title: `Fetching RDM configuration (${tenantId})…` },
 			() => writeRdmFromApi(environmentName, tenantId, token),
 		);
 		if (rdmResult === '401') {
 			await handle401(environmentName);
 		}
+	}
+
+	/**
+	 * RDM fetches started by connect flows run one at a time. The Setup Wizard can
+	 * connect several tenants at once, and each fetch shows its own progress and may
+	 * find the session expired. An expired session is reported once per environment
+	 * while the queue is busy, not once per tenant.
+	 */
+	let rdmConnectQueue: Promise<void> = Promise.resolve();
+	let rdmConnectPending = 0;
+	const rdmConnectSignInReported = new Set<string>();
+
+	function queueRdmFetchOnConnect(environmentName: string, tenantId: string, token: string): void {
+		rdmConnectPending++;
+		rdmConnectQueue = rdmConnectQueue
+			.then(async () => {
+				// The session may have been renewed by an earlier fetch in the queue.
+				const fetchOnce = (t: string) =>
+					vscode.window.withProgress(
+						{ location: vscode.ProgressLocation.Notification, title: `Fetching RDM configuration (${tenantId})…` },
+						() => writeRdmFromApi(environmentName, tenantId, t, { keepLocalChanges: true }),
+					);
+				let result = await fetchOnce(tokenStore.getToken(environmentName) ?? token);
+				if (result === '401' && !rdmConnectSignInReported.has(environmentName)) {
+					const renewed = (await tryRefresh(environmentName)) ? tokenStore.getToken(environmentName) : undefined;
+					if (renewed) result = await fetchOnce(renewed);
+				}
+				if (result === '401' && !rdmConnectSignInReported.has(environmentName)) {
+					rdmConnectSignInReported.add(environmentName);
+					// Not awaited: the prompt can stay open, and the next tenant must not wait on it.
+					void handle401(environmentName);
+				}
+			})
+			.catch(() => undefined)
+			.finally(() => {
+				if (--rdmConnectPending === 0) rdmConnectSignInReported.clear();
+			});
 	}
 
 	/**
@@ -1608,9 +1683,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	 * is how the wizard once connected tenants without RDM.
 	 *
 	 * Returns the Business Config result unchanged, so callers keep reporting L3
-	 * outcomes exactly as before. RDM is started but not awaited: the user lands in
-	 * their Business Config without waiting on two further requests, and
-	 * `fetchRdmForTenant` reports its own outcome.
+	 * outcomes exactly as before. RDM is queued, not awaited: the user lands in their
+	 * Business Config without waiting on further requests, and the queue reports its own
+	 * outcome. Local RDM edits are kept, since nothing here asks before writing.
 	 *
 	 * Get Configuration does not use this — its drift guard sits between the two steps.
 	 */
@@ -1621,9 +1696,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	): Promise<L3WriteResult> {
 		const result = await writeL3FromApi(environmentName, tenantId, token);
 		if (result === 'written') {
-			void fetchRdmForTenant(environmentName, tenantId, token).catch(() => undefined);
+			queueRdmFetchOnConnect(environmentName, tenantId, token);
 		}
 		return result;
+	}
+
+	/** RDM events support may need, such as a tenant whose RDM this account can't read. */
+	let rdmLog: vscode.OutputChannel | undefined;
+	function logRdm(line: string): void {
+		if (!rdmLog) {
+			rdmLog = vscode.window.createOutputChannel('Reltio RDM');
+			context.subscriptions.push(rdmLog);
+		}
+		rdmLog.appendLine(`[${new Date().toISOString()}] ${line}`);
+	}
+
+	/**
+	 * The session for an RDM call, or `undefined` after `report` said why there is none.
+	 * A workspace opened from a Git repository holds a placeholder, not a token: every
+	 * call would fail with a 401 and send the user to sign in for nothing.
+	 */
+	function rdmSessionToken(environmentName: string, report: (message: string) => void): string | undefined {
+		const token = tokenStore.getToken(environmentName);
+		if (!token) {
+			report('Provide a token for this environment first.');
+			return undefined;
+		}
+		if (token === GIT_SOURCE_TOKEN) {
+			report('RDM needs a connected tenant. This workspace was opened from a Git repository, so there is no tenant session to use.');
+			return undefined;
+		}
+		return token;
+	}
+
+	/**
+	 * A failed RDM request may mean the remembered service address is stale, so it is
+	 * looked up again next time. A 401 is a session problem, not an address problem.
+	 */
+	function forgetRdmServiceAfter(e: unknown, environmentName: string, tenantId: string): void {
+		if (!(e instanceof ReltioApiError && e.statusCode === 401)) {
+			forgetRdmServiceUri(environmentName, tenantId);
+		}
 	}
 
 	/**
@@ -1697,9 +1810,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	async function submitLookupValues(render: LookupValuesRender, values: LookupValueDraft[]): Promise<void> {
 		const ctx = render.context;
 		// Once the panel has moved on, its form is gone: say it in a notification instead.
-		const report = (message: string): void => {
+		const report = (message: string, level: LookupValuesResultLevel = 'error'): void => {
 			if (isCurrentLookupValuesRender(render)) {
-				postLookupValuesResult(render, message);
+				postLookupValuesResult(render, message, level);
+			} else if (level === 'info') {
+				void vscode.window.showInformationMessage(`Lookup values (${ctx.lookupTypeName}): ${message}`);
 			} else {
 				void vscode.window.showWarningMessage(`Lookup values (${ctx.lookupTypeName}): ${message}`);
 			}
@@ -1710,11 +1825,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			await handle401(ctx.environmentName);
 		};
 
-		const token = tokenStore.getToken(ctx.environmentName);
-		if (!token) {
-			report('Provide a token for this environment first. Nothing was sent.');
-			return;
-		}
+		const token = rdmSessionToken(ctx.environmentName, message => report(`${message} Nothing was sent.`));
+		if (!token) return;
 		const serviceUri = await resolveRdmServiceUri(ctx.environmentName, ctx.tenantId, token);
 		if (serviceUri === '401') {
 			await sessionExpired();
@@ -1733,6 +1845,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				await sessionExpired();
 				return;
 			}
+			forgetRdmServiceAfter(e, ctx.environmentName, ctx.tenantId);
 			report(`Could not read the stored values (${(e as Error).message}). Nothing was sent.`);
 			return;
 		}
@@ -1744,7 +1857,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 		const toSend = plan.items.filter(i => i.element);
 		if (toSend.length === 0) {
-			report(`Nothing to add: every mapping is already stored in ${ctx.lookupTypeName}. Nothing was sent.`);
+			report(`Nothing to add: every mapping is already stored in ${ctx.lookupTypeName}. Nothing was sent.`, 'info');
 			return;
 		}
 		const codes = toSend.map(i => i.draft.code);
@@ -1771,6 +1884,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				return;
 			}
 			// Not final: a failed or timed-out request may still have stored some codes.
+			forgetRdmServiceAfter(e, ctx.environmentName, ctx.tenantId);
 			postError = (e as Error).message;
 		}
 
@@ -1790,6 +1904,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			report(
 				`${sent} The table could not be refreshed (${(e as Error).message}), so what was stored is not confirmed. ` +
 					'Submitting again is safe: mappings already stored are not sent twice.',
+				postError ? 'error' : 'warning',
 			);
 			if (e instanceof ReltioApiError && e.statusCode === 401) {
 				await handle401(ctx.environmentName);
@@ -1834,11 +1949,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	 */
 	async function applyRdmConfigurationForNode(node: RdmRootNode): Promise<void> {
 		if (!environmentManager) return;
-		const token = tokenStore.getToken(node.environmentName);
-		if (!token) {
-			void vscode.window.showErrorMessage('Provide a token for this environment first.');
-			return;
-		}
+		const token = rdmSessionToken(node.environmentName, message => void vscode.window.showErrorMessage(message));
+		if (!token) return;
 
 		const baselineUri = environmentManager.getRdmBaselineUri(
 			node.environmentName,
@@ -1886,6 +1998,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				await handle401(node.environmentName);
 				return;
 			}
+			forgetRdmServiceAfter(e, node.environmentName, node.tenantId);
 			void vscode.window.showErrorMessage((e as Error).message);
 			return;
 		}
@@ -1945,17 +2058,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				await handle401(node.environmentName);
 				return;
 			}
+			forgetRdmServiceAfter(e, node.environmentName, node.tenantId);
 			void vscode.window.showErrorMessage((e as Error).message);
 			return;
 		}
 
-		// What was pushed is now what the server holds, so it becomes the baseline.
-		await environmentManager.writeRdmBaseline(
-			node.environmentName,
-			node.tenantId,
-			node.rdmTenantId,
-			localText,
-		);
+		// Read back what the server now holds, as L3 Apply does: saving can set `version`,
+		// `updatedBy` and `updateDate`, so the pushed text is not the server copy. Both the
+		// file and its baseline take the server's, so the next Apply or Get Configuration
+		// sees no change that isn't there.
+		try {
+			const applied = await fetchRdmConfiguration(serviceUri, node.rdmTenantId, token);
+			await storeRdmFromServer(node.environmentName, node.tenantId, node.rdmTenantId, applied);
+		} catch (e) {
+			// The PUT succeeded, so the pushed text is the closest record of the server copy left.
+			await environmentManager.writeRdmBaseline(node.environmentName, node.tenantId, node.rdmTenantId, localText);
+			treeProvider.refresh();
+			uxBus.fire();
+			void vscode.window.showWarningMessage(
+				`RDM configuration applied to "${node.rdmTenantId}", but it could not be read back (${(e as Error).message}). ` +
+					'Run Get Configuration to bring the local file and its baseline up to date.',
+			);
+			return;
+		}
 		treeProvider.refresh();
 		uxBus.fire();
 		void vscode.window.showInformationMessage(

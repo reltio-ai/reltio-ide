@@ -95,6 +95,8 @@ Inserts SHALL be applied as a workspace edit computed from the document's parsed
 
 The request body SHALL be the document's text as saved, not a re-serialization of it, so that what is pushed is what the user sees.
 
+In a workspace opened from a Git repository there is no tenant session, only a placeholder; Apply, like Get Lookup Values and Add Value, SHALL then say so and send nothing, rather than send the placeholder and report a 401.
+
 #### Scenario: Offered on the RDM tenant row only
 
 - **WHEN** the user opens the context menu on the `{rdmTenantId}` row
@@ -140,12 +142,17 @@ A tenant with no baseline SHALL NOT be pushed: without one there is no evidence 
 
 ### Requirement: A successful apply refreshes the baseline
 
-On success the pushed content SHALL become the tenant's RDM baseline, so that a subsequent Apply compares against what was actually pushed.
+On success the configuration SHALL be read back from the RDM service, as L3 Apply does, and both the configuration file and its baseline SHALL be replaced with what the server returns, since saving can set `version`, `updatedBy` and `updateDate`. A subsequent Apply or Get Configuration SHALL then see no change that is not there. If the read-back fails, the pushed content SHALL become the baseline and a warning SHALL suggest Get Configuration.
 
-#### Scenario: Baseline matches what was pushed
+#### Scenario: File and baseline match the server after Apply
 
-- **WHEN** the PUT succeeds
-- **THEN** `RDM.{rdmTenantId}.remote-baseline.reltio.json` SHALL be replaced with the pushed content
+- **WHEN** the PUT succeeds and the server returns the configuration with a new `version`
+- **THEN** `RDM/{rdmTenantId}/config.json` and its baseline SHALL both hold the returned configuration, `version` included
+
+#### Scenario: The read-back fails
+
+- **WHEN** the PUT succeeds but reading the configuration back fails
+- **THEN** the pushed content SHALL become the baseline, and the user SHALL be warned to run Get Configuration
 
 #### Scenario: Failed apply leaves the baseline alone
 

@@ -78,3 +78,15 @@ Requested: load the CSV that RDM exports (`<rdmTenantId>_lookups_<timestamp>.csv
 - [x] C2.7 Update `spec.md`, `proposal.md`, `design.md`, `ARCHITECTURE.md` and `scripts/test-rdm-lookup-csv-load.cjs`; `npm test`, compile
 - [ ] C2.8 Manual QA: load an export of one lookup type into a tenant that has some of its codes — new codes added, existing ones appended to, stored fields unchanged; rerun — everything `unchanged`
 - [ ] C2.9 Manual QA: an export holding two lookup types; an export from another RDM tenant (warning); a row with a localization (warning, not sent)
+
+## Review Round 3 — PR #20
+
+Requested in review: a load must not delete what was stored while the approval dialog was open; blank flags must not create two downstream defaults or warn about flags nobody set; check the size before reading. See design D14.
+
+- [x] R3.1 After **Load**, read each lookup type again and rebuild the plan; send the rebuilt values when what the load adds is unchanged, otherwise answer `failed` / `changed-since-plan` with nothing sent
+- [x] R3.2 Blank `downStreamDefaultValue` is true only for a code's first mapping from each source; flags set from blank cells are marked `defaulted` and dropped without a warning when the stored value keeps its own
+- [x] R3.3 `stat` the CSV before reading it; one lookup type name (`tp.name`) for every request and report; a failed request forgets the RDM service address
+- [x] R3.4 Skill: `changed-since-plan` in Outputs, the flag defaults in the column table; `skillsBundleVersion` raised to `31` with the pinned version and hash updated
+- [x] R3.5 Tests in `scripts/test-rdm-lookup-csv-load.cjs` (changed while approving, blank flags, size before read, forgotten address); `ARCHITECTURE.md`
+- [ ] R3.6 Manual QA: start a load, and before clicking **Load** add a mapping to one of its codes in RDM — the load keeps that mapping; add the mapping the load was about to add — nothing is sent, and the agent plans again
+- [ ] R3.7 Manual QA: does RDM refuse a POST carrying a stale `version`? Record the answer in design D14

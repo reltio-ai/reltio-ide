@@ -97,6 +97,10 @@ Requested: show each lookup value as RDM does, by its canonical value and the so
 - **No canonical value** — a code with no mappings, or none marked canonical — shows the code, marked "no canonical value", instead of a blank that would look like missing data. The canonical source shows an em dash.
 - `flattenRdmLookupValues` carries the two fields on every row, so the rendering stays a pure projection of the rows.
 
+### D9: The remembered service URI is forgotten on failure and at sign-out (PR review #20)
+
+The cache had no way out: a saved service URI that stopped working was reused until the extension restarted or Get Configuration ran again. Now `forgetRdmServiceUri` drops a tenant's entry when a request to its service fails (a 401 excepted, which is a session problem), and `TokenStore.onSessionCleared` drops every entry of an environment when its session ends — sign-out, an expired session that could not be renewed, or removing the environment.
+
 ## Risks / Trade-offs
 
 - **[Risk]** A lookup type with many codes across many sources produces a large table (rows = codes × sources) → **Mitigation**: accepted for now; the panel is plain HTML with no virtualization, and the realistic ceiling for reference data is hundreds of rows, not thousands. If it bites, the raw-JSON `<details>` still works and pagination is a contained follow-up.

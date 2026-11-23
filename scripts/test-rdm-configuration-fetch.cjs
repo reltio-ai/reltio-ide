@@ -48,13 +48,14 @@ assert.deepStrictEqual(extracted.rdmTenantIds, expectedIds);
 
 // The physical configuration is only ever a discovery source — the extractor
 // must not surface anything else from it.
-assert.deepStrictEqual(Object.keys(extracted).sort(), ['rdmTenantIds', 'serviceUri']);
+assert.deepStrictEqual(Object.keys(extracted).sort(), ['rdmTenantIds', 'rejectedRdmTenantIds', 'serviceUri']);
+assert.deepStrictEqual(extracted.rejectedRdmTenantIds, []);
 
 // ---------------------------------------------------------------------------
 // Tier A — extractRdmConfig is total over absent and malformed input
 // ---------------------------------------------------------------------------
 
-const empty = { serviceUri: undefined, rdmTenantIds: [] };
+const empty = { serviceUri: undefined, rdmTenantIds: [], rejectedRdmTenantIds: [] };
 
 // A tenant with no RDM at all is a normal outcome, not an error.
 assert.deepStrictEqual(extractRdmConfig({}), empty);
@@ -106,6 +107,17 @@ const many = extractRdmConfig({
 	rdmConfig: { serviceUri: 'https://x', rdmTenants: [{ rdmTenantId: 'A' }, { rdmTenantId: 'B' }, { rdmTenantId: 'C' }] },
 });
 assert.deepStrictEqual(many.rdmTenantIds, ['A', 'B', 'C']);
+
+// Each id becomes a folder, RDM/{id}/config.json: one that could leave the tenant folder is
+// set apart, to be reported and never written.
+const unsafe = extractRdmConfig({
+	rdmConfig: {
+		serviceUri: 'https://x',
+		rdmTenants: ['ok_Id-1', '..', '../../etc', 'a/b', 'a\\b', 'C:', 'with space', '.hidden', 'ok2'].map(rdmTenantId => ({ rdmTenantId })),
+	},
+});
+assert.deepStrictEqual(unsafe.rdmTenantIds, ['ok_Id-1', 'ok2']);
+assert.deepStrictEqual(unsafe.rejectedRdmTenantIds, ['..', '../../etc', 'a/b', 'a\\b', 'C:', 'with space', '.hidden']);
 
 // ---------------------------------------------------------------------------
 // Tier A — RDM JSON Schema
@@ -263,13 +275,86 @@ const sliceFn = (name, end) => {
 	return extSource.slice(start, extSource.indexOf(end, start));
 };
 const chain = sliceFn('writeRdmFromApi', 'extractRdmConfig(physical)');
-const forbidden = chain.search(/statusCode === 403\)\s*\{\s*return 'none';/);
-assert.ok(forbidden >= 0, "writeRdmFromApi treats a 403 as 'none'");
+const forbidden = chain.search(/statusCode === 403\)\s*\{\s*logRdm\([\s\S]*?\);\s*return 'none';/);
+assert.ok(forbidden >= 0, "writeRdmFromApi treats a 403 as 'none', after one line to the output channel");
 assert.ok(forbidden < chain.indexOf('showErrorMessage'), 'the 403 returns before any error message');
+assert.ok(/logRdm\(\s*`[^`]*HTTP 403/.test(chain), 'the logged line says why RDM is missing, so support can tell it from "no RDM"');
+assert.ok(/createOutputChannel\('Reltio RDM'\)/.test(extSource), 'the line goes to the Reltio RDM output channel');
 
 // The resolver serves commands the user ran (Get Lookup Values, Add Value, Apply RDM), so it explains a 403.
 const resolver = sliceFn('resolveRdmServiceUri', 'extractRdmConfig(physical)');
 assert.ok(/statusCode === 403/.test(resolver) && /HTTP 403/.test(resolver), 'resolveRdmServiceUri explains a 403');
+
+// ---------------------------------------------------------------------------
+// Tier B — connect flows (PR review)
+// ---------------------------------------------------------------------------
+
+{
+	// Connect flows write without asking, so they leave local RDM edits alone; Get Configuration
+	// asks first (its drift guard) and then overwrites.
+	const writer = sliceFn('writeRdmFromApi', '\n\t}\n');
+	assert.ok(
+		/if \(options\.keepLocalChanges && \(await hasLocalRdmChanges\(environmentName, tenantId, rdmTenantId\)\)\) \{\s*kept\.push\([^)]*\)\);\s*continue;/.test(writer),
+		'an RDM configuration with local changes is skipped when asked to keep them',
+	);
+	assert.ok(/showWarningMessage\(\s*`Kept your local changes/.test(writer), 'the user is told which files were kept');
+	const localChanges = sliceFn('hasLocalRdmChanges', '\n\t}\n');
+	assert.ok(/d\.isDirty/.test(localChanges), 'unsaved edits in an editor count as local changes');
+	assert.ok(/hasUnpublishedLocalChanges\(/.test(localChanges), 'so do saved edits not yet applied');
+
+	const queue = extSource.slice(extSource.indexOf('function queueRdmFetchOnConnect('));
+	const queueBody = queue.slice(0, queue.indexOf('\n\t}\n'));
+	assert.ok(/keepLocalChanges: true/.test(queueBody), 'connect flows keep local changes');
+	assert.ok(/rdmConnectQueue = rdmConnectQueue\s*\.then\(/.test(queueBody), 'connect fetches run one after another');
+	assert.ok(/rdmConnectSignInReported\.has\(environmentName\)/.test(queueBody), 'an expired session is reported once per environment');
+	assert.ok(/void handle401\(environmentName\)/.test(queueBody), 'the sign-in prompt never holds up the next tenant');
+	assert.ok(!/void fetchRdmForTenant\(/.test(extSource), 'no RDM fetch starts unqueued');
+
+	const getConfiguration = sliceFn('fetchRdmForTenant', '\n\t}\n');
+	assert.ok(!/keepLocalChanges/.test(getConfiguration), 'Get Configuration overwrites once its drift guard let it');
+}
+
+// The address of the RDM service, remembered per tenant, goes when a request to it fails or the session ends.
+{
+	const cache = importDist('rdm/rdmServiceCache');
+	cache.clearRdmServiceUriCache();
+	cache.rememberRdmServiceUri('dev', 'T1', 'https://rdm-1');
+	cache.rememberRdmServiceUri('dev', 'T2', 'https://rdm-2');
+	cache.rememberRdmServiceUri('prod', 'T1', 'https://rdm-3');
+	cache.forgetRdmServiceUri('dev', 'T1');
+	assert.strictEqual(cache.recallRdmServiceUri('dev', 'T1'), undefined);
+	assert.strictEqual(cache.recallRdmServiceUri('dev', 'T2'), 'https://rdm-2');
+	cache.forgetRdmServiceUris('dev');
+	assert.strictEqual(cache.recallRdmServiceUri('dev', 'T2'), undefined);
+	assert.strictEqual(cache.recallRdmServiceUri('prod', 'T1'), 'https://rdm-3', 'another environment keeps its own');
+
+	const { TokenStore } = importDist('api/tokenStore');
+	const store = new TokenStore();
+	const cleared = [];
+	store.onSessionCleared(env => cleared.push(env));
+	store.clearSession('prod');
+	assert.deepStrictEqual(cleared, ['prod']);
+	assert.ok(/tokenStore\.onSessionCleared\(forgetRdmServiceUris\)/.test(extSource), 'a session that ends takes its RDM addresses with it');
+
+	const forget = sliceFn('resolveRdmServiceUri', '\n\t}\n');
+	assert.ok(/recallRdmServiceUri/.test(forget));
+	const after = extSource.slice(extSource.indexOf('function forgetRdmServiceAfter('));
+	assert.ok(/statusCode === 401\)\) \{\s*forgetRdmServiceUri\(environmentName, tenantId\)/.test(after.slice(0, 300)), 'a 401 is a session problem and keeps the address');
+	assert.ok((extSource.match(/forgetRdmServiceAfter\(e, /g) || []).length >= 5, 'every failed RDM request forgets the address: Get Lookup Values, Add Value (read, post), Apply (read, PUT)');
+	assert.ok(/forgetServiceUri: forgetRdmServiceUri/.test(extSource), 'and so does the CSV bridge');
+}
+
+// A workspace opened from a Git repository holds a placeholder, not a session.
+{
+	const sessionStart = extSource.indexOf('function rdmSessionToken(');
+	assert.ok(sessionStart >= 0, 'rdmSessionToken must exist');
+	const session = extSource.slice(sessionStart, extSource.indexOf('\n\t}\n', sessionStart));
+	assert.ok(/token === GIT_SOURCE_TOKEN/.test(session), 'the placeholder is recognized');
+	const handler = extSource.slice(extSource.indexOf("'reltio.getRdmLookupValues'"));
+	assert.ok(/rdmSessionToken\(node\.environmentName/.test(handler.slice(0, 1200)), 'Get Lookup Values checks for it');
+	assert.ok(/rdmSessionToken\(ctx\.environmentName/.test(sliceFn('submitLookupValues', '\n\t}\n')), 'Add Value checks for it');
+	assert.ok(/rdmSessionToken\(node\.environmentName/.test(sliceFn('applyRdmConfigurationForNode', '\n\t}\n')), 'Apply RDM Configuration checks for it');
+}
 
 // Tier A: the client reports a 403 as a ReltioApiError carrying the status, which both checks rely on.
 (async () => {

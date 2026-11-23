@@ -38,6 +38,11 @@ Extraction SHALL accept any parsed JSON value and return an empty result rather 
 - **WHEN** `rdmTenants` contains a mix of entries with and without a non-empty string `rdmTenantId`
 - **THEN** extraction SHALL yield only the ids of entries that have one, preserving their order
 
+#### Scenario: An id that is not a safe folder name is set apart
+
+- **WHEN** an `rdmTenantId` contains anything but letters, digits, `_` and `-`, such as `..` or a slash
+- **THEN** extraction SHALL yield it among the rejected ids, not the RDM tenant ids, so that it is reported and no file is written for it
+
 ### Requirement: RDM configuration is fetched from the discovered service
 
 The extension SHALL fetch each RDM configuration at `GET {serviceUri}/configuration/{rdmTenantId}`, using the same bearer token as the MDM environment, and SHALL return the response body as text so that formatting is applied once on write.
@@ -89,6 +94,12 @@ When `rdmTenants` lists more than one entry the extension SHALL fetch and write 
 ### Requirement: Tenants without RDM are handled silently
 
 Because the chain runs on every Get Configuration, a tenant whose physical configuration declares no usable RDM service or no RDM tenants SHALL produce no notification of any kind, and SHALL NOT be reported as a failure.
+
+#### Scenario: The physical configuration is refused
+
+- **WHEN** reading the tenant physical configuration is refused with HTTP 403
+- **THEN** the tenant SHALL be treated as having no RDM, with no notification
+- **AND** one line naming the environment, the tenant and the 403 SHALL be written to the **Reltio RDM** output channel
 
 #### Scenario: No RDM configured
 

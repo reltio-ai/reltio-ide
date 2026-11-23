@@ -27,8 +27,8 @@ Not for changing or deleting codes or mappings that already exist, and not for c
    | `sourceMappings.code` | for a mapping | The source's code, which data from that source is transcoded by. Blank: the value. |
    | `sourceMappings.value` | for a mapping | How the source reads. Blank: the code. |
    | `sourceMappings.enabled` | no | Blank: true. |
-   | `sourceMappings.canonicalValue` | no | Blank: only the code's first mapping is canonical. An existing code keeps its canonical value. |
-   | `sourceMappings.downStreamDefaultValue` | no | Blank: true. |
+   | `sourceMappings.canonicalValue` | no | Blank: only the code's first mapping is canonical. An existing code keeps its canonical value, and the plan warns about that only when the CSV set the flag. |
+   | `sourceMappings.downStreamDefaultValue` | no | Blank: true for the code's first mapping from each source, false for the rest. A source that already has one for the code keeps it. |
    | `parents`, `localizations.*`, `attributes.*` | no | Not loaded. Each row that sets them is reported as a warning. |
 
    ```csv
@@ -83,7 +83,7 @@ Act on `status` in `result.json`. Every result has a `message` you can show as i
 | `loaded` | The load ran. Each code has its `lookupType` and an `outcome`; `counts` totals them. An `error` means a request failed partway, and nothing after it was sent. | Report the counts and list every code that is not `added`, `appended` or `unchanged`. With `error`, show its `message` and `httpStatus`. |
 | `cancelled` | The user didn't approve the load in the IDE. Nothing was written. | Say so. Don't retry unless the user asks. |
 | `not-run` | The IDE could not act. `reason`: `disabled`, `repository-mode`, `no-tenant`, `signed-out` or `no-rdm-service`. | Tell the user why, using `message`. For `signed-out`, offer to try again after they sign in. For `disabled`, the setting is `reltio.enableRdmLookupLoad`. |
-| `failed` | Nothing was sent. `error.kind`: `invalid-request`, `invalid-csv`, `unknown-lookup-type`, `api-error`, `untrusted-host` or `network`. | For `invalid-request`, correct the request and retry with a new `requestId`. For `invalid-csv`, list `errors`. For `unknown-lookup-type`, show `message`, which names each lookup type the configuration lacks and any it resembles, with the CSV lines in `errors`; offer to add a missing one with `reltio-rdm-lookup-type-concepts`, which the user must then apply before loading. For `api-error`, report `httpStatus` and `message`. Retry `network` once. |
+| `failed` | Nothing was sent. `error.kind`: `invalid-request`, `invalid-csv`, `unknown-lookup-type`, `changed-since-plan`, `api-error`, `untrusted-host` or `network`. | For `invalid-request`, correct the request and retry with a new `requestId`. For `invalid-csv`, list `errors`. For `changed-since-plan`, someone changed codes in the file while the dialog was open: plan again with a new `requestId`, show the new plan, and ask again before loading. For `unknown-lookup-type`, show `message`, which names each lookup type the configuration lacks and any it resembles, with the CSV lines in `errors`; offer to add a missing one with `reltio-rdm-lookup-type-concepts`, which the user must then apply before loading. For `api-error`, report `httpStatus` and `message`. Retry `network` once. |
 | No result after the wait | The IDE isn't running or isn't answering. | Tell the user. Don't try another way to reach the tenant. |
 
 Each code's `outcome` after a load:

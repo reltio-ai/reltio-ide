@@ -385,15 +385,23 @@ export async function fetchTenantPhysicalConfiguration(
 }
 
 /**
+ * What an RDM tenant id may be. Each id becomes a folder (`RDM/{id}/config.json`),
+ * so one holding `..` or a slash would write outside the tenant folder. The server
+ * is trusted, but the path is not left to that.
+ */
+export const RDM_TENANT_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+/**
  * Pull the RDM service URI and RDM tenant ids out of a tenant physical
  * configuration. Pure and total: any shape is accepted and anything missing or
  * malformed yields an empty result, because a tenant with no RDM is a normal
- * outcome rather than an error.
+ * outcome rather than an error. An id that fails `RDM_TENANT_ID_PATTERN` is
+ * returned apart, in `rejectedRdmTenantIds`, so it can be reported.
  */
 export function extractRdmConfig(physicalConfiguration: unknown): ExtractedRdmConfig {
 	// Same key set on every path, so callers never have to distinguish
 	// "no serviceUri" from "no rdmConfig at all".
-	const empty: ExtractedRdmConfig = { serviceUri: undefined, rdmTenantIds: [] };
+	const empty: ExtractedRdmConfig = { serviceUri: undefined, rdmTenantIds: [], rejectedRdmTenantIds: [] };
 	if (!physicalConfiguration || typeof physicalConfiguration !== 'object') {
 		return empty;
 	}
@@ -408,6 +416,7 @@ export function extractRdmConfig(physicalConfiguration: unknown): ExtractedRdmCo
 		typeof rawServiceUri === 'string' && rawServiceUri.trim() ? rawServiceUri.trim() : undefined;
 
 	const rdmTenantIds: string[] = [];
+	const rejectedRdmTenantIds: string[] = [];
 	if (Array.isArray(block.rdmTenants)) {
 		for (const entry of block.rdmTenants) {
 			if (!entry || typeof entry !== 'object') {
@@ -415,11 +424,11 @@ export function extractRdmConfig(physicalConfiguration: unknown): ExtractedRdmCo
 			}
 			const id = (entry as Record<string, unknown>).rdmTenantId;
 			if (typeof id === 'string' && id.trim()) {
-				rdmTenantIds.push(id.trim());
+				(RDM_TENANT_ID_PATTERN.test(id.trim()) ? rdmTenantIds : rejectedRdmTenantIds).push(id.trim());
 			}
 		}
 	}
-	return { serviceUri, rdmTenantIds };
+	return { serviceUri, rdmTenantIds, rejectedRdmTenantIds };
 }
 
 /**

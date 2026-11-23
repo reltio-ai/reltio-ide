@@ -71,3 +71,11 @@ Reported: connecting a tenant fetched its Business Config but not its RDM; only 
 - [x] B1.7 Update design D5, the two spec requirements, and `ARCHITECTURE.md` for the four connect flows
 - [ ] B1.8 Manual QA: connect a tenant through the Setup Wizard and confirm `RDM/{id}/config.json` appears without running Get Configuration
 - [ ] B1.9 Manual QA: repeat through **Add Tenant**, and through browser sign-in auto-add
+
+## Review Round 2 — PR #20
+
+- [x] R2.1 Connect flows skip RDM configurations with local changes (dirty, or differing from the baseline) and name the files kept; Get Configuration still overwrites after its drift guard (design D8)
+- [x] R2.2 `queueRdmFetchOnConnect` runs connect fetches one at a time and reports an expired session once per environment
+- [x] R2.3 `test-rdm-component-folder.cjs` and `test-rdm-configuration-fetch.cjs` updated; `ARCHITECTURE.md`
+- [ ] R2.4 Manual QA: edit `RDM/{id}/config.json`, then Add Tenant for the same tenant — the edit is kept and the warning names the file
+- [ ] R2.5 Manual QA: connect three tenants through the Setup Wizard — one RDM progress notification at a time

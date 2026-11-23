@@ -182,4 +182,21 @@ for (const command of ['reltio.deleteNode', 'reltio.renameNode']) {
 	}
 }
 
+// After Apply, the local file and its baseline are the server's copy, read back after the PUT, as
+// L3 Apply does: saving can set `version`, `updatedBy` and `updateDate` (PR review).
+{
+	const ext = fs.readFileSync(path.join(repoRoot, 'src', 'extension.ts'), 'utf8');
+	const start = ext.indexOf('async function applyRdmConfigurationForNode(');
+	const apply = ext.slice(start, ext.indexOf('\n\t}\n', start));
+	const put = apply.indexOf('putRdmConfiguration(');
+	const readBack = apply.indexOf('fetchRdmConfiguration(', put);
+	assert.ok(put > 0 && readBack > put, 'the configuration is read again after the PUT');
+	assert.ok(/await storeRdmFromServer\(node\.environmentName, node\.tenantId, node\.rdmTenantId, applied\)/.test(apply.slice(readBack)), 'file and baseline take what the server returned');
+	assert.ok(/showWarningMessage\([\s\S]*could not be read back/.test(apply.slice(readBack)), 'a failed read-back is a warning: the PUT itself succeeded');
+	const store = ext.slice(ext.indexOf('async function storeRdmFromServer('));
+	const storeBody = store.slice(0, store.indexOf('\n\t}\n'));
+	assert.ok(/writeRdm\(/.test(storeBody) && /writeRdmBaseline\(/.test(storeBody), 'both the file and its baseline are written');
+	assert.ok(/workbench\.action\.files\.revert/.test(storeBody), 'an open editor shows what was written');
+}
+
 console.log('test-rdm-configuration-authoring: OK');

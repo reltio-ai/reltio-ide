@@ -91,6 +91,10 @@ Whether the RDM service returns that same error envelope is unverified. The form
 
 Apply sends the document text as-is. Re-serializing through `JSON.parse`/`stringify` would silently normalize whatever the user wrote and make the pushed payload differ from the file they are looking at.
 
+### D8: After Apply, the file and baseline come from the server (PR review #20)
+
+Apply used to save the pushed text as the baseline. The server can set `version`, `updatedBy` and `updateDate` when it saves, so the next Apply or Get Configuration would report a server change that wasn't there, and the local file kept the old `version`. Apply now does what L3 Apply does: it reads the configuration back after the PUT and writes both `config.json` and its baseline from the response (`storeRdmFromServer`, shared with the fetch, which also reloads an open editor). If the read-back fails, the PUT still succeeded, so the pushed text is the closest record left: it becomes the baseline, and a warning suggests Get Configuration. A failed RDM request also forgets the remembered service address, and the Git-repository placeholder token is refused with a message before any request.
+
 ## Risks / Trade-offs
 
 - **[Risk]** Exporting `insertIntoArray` and parameterizing its allowlist touches a path every L3 insert command uses → **Mitigation**: the change is mechanical — the existing set is passed by the existing callers — and the L3 insert tests (`no-create-wizards`, `insert-interaction-type`, `attribute-skeleton-mandatory-fields`, `skeleton-fixes-and-ux-polish`) cover those paths and must stay green.

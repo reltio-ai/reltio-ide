@@ -123,7 +123,7 @@ const mapping = (source, code, value, canonicalValue, extra = {}) => ({
 	const text = '\uFEFFTYPE, Code ,sourceMappings.VALUE,sourceMappings.code,SourceMappings.Source,Notes\r\n\r\nrdm/lookupTypes/OrganizationStatuses,B,Business,B,BvD,x\r\n';
 	const out = csv(text);
 	assert.deepStrictEqual(out.errors, []);
-	assert.deepStrictEqual(out.types[0].values, [{ code: 'B', mappings: [mapping('BvD', 'B', 'Business', true)] }]);
+	assert.deepStrictEqual(out.types[0].values, [{ code: 'B', mappings: [mapping('BvD', 'B', 'Business', true, { defaulted: ['canonical', 'downstream default'] })] }]);
 	assert.deepStrictEqual(out.types[0].linesByCode.B, [3], 'blank lines still count');
 	assert.strictEqual(out.warnings.length, 1);
 	assert.match(out.warnings[0].message, /ignored column "Notes"/);
@@ -143,9 +143,9 @@ const mapping = (source, code, value, canonicalValue, extra = {}) => ({
 	assert.strictEqual(out.types.length, 1, 'rdm/lookupTypes/X and a bare X are one lookup type');
 	const [x, y] = out.types[0].values;
 	assert.deepStrictEqual(x.mappings, [
-		mapping('SAP', 'Single person', 'Single person', true),
+		mapping('SAP', 'Single person', 'Single person', true, { defaulted: ['canonical', 'downstream default'] }),
 		mapping('SAP', 'S1', 'S1', true, { downStreamDefaultValue: false, enabled: false }),
-	], 'a blank code or value takes the other; a blank canonical means the first mapping only');
+	], 'a blank code or value takes the other; a blank canonical means the first mapping only; a flag set from a blank is marked');
 	assert.deepStrictEqual(y, { code: 'Y', mappings: [], enabled: false, startDate: 1700000000000 }, 'a blank endDate is left unset');
 
 	// One source with two codes becomes one source mapping with two values.
@@ -335,7 +335,7 @@ const CONFIG_REL = 'dev/T1/RDM/RdmT/config.json';
 const CSV_REL = 'data/RdmT_lookups_1793868681973.csv';
 
 function makeDeps(over = {}, files = {}) {
-	const calls = { fetch: [], post: [], approve: [], read: [] };
+	const calls = { fetch: [], post: [], approve: [], read: [], stat: [], forget: [] };
 	const copy = v => JSON.parse(JSON.stringify(v));
 	// What the RDM tenant holds, per lookup type.
 	const server = new Map();
@@ -361,6 +361,8 @@ function makeDeps(over = {}, files = {}) {
 		resolveServiceUri: async () => 'https://rdm.reltio.com',
 		approve: async a => {
 			calls.approve.push(a);
+			// Whatever someone else does to the RDM tenant while the dialog is open.
+			over.onApprove?.(server);
 			return over.approved ?? true;
 		},
 		readFile: async uri => {
@@ -368,6 +370,12 @@ function makeDeps(over = {}, files = {}) {
 			if (!(uri.path in store)) throw new Error('not found');
 			return new TextEncoder().encode(store[uri.path]);
 		},
+		statFile: async uri => {
+			calls.stat.push(uri.path);
+			if (!(uri.path in store)) throw new Error('not found');
+			return { size: Buffer.byteLength(store[uri.path]) };
+		},
+		forgetServiceUri: (env, tenant) => calls.forget.push([env, tenant]),
 		fetchValues: async (service, rdmTenantId, type, token) => {
 			calls.fetch.push({ service, rdmTenantId, type, token });
 			return [...(server.get(type)?.values() ?? [])].map(copy);
@@ -585,7 +593,11 @@ async function testSeveralLookupTypes() {
 		['OrganizationStatuses', 'A', 'added'],
 		['AddressTypes', 'A', 'added'],
 	]);
-	assert.deepStrictEqual(r.calls.fetch.map(f => f.type), ['OrganizationStatuses', 'AddressTypes', 'OrganizationStatuses', 'AddressTypes'], 'planned and re-fetched per type');
+	assert.deepStrictEqual(
+		r.calls.fetch.map(f => f.type),
+		['OrganizationStatuses', 'AddressTypes', 'OrganizationStatuses', 'AddressTypes', 'OrganizationStatuses', 'AddressTypes'],
+		'planned, read again after approval, and re-fetched after the load, per type',
+	);
 
 	// The second type fails: its A is not confirmed by the first type's A.
 	r = await run(request({ mode: 'load' }), {
@@ -645,12 +657,122 @@ async function testChunksAndFailures() {
 	let fetches = 0;
 	r = await run(request({ mode: 'load' }), {
 		fetchValues: async () => {
-			if (++fetches > 1) throw new Error('Network error');
+			if (++fetches > 2) throw new Error('Network error');
 			return [];
 		},
 		postValues: async () => undefined,
 	});
 	assert.strictEqual(r.result.counts.unconfirmed, 4);
+	assert.deepStrictEqual(r.calls.forget, [], 'a failed confirmation read leaves the service address alone');
+
+	// A failed request forgets the remembered service address, so the next one looks it up again.
+	r = await run(request(), { fetchValues: async () => { throw new Error('getaddrinfo ENOTFOUND'); } });
+	assert.strictEqual(r.result.error.kind, 'network');
+	assert.deepStrictEqual(r.calls.forget, [['dev', 'T1']]);
+	r = await run(request({ mode: 'load' }), { postValues: async () => { throw new ReltioApiError('HTTP 503', 503); } });
+	assert.deepStrictEqual(r.calls.forget, [['dev', 'T1']]);
+	r = await run(request({ mode: 'load' }));
+	assert.deepStrictEqual(r.calls.forget, [], 'a load that works keeps it');
+}
+
+// Blank flags (PR review): one downstream default per source for a new code, and no warning
+// about a flag the user never set.
+async function testBlankFlags() {
+	// A new code mapping one source to two codes: only the first is the downstream default.
+	const two = csv(file(
+		row({ code: 'N', type: ORG, 'sourceMappings.source': 'SAP', 'sourceMappings.code': 'N1', 'sourceMappings.value': 'One' }),
+		row({ code: 'N', type: ORG, 'sourceMappings.source': 'SAP', 'sourceMappings.code': 'N2', 'sourceMappings.value': 'Two' }),
+		row({ code: 'N', type: ORG, 'sourceMappings.source': 'BvD', 'sourceMappings.code': 'N3', 'sourceMappings.value': 'Three' }),
+	));
+	const [n] = two.types[0].values;
+	assert.deepStrictEqual(n.mappings.map(m => [m.source, m.canonicalValue, m.downStreamDefaultValue]), [
+		['SAP', true, true],
+		['SAP', false, false],
+		['BvD', false, true],
+	], 'blank: the first mapping is canonical, and each source\'s first mapping is its downstream default');
+	const [created] = buildLookupValuesCreateBody([n], { rdmTenantId: 'RdmT', lookupTypeName: 'OrganizationStatuses', lookupTypeUri: ORG });
+	for (const sm of created.sourceMappings) {
+		assert.strictEqual(sm.values.filter(v => v.downStreamDefaultValue).length, 1, `one downstream default for ${sm.source}`);
+	}
+	// Set explicitly, the flag is kept as written.
+	const explicit = csv(file(
+		mapRow('N', 'SAP', 'N1', 'One', 'true'),
+		mapRow('N', 'SAP', 'N2', 'Two', 'false', ORG, { 'sourceMappings.downStreamDefaultValue': 'false' }),
+	));
+	assert.deepStrictEqual(explicit.types[0].values[0].mappings.map(m => m.defaulted), [undefined, undefined]);
+
+	// An existing code that keeps its canonical value and its BvD downstream default: blank flags
+	// warn about nothing; flags the CSV set still do.
+	const blank = row({ code: 'B', type: ORG, 'sourceMappings.source': 'BvD', 'sourceMappings.code': 'B2', 'sourceMappings.value': 'Biz' });
+	let r = await run(request(), { serverValues: [bStored()] }, { [`/ws/${CSV_REL}`]: file(blank) });
+	assert.deepStrictEqual(r.result.codes.map(c => c.classification), ['append']);
+	assert.deepStrictEqual(r.result.warnings, [], 'no flag the user never asked for is reported as dropped');
+	r = await run(request(), { serverValues: [bStored()] }, { [`/ws/${CSV_REL}`]: file(mapRow('B', 'BvD', 'B2', 'Biz', 'true')) });
+	assert.deepStrictEqual(r.result.warnings.map(w => w.message.match(/canonical value|downstream default/)?.[0]), ['canonical value', 'downstream default']);
+	// Either way, what is appended carries neither flag.
+	r = await run(request({ mode: 'load' }), { serverValues: [bStored()] }, { [`/ws/${CSV_REL}`]: file(blank) });
+	const appended = r.calls.post[0].body[0].sourceMappings[0].values[1];
+	assert.deepStrictEqual(appended, { code: 'B2', value: 'Biz', enabled: true, canonicalValue: false, downStreamDefaultValue: false });
+	assert.ok(!('defaulted' in appended), 'the marker never reaches the request');
+}
+
+// A file over the limit is refused by its size, without being read (PR review).
+async function testSizeBeforeRead() {
+	const big = { size: csvLib.MAX_CSV_BYTES + 1 };
+	let r = await run(request(), { statFile: async () => big });
+	assert.strictEqual(r.result.status, 'planned');
+	assert.match(r.result.errors[0].message, /larger than 2 MB/);
+	assert.ok(!r.calls.read.includes(`/ws/${CSV_REL}`), 'the CSV is never read into memory');
+	r = await run(request({ mode: 'load' }), { statFile: async () => big });
+	assert.strictEqual(r.result.error.kind, 'invalid-csv');
+	assert.strictEqual(r.calls.post.length + r.calls.approve.length, 0);
+	r = await run(request({ csvFile: 'data/missing.csv' }));
+	assert.match(r.result.error.message, /could not be read/);
+}
+
+// The approval dialog can stay open for minutes; the POST replaces a code's whole value (PR review).
+async function testChangedWhileApproving() {
+	const org = server => server.get('OrganizationStatuses');
+	const meanwhile = change => ({ serverValues: [bStored()], onApprove: server => change(org(server)) });
+
+	// Someone adds a mapping from another source to B meanwhile: the load still adds what was
+	// approved, and sends B as it is now, so their mapping is kept.
+	let r = await run(request({ mode: 'load' }), meanwhile(values =>
+		values.get('B').sourceMappings.push({ source: 'Reltio', values: [{ code: 'B', value: 'Bus.', canonicalValue: false }] }),
+	));
+	assert.strictEqual(r.result.status, 'loaded');
+	const b = r.calls.post[0].body.find(v => v.code === 'B');
+	assert.deepStrictEqual(b.sourceMappings.map(m => m.source), ['BvD', 'Reltio', 'SAP'], 'the mapping stored meanwhile is sent back, not deleted');
+	assert.deepStrictEqual(r.result.counts, { added: 3, appended: 1, unchanged: 0, 'not-stored': 0, 'not-sent': 0, unconfirmed: 0 });
+
+	// Someone stores the SAP mapping the load was about to add to B: the load would add something
+	// else than was approved, so nothing is sent and the agent is told to plan again.
+	r = await run(request({ mode: 'load' }), meanwhile(values =>
+		values.get('B').sourceMappings.push({ source: 'SAP', values: [{ code: 'B', value: 'Business', canonicalValue: false }] }),
+	));
+	assert.strictEqual(r.result.status, 'failed');
+	assert.strictEqual(r.result.error.kind, 'changed-since-plan');
+	assert.match(r.result.message, /OrganizationStatuses changed while the load waited for approval.*Nothing was sent\. Plan again/);
+	assert.strictEqual(r.calls.post.length, 0);
+
+	// Someone creates A, a code the load was about to create: also a different load.
+	r = await run(request({ mode: 'load' }), meanwhile(values =>
+		values.set('A', { tenantId: 'RdmT', type: ORG, code: 'A', enabled: true, sourceMappings: [] }),
+	));
+	assert.strictEqual(r.result.error.kind, 'changed-since-plan');
+	assert.strictEqual(r.calls.post.length, 0);
+
+	// The session expired while the dialog was open: nothing sent.
+	let fetches = 0;
+	r = await run(request({ mode: 'load' }), {
+		fetchValues: async () => {
+			if (++fetches > 1) throw new ReltioApiError('Unauthorized (401)', 401);
+			return [];
+		},
+	});
+	assert.strictEqual(r.result.reason, 'signed-out');
+	assert.strictEqual(r.calls.approve.length, 1);
+	assert.strictEqual(r.calls.post.length, 0);
 }
 
 async function testNoTokenInResults() {
@@ -739,6 +861,9 @@ async function testNoTokenInResults() {
 	await testLoad();
 	await testSeveralLookupTypes();
 	await testChunksAndFailures();
+	await testBlankFlags();
+	await testSizeBeforeRead();
+	await testChangedWhileApproving();
 	await testNoTokenInResults();
 	console.log('test-rdm-lookup-csv-load: OK');
 })().catch(e => {

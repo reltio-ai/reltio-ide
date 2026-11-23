@@ -17,6 +17,11 @@ export interface LookupValueMappingDraft {
 	downStreamDefaultValue: boolean;
 	/** From a CSV's `sourceMappings.enabled`; absent (the panel) means enabled. */
 	enabled?: boolean;
+	/**
+	 * Flags a CSV left blank and the reader set to true. The stored value may keep
+	 * them for another mapping without a warning: the user never asked for them.
+	 */
+	defaulted?: Array<'canonical' | 'downstream default'>;
 }
 
 export interface LookupValueDraft {
@@ -311,11 +316,15 @@ export function mergeLookupValue(
 			}
 		}
 
+		// A flag that only came from a blank CSV cell is dropped without a note.
+		const asked = (flag: 'canonical' | 'downstream default') => !m.defaulted?.includes(flag);
 		const canonical = m.canonicalValue && !hasCanonical;
-		if (m.canonicalValue && !canonical) result.flagsDropped.push({ ...note, flag: 'canonical' });
+		if (m.canonicalValue && !canonical && asked('canonical')) result.flagsDropped.push({ ...note, flag: 'canonical' });
 		const sourceHasDownstream = !!target && valuesOf(target).some(v => v.downStreamDefaultValue === true);
 		const downstream = m.downStreamDefaultValue && !sourceHasDownstream;
-		if (m.downStreamDefaultValue && !downstream) result.flagsDropped.push({ ...note, flag: 'downstream default' });
+		if (m.downStreamDefaultValue && !downstream && asked('downstream default')) {
+			result.flagsDropped.push({ ...note, flag: 'downstream default' });
+		}
 
 		const value = { code, value: m.value, enabled: m.enabled ?? true, canonicalValue: canonical, downStreamDefaultValue: downstream };
 		if (target) {

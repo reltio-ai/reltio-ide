@@ -1336,7 +1336,10 @@ export interface TenantPhysicalConfiguration {
 /** Service URI and RDM tenant ids extracted from a tenant physical configuration. */
 export interface ExtractedRdmConfig {
   serviceUri?: string;
+  /** Ids that are safe as a folder name, which each becomes (`RDM/{id}/config.json`). */
   rdmTenantIds: string[];
+  /** Ids the server gave that are not (`..`, a slash, …): reported, never written. */
+  rejectedRdmTenantIds: string[];
 }
 
 /** One source's spelling of a lookup code, from `GET {serviceUri}/lookups/…`. */

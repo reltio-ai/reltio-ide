@@ -147,6 +147,10 @@ The trade-off is losing typo detection on hand-edited RDM files. That is the rig
 
 Consistent with the rest of the harness (`ARCHITECTURE.md`, "Unit tests"), no unit test performs network I/O; the HTTP functions are covered by Tier C manual QA against a live tenant. URL construction is kept in one-line template expressions so that reading the function is sufficient to verify the path.
 
+### D13: Safe folder names, and a trace of a 403 (PR review #20)
+
+Each RDM tenant id becomes a folder, `RDM/{id}/config.json`. The id comes from the server, which is trusted, but an id holding `..` or a slash would write outside the tenant folder, so `extractRdmConfig` keeps only ids matching `[A-Za-z0-9_-]+` and returns the others in `rejectedRdmTenantIds`, which the fetch reports and never writes. A 403 on the physical configuration stays silent in the UI, since the chain runs on every fetch, but writes one line to the **Reltio RDM** output channel so support can tell "this tenant has no RDM" from "this user may not read it".
+
 ## Risks / Trade-offs
 
 - **[Risk]** VS Code may not honor the `!` exclusion pattern in `contributes.jsonValidation.fileMatch`, leaving RDM files validated against the L3 schema → **Mitigation**: verified explicitly in the Extension Development Host as a Tier C step before the change is considered done; documented fallback is D6's alternative (a filename outside the `*.reltio.json` glob). The Tier B test asserts the manifest wiring, which catches regression but not VS Code's interpretation of it.

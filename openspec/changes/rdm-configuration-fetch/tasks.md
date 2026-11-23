@@ -78,3 +78,9 @@
 - [ ] 9.10 Manual QA: sign in so a tenant is auto-added post-SSO, and confirm the login flow fetches L3 only, with no RDM request
 - [ ] 9.11 Manual QA: confirm Apply still works on a tenant that has RDM files present, and does not read or push them
 - [x] 9.12 `npx openspec validate rdm-configuration-fetch --strict`
+
+## Review Round — PR #20
+
+- [x] R.1 `extractRdmConfig` sets apart ids outside `[A-Za-z0-9_-]+` as `rejectedRdmTenantIds`; the fetch reports them and writes nothing for them (design D13)
+- [x] R.2 A 403 on the physical configuration writes one line to the **Reltio RDM** output channel
+- [x] R.3 Tests in `scripts/test-rdm-configuration-fetch.cjs`; `ARCHITECTURE.md`

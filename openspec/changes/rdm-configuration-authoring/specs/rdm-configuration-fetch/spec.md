@@ -4,7 +4,7 @@
 
 Every successful RDM write SHALL be accompanied by a baseline file `RDM.{rdmTenantId}.remote-baseline.reltio.json` in the same folder, holding content identical to the configuration file, recording the server copy at the moment of that fetch.
 
-The baseline serves two purposes: warning before a re-fetch overwrites local edits, and acting as the drift oracle for **Apply RDM Configuration**. A successful Apply SHALL also refresh it, since the pushed content is then what the server holds.
+The baseline serves two purposes: warning before a re-fetch overwrites local edits, and acting as the drift oracle for **Apply RDM Configuration**. A successful Apply SHALL also refresh it, from the configuration read back from the server after the push.
 
 #### Scenario: Baseline written alongside the configuration
 

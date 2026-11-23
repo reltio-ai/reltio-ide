@@ -81,3 +81,9 @@ Reported in manual QA: adding source `DnB` to existing code `A` in `Organization
 - [x] B2.4 Judge stored per mapping — a code counts as stored when the response or re-fetch holds it with every requested source and code at the source; messages name codes added, codes appended to, and flags not applied (design D7, D9)
 - [x] B2.5 Update `spec.md` (replace "Only new codes can be added" with the append requirement and its scenarios), `proposal.md`, `ARCHITECTURE.md` and `scripts/test-rdm-lookup-value-authoring.cjs` (merge rules, conflicts, flags, nothing removed, stored-per-mapping); `npm test`, compile, build, package; `openspec validate --strict`
 - [ ] B2.6 Manual QA: add `DnB` to existing code `A` — the `Reltio` mapping is unchanged and `DnB` appears; repeat — "already present", nothing sent; give `DnB` a different value for the same code at source — refused as a conflict; record whether a stale `version` is rejected
+
+## Review Round — PR #20
+
+- [x] R.1 Results above the form carry a level: "nothing to add" is information, "sent but unconfirmed" a warning unless the request failed; a `warning` style (design D10)
+- [x] R.2 Refuse the Git-repository placeholder token with a message; forget the service URI after a failed request
+- [x] R.3 Tests in `scripts/test-rdm-lookup-value-authoring.cjs`

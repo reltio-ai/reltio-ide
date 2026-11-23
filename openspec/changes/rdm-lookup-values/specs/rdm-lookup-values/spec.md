@@ -58,7 +58,17 @@ The service URI SHALL be normalized and host-checked the same way as every other
 
 ### Requirement: The service URI is resolved without a persisted copy
 
-The extension SHALL resolve the service URI from an in-memory value recorded when a configuration fetch discovered it, and SHALL rediscover it from the tenant physical configuration when no such value is held. The service URI SHALL NOT be written to disk.
+The extension SHALL resolve the service URI from an in-memory value recorded when a configuration fetch discovered it, and SHALL rediscover it from the tenant physical configuration when no such value is held. The service URI SHALL NOT be written to disk. A held value SHALL be forgotten when a request to that service fails for any reason other than an expired session, and when the environment's session ends, so that a stale address is looked up again.
+
+#### Scenario: Forgotten after a failed request
+
+- **WHEN** a request to the held service URI fails with a network error
+- **THEN** the next RDM request for that tenant SHALL rediscover the service URI
+
+#### Scenario: Forgotten when the session ends
+
+- **WHEN** the user signs out of an environment, the session expires, or the environment is removed
+- **THEN** no service URI SHALL be held for any tenant of that environment
 
 #### Scenario: Reused after a fetch in the same session
 

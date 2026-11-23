@@ -7,11 +7,17 @@ import {
 	UntrustedHostError,
 } from '../api/reltioClient';
 import { GIT_SOURCE_TOKEN } from '../api/tokenStore';
-import { MAX_LOOKUP_VALUES_PER_REQUEST, planLookupValues, type LookupValuesPlan } from './lookupValueDraft';
+import {
+	MAX_LOOKUP_VALUES_PER_REQUEST,
+	planLookupValues,
+	type LookupValuesPlan,
+	type LookupValueTarget,
+} from './lookupValueDraft';
 import {
 	chunk,
 	countOutcomes,
 	loadOutcomes,
+	MAX_CSV_BYTES,
 	planWarnings,
 	readLookupCsv,
 	resolveLookupTypes,
@@ -41,7 +47,15 @@ export const RDM_LOOKUP_LOAD_SETTING = 'enableRdmLookupLoad';
 export const NOT_RUN_REASONS = ['disabled', 'repository-mode', 'no-tenant', 'signed-out', 'no-rdm-service'] as const;
 export type NotRunReason = (typeof NOT_RUN_REASONS)[number];
 
-export const FAILURE_KINDS = ['invalid-request', 'invalid-csv', 'unknown-lookup-type', 'api-error', 'untrusted-host', 'network'] as const;
+export const FAILURE_KINDS = [
+	'invalid-request',
+	'invalid-csv',
+	'unknown-lookup-type',
+	'changed-since-plan',
+	'api-error',
+	'untrusted-host',
+	'network',
+] as const;
 export type FailureKind = (typeof FAILURE_KINDS)[number];
 
 export interface LoadError {
@@ -113,6 +127,10 @@ export interface LookupLoadDeps {
 	/** Shows the modal approval; `true` only when the user chose Load. */
 	approve: (approval: LoadApproval) => Promise<boolean>;
 	readFile?: (uri: vscode.Uri) => Promise<Uint8Array>;
+	/** The CSV's size is checked before it is read, so a very large file is never loaded. */
+	statFile?: (uri: vscode.Uri) => Promise<{ size: number }>;
+	/** A request to the RDM service failed: rediscover its address next time. */
+	forgetServiceUri?: (environmentName: string, tenantId: string) => void;
 	/** Injected so tests never reach the network. */
 	fetchValues?: typeof fetchRdmLookupValues;
 	postValues?: typeof postRdmLookupValues;
@@ -161,6 +179,19 @@ function toLoadError(e: unknown): LoadError {
 	return { kind: 'network', message: (e as Error)?.message ?? String(e) };
 }
 
+/**
+ * What a plan would add, and nothing else: per code, its classification and the
+ * mappings it stores, plus every conflict and dropped flag. Two plans with the same
+ * value here send the same additions, whatever else the stored values hold.
+ */
+function whatPlanAdds(plan: LookupValuesPlan): string {
+	return JSON.stringify({
+		items: plan.items.map(i => [i.draft.code, i.kind, i.expect]),
+		conflicts: plan.conflicts,
+		flagsDropped: plan.flagsDropped,
+	});
+}
+
 export function approvalText(a: LoadApproval): { message: string; detail: string } {
 	const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 	const several = a.lookupTypes.length > 1;
@@ -182,6 +213,7 @@ export function approvalText(a: LoadApproval): { message: string; detail: string
 export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps): Promise<LookupLoadResult> {
 	const log = deps.log ?? (() => undefined);
 	const readFile = deps.readFile ?? (uri => vscode.workspace.fs.readFile(uri));
+	const statFile = deps.statFile ?? (uri => vscode.workspace.fs.stat(uri));
 	const fetchValues = deps.fetchValues ?? fetchRdmLookupValues;
 	const postValues = deps.postValues ?? postRdmLookupValues;
 	const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : undefined;
@@ -230,13 +262,19 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 		return invalid(`"${body.rdmConfigFile}" could not be read.`);
 	}
 
-	let csvBytes: Uint8Array;
+	// The size first: a file over the limit is refused without being read into memory.
+	let csv: ReturnType<typeof readLookupCsv>;
 	try {
-		csvBytes = await readFile(csvUri);
+		const { size } = await statFile(csvUri);
+		if (size > MAX_CSV_BYTES) {
+			csv = readLookupCsv('', size);
+		} else {
+			const csvBytes = await readFile(csvUri);
+			csv = readLookupCsv(new TextDecoder().decode(csvBytes), csvBytes.byteLength);
+		}
 	} catch {
 		return invalid(`"${body.csvFile}" could not be read.`);
 	}
-	const csv = readLookupCsv(new TextDecoder().decode(csvBytes), csvBytes.byteLength);
 	const csvFile = relativeTo(deps.workspaceRoot, csvUri);
 
 	if (mode === 'load' && csv.errors.length > 0) {
@@ -289,24 +327,33 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 	}
 	if (!serviceUri) return notRun(requestId, 'no-rdm-service', `No RDM service is configured for ${tenantId}.`);
 	const service = serviceUri;
+	/** A failed request may mean the remembered service address is stale: look it up again next time. */
+	const serviceFailed = (e: unknown): LoadError => {
+		deps.forgetServiceUri?.(environmentName, tenantId);
+		return toLoadError(e);
+	};
 
 	// ── Plan: every lookup type against a fresh fetch of its own ───────────
 	interface TypePlan {
 		group: LookupCsvType;
+		/** The configuration's name for the lookup type: every request and report uses it. */
+		name: string;
+		target: LookupValueTarget;
 		current: unknown;
 		plan: LookupValuesPlan;
 	}
 	const typePlans: TypePlan[] = [];
 	for (const group of csv.types) {
 		const lookupType = resolved.get(group.name)!;
+		const name = lookupType.name;
 		try {
-			const fetched = await withSession(t => fetchValues(service, rdmTenantId, lookupType.name, t));
+			const fetched = await withSession(t => fetchValues(service, rdmTenantId, name, t));
 			if (fetched === 'signed-out') return signedOut;
 			// Existing codes get their missing mappings appended to the stored value; nothing stored changes.
-			const lookupTarget = { rdmTenantId, lookupTypeName: lookupType.name, lookupTypeUri: lookupType.uri };
-			typePlans.push({ group, current: fetched, plan: planLookupValues(group.values, fetched, lookupTarget) });
+			const target = { rdmTenantId, lookupTypeName: name, lookupTypeUri: lookupType.uri };
+			typePlans.push({ group, name, target, current: fetched, plan: planLookupValues(group.values, fetched, target) });
 		} catch (e) {
-			return failed(requestId, toLoadError(e));
+			return failed(requestId, serviceFailed(e));
 		}
 	}
 	const warnings = [
@@ -335,7 +382,7 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 			status: 'planned',
 			...target,
 			codes: typePlans.flatMap(tp =>
-				tp.plan.items.map(i => ({ lookupType: tp.group.name, code: i.draft.code, lines: lines(tp, i.draft.code), classification: i.kind })),
+				tp.plan.items.map(i => ({ lookupType: tp.name, code: i.draft.code, lines: lines(tp, i.draft.code), classification: i.kind })),
 			),
 			counts,
 			appendMappingCount,
@@ -354,10 +401,10 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 		const codes = typePlans.flatMap(tp =>
 			loadOutcomes({
 				items: tp.plan.items,
-				sent: sentByType.get(tp.group.name) ?? [],
-				createResponses: responsesByType.get(tp.group.name) ?? [],
-				refetched: refetched.get(tp.group.name),
-			}).map(o => ({ lookupType: tp.group.name, code: o.code, lines: lines(tp, o.code), outcome: o.outcome })),
+				sent: sentByType.get(tp.name) ?? [],
+				createResponses: responsesByType.get(tp.name) ?? [],
+				refetched: refetched.get(tp.name),
+			}).map(o => ({ lookupType: tp.name, code: o.code, lines: lines(tp, o.code), outcome: o.outcome })),
 		);
 		const outcomeCounts = countOutcomes(codes);
 		const message =
@@ -381,13 +428,13 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 	};
 
 	const sending = typePlans.filter(tp => tp.plan.items.some(i => i.element));
-	if (sending.length === 0) return finish(new Map(typePlans.map(tp => [tp.group.name, tp.current])));
+	if (sending.length === 0) return finish(new Map(typePlans.map(tp => [tp.name, tp.current])));
 
 	const approved = await deps.approve({
 		environmentName,
 		tenantId,
 		rdmTenantId,
-		lookupTypes: sending.map(tp => tp.group.name),
+		lookupTypes: sending.map(tp => tp.name),
 		csvFile,
 		newCount: counts.new,
 		appendCount: counts.append,
@@ -407,9 +454,40 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 		};
 	}
 
+	// ── Re-read: the dialog may have been open for minutes ─────────────────
+	// The POST replaces a code's whole value, so an append sends back the value as read.
+	// Anything stored while the dialog was open would be lost, so each lookup type is
+	// read again and the plan rebuilt from that. If what the load adds is the same, the
+	// rebuilt values are sent and carry the newer changes. If it differs, the user
+	// approved something else, so nothing is sent. (A merged value keeps the `version`
+	// it was read with; whether RDM refuses a stale one is not established, so this
+	// check does not rely on it.)
+	for (const tp of sending) {
+		let fetched: unknown;
+		try {
+			const result = await withSession(t => fetchValues(service, rdmTenantId, tp.name, t));
+			if (result === 'signed-out') return signedOut;
+			fetched = result;
+		} catch (e) {
+			return failed(requestId, serviceFailed(e));
+		}
+		const fresh = planLookupValues(tp.group.values, fetched, tp.target);
+		if (whatPlanAdds(fresh) !== whatPlanAdds(tp.plan)) {
+			log(`  ${tp.name} changed while waiting for approval; nothing sent`);
+			return failed(requestId, {
+				kind: 'changed-since-plan',
+				message:
+					`The stored values of ${tp.name} changed while the load waited for approval, so the approved load no longer matches. ` +
+					'Nothing was sent. Plan again to see what the load would do now.',
+			});
+		}
+		tp.current = fetched;
+		tp.plan = fresh;
+	}
+
 	let error: LoadError | undefined;
 	send: for (const tp of sending) {
-		const name = tp.group.name;
+		const name = tp.name;
 		const sent: string[] = [];
 		const responses: unknown[] = [];
 		sentByType.set(name, sent);
@@ -432,7 +510,7 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 			} catch (e) {
 				// A failed or timed-out request may still have stored some of its codes.
 				sent.push(...part.map(p => p.draft.code));
-				error = toLoadError(e);
+				error = serviceFailed(e);
 				log(`  ${name} chunk ${i + 1}/${chunks.length}: failed (${error.kind}${error.httpStatus ? ` ${error.httpStatus}` : ''}) ${error.message}`);
 				break send;
 			}
@@ -441,10 +519,10 @@ export async function handleLookupLoadRequest(raw: unknown, deps: LookupLoadDeps
 
 	const refetched = new Map<string, unknown>();
 	for (const tp of sending) {
-		if (!sentByType.get(tp.group.name)?.length) continue;
+		if (!sentByType.get(tp.name)?.length) continue;
 		try {
-			const fetched = await withSession(t => fetchValues(service, rdmTenantId, tp.group.name, t));
-			if (fetched !== 'signed-out') refetched.set(tp.group.name, fetched);
+			const fetched = await withSession(t => fetchValues(service, rdmTenantId, tp.name, t));
+			if (fetched !== 'signed-out') refetched.set(tp.name, fetched);
 		} catch {
 			// Not re-fetched: sent codes the create responses don't show are reported unconfirmed.
 		}

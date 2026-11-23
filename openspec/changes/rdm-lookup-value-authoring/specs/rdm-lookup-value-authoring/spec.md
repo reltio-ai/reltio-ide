@@ -141,7 +141,12 @@ The RDM tenant and lookup type URI SHALL come from the context the extension rec
 
 ### Requirement: The panel shows what the server stored
 
-After the request, the extension SHALL re-fetch the lookup type's values and treat a submitted code as stored when the re-fetch, or the response (one `{ uri, value }` per stored code), holds the code with **every** mapping the submission asked to add, matched by source and code at the source; anything else in the response SHALL be ignored. The same rule SHALL apply to new codes and to existing codes that were appended to. A code the response lists but the re-fetch does not yet show SHALL be reported as added, with a note that it may take a moment to appear in the table. When the re-fetch succeeds, the panel SHALL be re-rendered from it; codes that were added SHALL leave the form, and codes that were not SHALL remain in it as the user entered them, with the reason. When every code was added, the form SHALL close and the panel SHALL say how many values were added. While a submission is in flight, the form SHALL NOT allow a second submission.
+After the request, the extension SHALL re-fetch the lookup type's values and treat a submitted code as stored when the re-fetch, or the response (one `{ uri, value }` per stored code), holds the code with **every** mapping the submission asked to add, matched by source and code at the source; anything else in the response SHALL be ignored. The same rule SHALL apply to new codes and to existing codes that were appended to. A code the response lists but the re-fetch does not yet show SHALL be reported as added, with a note that it may take a moment to appear in the table. When the re-fetch succeeds, the panel SHALL be re-rendered from it; codes that were added SHALL leave the form, and codes that were not SHALL remain in it as the user entered them, with the reason. When every code was added, the form SHALL close and the panel SHALL say how many values were added. While a submission is in flight, the form SHALL NOT allow a second submission. A message shown above the form SHALL be styled for what it is: an error when nothing could be sent or the request failed, a warning when the request was sent but what was stored is unconfirmed, and information when there was nothing to add.
+
+#### Scenario: Nothing to add is not an error
+
+- **WHEN** every submitted mapping is already stored
+- **THEN** the panel SHALL say there is nothing to add, styled as information
 
 #### Scenario: All codes added
 

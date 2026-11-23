@@ -106,3 +106,17 @@ Every connect flow SHALL obtain this behaviour from one shared operation rather 
 
 - **WHEN** the RDM fetch fails after the Business Config was written
 - **THEN** the tenant SHALL remain added with its Business Config, and the RDM failure SHALL be reported on its own
+
+### Requirement: Connecting keeps local RDM edits, and fetches one tenant at a time
+
+A connect flow does not ask before writing, so it SHALL NOT overwrite an RDM configuration that has local changes: unsaved edits in an editor, or saved edits that differ from the baseline. It SHALL leave that file and its baseline as they are and tell the user which files were kept. RDM fetches started by connect flows SHALL run one after another, and an expired session SHALL be reported at most once per environment while they run.
+
+#### Scenario: Re-adding a tenant with local RDM edits
+
+- **WHEN** a tenant whose `RDM/{id}/config.json` has edits not yet applied is connected again
+- **THEN** that file and its baseline SHALL be unchanged, and the user SHALL be told it was kept
+
+#### Scenario: The Setup Wizard connects several tenants
+
+- **WHEN** the wizard connects three tenants with RDM
+- **THEN** their RDM configurations SHALL be fetched one after another, and an expired session SHALL raise one sign-in prompt

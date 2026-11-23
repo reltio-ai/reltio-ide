@@ -493,6 +493,10 @@ assert.ok(/enableScripts: true/.test(panelSource));
 assert.ok(/localResourceRoots: \[\]/.test(panelSource));
 // Only the current render's messages are honoured.
 assert.ok(/parsed\.render !== render\.token/.test(panelSource));
+// A result reads as what it is (PR review): only a known level becomes a class, anything else is an error.
+assert.ok(/postMessage\(\{ type: 'submitResult', message, level \}\)/.test(panelSource), 'the result carries its level');
+assert.ok(/\['error', 'warning', 'info'\]\.indexOf\(message\.level\) >= 0 \? message\.level : 'error'/.test(panelSource), 'the page accepts only known levels');
+assert.ok(/\.status\.warning \{/.test(panelSource), 'a warning has its own style');
 
 // ---------------------------------------------------------------------------
 // Tier B — the request postRdmLookupValues sends (design D5, D8)
@@ -608,6 +612,8 @@ async function withFetch(respond, fn) {
 	assert.ok(/planLookupValues\(values, current, ctx\)/.test(handler), 'identifiers come from the render context');
 	assert.ok(!/render\.context\s*=/.test(handler), 'the handler never rewrites the context');
 	assert.ok(ext.includes('setLookupValuesSubmitHandler(submitLookupValues)'), 'the handler is registered');
+	assert.ok(/report\(`Nothing to add: [^`]*`, 'info'\)/.test(ext), 'nothing to add is news, not an error');
+	assert.ok(/postError \? 'error' : 'warning'/.test(ext), 'sent but unconfirmed is a warning unless the request failed');
 
 	// -------------------------------------------------------------------------
 	// Tier B — no command is added

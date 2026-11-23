@@ -28,7 +28,7 @@ export interface ParsedRdmDocument {
 }
 
 /**
- * Parse an `RDM.{rdmTenantId}.reltio.json` document.
+ * Parse an RDM configuration document, `RDM/{rdmTenantId}/config.json`.
  *
  * Typed separately from `parseDocument` on purpose: `sources` is a top-level key
  * of both the L3 business model and an RDM configuration, but the item shapes

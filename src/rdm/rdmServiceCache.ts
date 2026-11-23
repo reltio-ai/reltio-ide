@@ -9,9 +9,9 @@
  *
  * In memory only, deliberately: nothing here is written to disk, and after an
  * extension host restart the URI is rediscovered rather than recovered. There
- * is no expiry either — a tenant's RDM host is stable, and a wrong entry
- * surfaces as a failed request the user can retry rather than as silently
- * wrong data.
+ * is no expiry. Instead an entry is forgotten when a request to it fails (so
+ * the retry rediscovers it) and when the environment's session ends (sign-out,
+ * an expired session, or removing the environment).
  */
 const serviceUriByTenant = new Map<string, string>();
 
@@ -35,7 +35,20 @@ export function recallRdmServiceUri(
 	return serviceUriByTenant.get(key(environmentName, tenantId));
 }
 
-/** Exposed for tests; the extension never needs to clear a live cache. */
+/** After a failed request: the next one looks the address up again. */
+export function forgetRdmServiceUri(environmentName: string, tenantId: string): void {
+	serviceUriByTenant.delete(key(environmentName, tenantId));
+}
+
+/** When an environment's session ends: every tenant of it looks its address up again. */
+export function forgetRdmServiceUris(environmentName: string): void {
+	const prefix = key(environmentName, '');
+	for (const k of [...serviceUriByTenant.keys()]) {
+		if (k.startsWith(prefix)) serviceUriByTenant.delete(k);
+	}
+}
+
+/** Exposed for tests. */
 export function clearRdmServiceUriCache(): void {
 	serviceUriByTenant.clear();
 }

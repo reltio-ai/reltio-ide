@@ -189,6 +189,10 @@ New codes are still built with `buildLookupValuesCreateBody` (D3). Nothing is ev
 
 **Risk — lost update:** between the fetch and the post, another user's change to the same code would be overwritten. The window is the length of one request. The fetched `version` is sent back, so if the service checks it, a stale post is rejected and reported, not applied.
 
+### D10: A result reads as what it is (PR review #20)
+
+Every message shown above the form used the error style, including "nothing to add" and "sent, but the table could not be refreshed". `postLookupValuesResult` now takes a level, `error`, `warning` or `info`; the page accepts only those three as a class name and falls back to `error`. Add Value also refuses the Git-repository placeholder token with a message, and forgets the remembered service URI after a failed request.
+
 ## Risks / Trade-offs
 
 - **[Risk]** The service may require `updatedBy` / `updateDate` / `version` even for a new value (D3) → **Mitigation**: the first manual QA step. If it does, the error detail surfaces in the panel with every code kept, and the body builder is the single place to change.
