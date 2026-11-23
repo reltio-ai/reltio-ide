@@ -48,7 +48,7 @@ export async function addEntityType(
 	const obj = buildEntityTypeObject(label);
 	const jsonText = JSON.stringify(obj, null, 2);
 	const newIdx = model.entityTypes?.length ?? 0;
-	const ok = await insertIntoArray(documentUri, ast, ['entityTypes'], jsonText);
+	const ok = await insertIntoArray(documentUri, ast, ['entityTypes'], jsonText, BOOTSTRAP_ROOT_ARRAY_KEYS);
 	if (ok) await revealInsertionInEditor(documentUri, ['entityTypes', newIdx]);
 	return ok;
 }
@@ -65,7 +65,7 @@ export async function addRelationType(
 	const obj = buildRelationTypeObject(label);
 	const jsonText = JSON.stringify(obj, null, 2);
 	const newIdx = model.relationTypes?.length ?? 0;
-	const ok = await insertIntoArray(documentUri, ast, ['relationTypes'], jsonText);
+	const ok = await insertIntoArray(documentUri, ast, ['relationTypes'], jsonText, BOOTSTRAP_ROOT_ARRAY_KEYS);
 	if (ok) await revealInsertionInEditor(documentUri, ['relationTypes', newIdx]);
 	return ok;
 }
@@ -202,7 +202,7 @@ export async function addGroupingType(
 	const obj = buildGroupingTypeObject(label);
 	const jsonText = JSON.stringify(obj, null, 2);
 	const newIdx = model.groupingTypes?.length ?? 0;
-	const ok = await insertIntoArray(documentUri, ast, ['groupingTypes'], jsonText);
+	const ok = await insertIntoArray(documentUri, ast, ['groupingTypes'], jsonText, BOOTSTRAP_ROOT_ARRAY_KEYS);
 	if (ok) await revealInsertionInEditor(documentUri, ['groupingTypes', newIdx]);
 	return ok;
 }
@@ -216,7 +216,7 @@ export async function addGraphType(documentUri: vscode.Uri, _ast: Node): Promise
 	const obj = buildGraphTypeObject(label);
 	const jsonText = JSON.stringify(obj, null, 2);
 	const newIdx = model.graphTypes?.length ?? 0;
-	const ok = await insertIntoArray(documentUri, ast, ['graphTypes'], jsonText);
+	const ok = await insertIntoArray(documentUri, ast, ['graphTypes'], jsonText, BOOTSTRAP_ROOT_ARRAY_KEYS);
 	if (ok) await revealInsertionInEditor(documentUri, ['graphTypes', newIdx]);
 	return ok;
 }
@@ -230,7 +230,7 @@ export async function addHierarchyType(documentUri: vscode.Uri, _ast: Node): Pro
 	const obj = buildHierarchyTypeObject(label);
 	const jsonText = JSON.stringify(obj, null, 2);
 	const newIdx = model.hierarchyTypes?.length ?? 0;
-	const ok = await insertIntoArray(documentUri, ast, ['hierarchyTypes'], jsonText);
+	const ok = await insertIntoArray(documentUri, ast, ['hierarchyTypes'], jsonText, BOOTSTRAP_ROOT_ARRAY_KEYS);
 	if (ok) await revealInsertionInEditor(documentUri, ['hierarchyTypes', newIdx]);
 	return ok;
 }
@@ -244,7 +244,7 @@ export async function addInteractionType(documentUri: vscode.Uri, _ast: Node): P
 	const obj = buildInteractionTypeObject(label);
 	const jsonText = JSON.stringify(obj, null, 2);
 	const newIdx = model.interactionTypes?.length ?? 0;
-	const ok = await insertIntoArray(documentUri, ast, ['interactionTypes'], jsonText);
+	const ok = await insertIntoArray(documentUri, ast, ['interactionTypes'], jsonText, BOOTSTRAP_ROOT_ARRAY_KEYS);
 	if (ok) await revealInsertionInEditor(documentUri, ['interactionTypes', newIdx]);
 	return ok;
 }
@@ -258,7 +258,7 @@ export async function addSource(documentUri: vscode.Uri, _ast: Node): Promise<bo
 	const obj = buildSourceObject(label);
 	const jsonText = JSON.stringify(obj, null, 2);
 	const newIdx = model.sources?.length ?? 0;
-	const ok = await insertIntoArray(documentUri, ast, ['sources'], jsonText);
+	const ok = await insertIntoArray(documentUri, ast, ['sources'], jsonText, BOOTSTRAP_ROOT_ARRAY_KEYS);
 	if (ok) await revealInsertionInEditor(documentUri, ['sources', newIdx]);
 	return ok;
 }
@@ -358,7 +358,8 @@ function resolveAttributeParentPath(item: ConfigTreeItem): (string | number)[] |
 	return undefined;
 }
 
-const BOOTSTRAP_ROOT_ARRAY_KEYS = new Set([
+/** Top-level arrays the L3 insert commands may create. */
+export const BOOTSTRAP_ROOT_ARRAY_KEYS: ReadonlySet<string> = new Set([
 	'entityTypes',
 	'relationTypes',
 	'groupingTypes',
@@ -386,7 +387,7 @@ async function appendToOptionalArray(
 	const arrayPath = [...parentPath, arrayKey];
 	const insertion = findArrayInsertionPoint(text, ast, arrayPath);
 	if (insertion.offset >= 0) {
-		const ok = await insertIntoArray(documentUri, ast, arrayPath, jsonText);
+		const ok = await insertIntoArray(documentUri, ast, arrayPath, jsonText, BOOTSTRAP_ROOT_ARRAY_KEYS);
 		if (ok) await revealInsertionInEditor(documentUri, revealPath);
 		return ok;
 	}
@@ -483,11 +484,21 @@ async function insertMissingRootArrayProperty(
 	return vscode.workspace.applyEdit(edit);
 }
 
-async function insertIntoArray(
+/**
+ * Insert `jsonText` as a new element of the array at `arrayPath`.
+ *
+ * `creatableRootKeys` is required rather than defaulted: it names the top-level
+ * arrays this caller is willing to create when the document does not declare
+ * them. The L3 set and the RDM set overlap on `sources` but differ elsewhere,
+ * so a caller that inherited the wrong set would appear to work for the shared
+ * key and fail silently for the rest.
+ */
+export async function insertIntoArray(
 	documentUri: vscode.Uri,
 	ast: Node,
 	arrayPath: (string | number)[],
 	jsonText: string,
+	creatableRootKeys: ReadonlySet<string>,
 ): Promise<boolean> {
 	const document = await vscode.workspace.openTextDocument(documentUri);
 	const text = document.getText();
@@ -497,7 +508,7 @@ async function insertIntoArray(
 		const top = arrayPath.length === 1 ? arrayPath[0] : undefined;
 		if (
 			typeof top === 'string' &&
-			BOOTSTRAP_ROOT_ARRAY_KEYS.has(top) &&
+			creatableRootKeys.has(top) &&
 			!rootObjectDeclaresProperty(text, top)
 		) {
 			return insertMissingRootArrayProperty(documentUri, document, top, jsonText);

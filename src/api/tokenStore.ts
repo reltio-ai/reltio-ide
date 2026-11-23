@@ -26,6 +26,7 @@ export class TokenStore {
 	private readonly aliases = new Map<string, string>();
 	private readonly sessionData = new Map<string, { refreshToken: string; expiresAt: number }>();
 	private readonly refreshInFlight = new Map<string, Promise<boolean>>();
+	private readonly sessionClearedListeners: Array<(environmentName: string) => void> = [];
 
 	setToken(environmentName: string, token: string): void {
 		this.aliases.delete(environmentName);
@@ -51,6 +52,12 @@ export class TokenStore {
 		this.tokens.delete(environmentName);
 		this.aliases.delete(environmentName);
 		this.sessionData.delete(environmentName);
+		for (const listener of this.sessionClearedListeners) listener(environmentName);
+	}
+
+	/** Runs after every `clearSession`, so state tied to a session can end with it. */
+	onSessionCleared(listener: (environmentName: string) => void): void {
+		this.sessionClearedListeners.push(listener);
 	}
 
 	/** Store a shared promise for an in-flight refresh so concurrent 401s share one request. */
