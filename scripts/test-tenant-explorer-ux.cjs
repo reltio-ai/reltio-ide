@@ -15,7 +15,20 @@
  * Windows paths; real UI across OSes is manual QA, Tier C), TREE-013 (menu visibility for every
  * node type: view/item/context incl. inline, view/title and commandPalette when-clauses evaluated
  * against every contextValue the tree nodes can produce; Delete / Rename on Browse Entities is
- * blocked by BUG-012, Reset OAuth Client on a no-tenants browser-login environment by BUG-013).
+ * blocked by BUG-012, Reset OAuth Client on a no-tenants browser-login environment by BUG-013),
+ * TREE-014 (RDM rows under a tenant: RDM group between Business Config and Workflows, one root
+ * per RDM tenant sorted by id, unreadable root, counted sections, item labels, editor text over
+ * disk, file removed or broken after render), TREE-015 (RDM reveal: getParent mirrors getChildren
+ * for group / root / section / item, unreadable item has no parent, leaf click reveals), TREE-016
+ * (reveal for L3, history, workflow and git rows: getParent returns the row each was rendered
+ * under; config rows deeper than an entity type are not walked), TREE-017 (History snapshot rows
+ * newest first, removeTenant / removeEnvironment drop History exposure and workflow cache for
+ * that scope only, debounced refresh paths), TREE-018 (findEntityTypeItem across tenants by uri
+ * name, id matches the rendered row), TREE-019 (Browse Entities counts: (0) offline, signed-out
+ * plain label, single and or() filters with quote escaping, failed count keeps the row; fetch is
+ * stubbed), TREE-020 (less common L3 sections: object-valued section, entity type sub-sections,
+ * association / surrogate / rule-based / dependent / hidden / cleanse rows, negative match rule,
+ * survivorship mappings and fallbacks, group / interaction / category / change request types).
  *
  * The shared vscode stub is extended at runtime only (scripts/lib is unchanged): EventEmitter
  * gets the real API's payload forwarding and dispose semantics, `window.showTextDocument` is
@@ -1468,6 +1481,586 @@ function evalWhenClause(when, ctx, known) {
 			const skip = SKIP[k] ?? [];
 			assert.deepStrictEqual(sorted(got).filter(v => !skip.includes(v)), valuesWhere(spec[k]).filter(v => !skip.includes(v)),
 				`TREE-013 #8: ${k} shows exactly on its intended rows`);
+		}
+	}
+
+	// Shared by TREE-014 .. TREE-019: a real EnvironmentManager scanning a legacy-suffixed
+	// workspace in the in-memory file system, so tenant locations, hasL3 / hasRdm and the
+	// path-to-tenant index all come from the real scan rather than a stubbed list.
+	const enc = v => new TextEncoder().encode(typeof v === 'string' ? v : JSON.stringify(v));
+	const tail = uri => (uri ? uri.slice(uri.lastIndexOf('/') + 1) : '');
+	const RENV = 'dev.reltio.com';
+	async function legacyWorkspace(tenantIds) {
+		const mem = installMemoryFs();
+		for (const t of tenantIds) await mem.createDirectory(U(`/ws/${RENV}.reltio.environment/${t}.reltio.tenant`));
+		const mgr = new EnvironmentManager(U('/ws'));
+		await mgr.scanEnvironments();
+		return { mem, mgr };
+	}
+	const withOpenDocs = async (docs, fn) => {
+		const original = vscode.workspace.textDocuments;
+		vscode.workspace.textDocuments = docs;
+		try {
+			return await fn();
+		} finally {
+			vscode.workspace.textDocuments = original;
+		}
+	};
+
+	const RDM_MODELS = {
+		zeta: { sources: [{ uri: 'rdm/sources/CRM' }], lookupTypes: [] },
+		alpha: {
+			lookupTypes: [
+				{ uri: 'rdm/lookupTypes/EmailTypes', label: 'Email Types' },
+				{ uri: 'rdm/lookupTypes/PhoneTypes' },
+				{},
+			],
+			sources: [{ uri: 'rdm/sources/SAP', label: 'SAP' }],
+			unknownSection: [{ uri: 'rdm/unknown/X' }],
+		},
+	};
+	const RDM_BROKEN = '{ "lookupTypes": [ ';
+	const rdm = await legacyWorkspace(['t1', 't2', 't3']);
+	{
+		const { mem, mgr } = rdm;
+		await mem.writeFile(mgr.getL3Uri(RENV, 't1'), enc({ entityTypes: [ENTITY_TYPE] }));
+		for (const [id, model] of Object.entries(RDM_MODELS)) await mem.writeFile(mgr.getRdmUri(RENV, 't1', id), enc(model));
+		await mem.writeFile(mgr.getRdmUri(RENV, 't1', 'broken'), enc(RDM_BROKEN));
+		// Not RDM tenants: a file directly under RDM/ and a subfolder without config.json.
+		const rdmDir = vscode.Uri.joinPath(mgr.getTenantRootUri(RENV, 't1'), 'RDM');
+		await mem.writeFile(vscode.Uri.joinPath(rdmDir, 'README.md'), enc('# RDM'));
+		await mem.writeFile(vscode.Uri.joinPath(rdmDir, 'notes', 'readme.txt'), enc('x'));
+		await mem.writeFile(mgr.getRdmUri(RENV, 't2', 'solo'), enc({ lookupTypes: [{ uri: 'rdm/lookupTypes/Only' }] }));
+	}
+	// RDM tenant ids actually configured per tenant, as written above.
+	const rdmIdsOf = { t1: [...Object.keys(RDM_MODELS), 'broken'], t2: ['solo'], t3: [] };
+	const sortedIds = ids => [...ids].sort((a, b) => a.localeCompare(b));
+	const rdmTokens = new TokenStore();
+	rdmTokens.setToken(RENV, 'tok');
+	const rdmProvider = new MultiTenantTreeProvider(rdm.mgr, rdmTokens, memento(), null);
+
+	// ── TREE-014: RDM rows under a tenant: group, roots, sections, items, unreadable, refresh ──
+	{
+		const { mem, mgr } = rdm;
+		const [envNode] = await rdmProvider.getChildren();
+		assert.strictEqual(envNode.environmentName, RENV, 'TREE-014 #1: the scanned environment is listed');
+		const tenantRows = await rdmProvider.getChildren(envNode);
+		assert.deepStrictEqual(tenantRows.map(t => t.tenantId), ['t1', 't2', 't3'], 'TREE-014 #1: tenants listed in id order');
+
+		// #1 Tenant children: Business Config (L3 only), then RDM (RDM files only), then Workflows.
+		for (const row of tenantRows) {
+			const hasRdm = rdmIdsOf[row.tenantId].length > 0;
+			assert.strictEqual(row.hasRdm, hasRdm, `TREE-014 #1: ${row.tenantId} hasRdm follows its RDM/ folder`);
+			const kids = await rdmProvider.getChildren(row);
+			const expected = [
+				...(row.hasL3 ? ['BusinessConfigFolderNode'] : []),
+				...(hasRdm ? ['RdmGroupNode'] : []),
+				'WorkflowsFolderNode',
+			];
+			assert.deepStrictEqual(kids.map(k => k.constructor.name), expected,
+				`TREE-014 #1: ${row.tenantId} children are ${expected.join(', ')}, got ${kids.map(k => k.constructor.name).join(', ')}`);
+			const group = kids.find(k => k instanceof RdmGroupNode);
+			if (group) {
+				assert.strictEqual(String(group.label), 'RDM', 'TREE-014 #1: the group row is labelled RDM');
+				assert.strictEqual(group.id, `rdmgroup:${RENV}/${row.tenantId}`, 'TREE-014 #1: group id is env and tenant scoped');
+				assert.strictEqual(group.collapsibleState, vscode.TreeItemCollapsibleState.Collapsed, 'TREE-014 #1: the group is expandable');
+			}
+		}
+
+		// #2 One root per RDM tenant with a config.json, sorted by id; an unparsable file still gets
+		// a root, marked unreadable and not expandable. README.md and a folder without config.json are not roots.
+		const t1Group = new RdmGroupNode(RENV, 't1');
+		const roots = await rdmProvider.getChildren(t1Group);
+		assert.deepStrictEqual(roots.map(r => String(r.label)), sortedIds(rdmIdsOf.t1),
+			`TREE-014 #2: roots are the configured RDM tenant ids in order, got ${JSON.stringify(roots.map(r => String(r.label)))}`);
+		for (const root of roots) {
+			const broken = root.rdmTenantId === 'broken';
+			assert.strictEqual(root.fileUri.toString(), mgr.getRdmUri(RENV, 't1', root.rdmTenantId).toString(),
+				`TREE-014 #2: ${root.rdmTenantId} root points at its config.json`);
+			assert.strictEqual(root.unreadable, broken, `TREE-014 #2: ${root.rdmTenantId} unreadable flag`);
+			assert.strictEqual(root.collapsibleState,
+				broken ? vscode.TreeItemCollapsibleState.None : vscode.TreeItemCollapsibleState.Collapsed,
+				`TREE-014 #2: ${root.rdmTenantId} collapsible state`);
+			if (broken) {
+				assert.strictEqual(root.description, 'could not be read', 'TREE-014 #2: unreadable root says so');
+				assert.deepStrictEqual(await rdmProvider.getChildren(root), [], 'TREE-014 #2: unreadable root has no children');
+			}
+		}
+
+		// #3 Root children: the known sections with entries, in rdmSectionKeys() order, counted.
+		const byId = Object.fromEntries(roots.map(r => [r.rdmTenantId, r]));
+		for (const [id, model] of Object.entries(RDM_MODELS)) {
+			const folders = await rdmProvider.getChildren(byId[id]);
+			const keys = rdmSectionKeys().filter(k => Array.isArray(model[k]) && model[k].length > 0);
+			assert.deepStrictEqual(folders.map(f => f.sectionKey), keys,
+				`TREE-014 #3: ${id} shows only non-empty known sections in order, got ${JSON.stringify(folders.map(f => f.sectionKey))}`);
+			for (const f of folders) {
+				const m = /^(.+) \((\d+)\)$/.exec(String(f.label));
+				assert.ok(m, `TREE-014 #3: folder label "${f.label}" carries a count`);
+				assert.strictEqual(Number(m[2]), model[f.sectionKey].length, `TREE-014 #3: ${id}/${f.sectionKey} count`);
+				assert.strictEqual(f.contextValue, `reltio.rdm.folder.${f.sectionKey}`, 'TREE-014 #3: folder contextValue');
+
+				// #4 Items: label, else the uri's last segment, else (unnamed); uri as description; leaves.
+				const items = await rdmProvider.getChildren(f);
+				const entries = model[f.sectionKey];
+				assert.deepStrictEqual(items.map(i => String(i.label)), entries.map(e => e.label || tail(e.uri) || '(unnamed)'),
+					`TREE-014 #4: ${id}/${f.sectionKey} item labels`);
+				items.forEach((item, i) => {
+					assert.deepStrictEqual(item.jsonPath, [f.sectionKey, i], 'TREE-014 #4: item jsonPath is [section, index]');
+					assert.strictEqual(item.description, entries[i].uri, 'TREE-014 #4: item description is its uri');
+					assert.strictEqual(item.typeName, tail(entries[i].uri), 'TREE-014 #4: typeName is the uri tail');
+					assert.strictEqual(item.contextValue, `reltio.rdm.item.${f.sectionKey}`, 'TREE-014 #4: item contextValue');
+				});
+				for (const item of items) {
+					assert.deepStrictEqual(await rdmProvider.getChildren(item), [], 'TREE-014 #4: RDM items are leaves');
+				}
+			}
+		}
+
+		// #5 An open editor's text wins over disk, for the roots and for their sections.
+		const alphaUri = mgr.getRdmUri(RENV, 't1', 'alpha');
+		const zetaUri = mgr.getRdmUri(RENV, 't1', 'zeta');
+		const edited = { sources: [{ uri: 'rdm/sources/A' }, { uri: 'rdm/sources/B' }, { uri: 'rdm/sources/C' }] };
+		await withOpenDocs([
+			{ uri: alphaUri, getText: () => JSON.stringify(edited) },
+			{ uri: zetaUri, getText: () => '{ "sources": [' },
+		], async () => {
+			const openRoots = await rdmProvider.getChildren(t1Group);
+			const flags = Object.fromEntries(openRoots.map(r => [r.rdmTenantId, r.unreadable]));
+			assert.deepStrictEqual(flags, { alpha: false, broken: true, zeta: true },
+				`TREE-014 #5: unreadable follows the open editor text, got ${JSON.stringify(flags)}`);
+			const alphaFolders = await rdmProvider.getChildren(openRoots.find(r => r.rdmTenantId === 'alpha'));
+			assert.deepStrictEqual(alphaFolders.map(f => String(f.label)), [`Sources (${edited.sources.length})`],
+				'TREE-014 #5: sections come from the unsaved editor text');
+		});
+
+		// #6 The file going away (or turning invalid) after render empties the rows instead of throwing.
+		const [lookupFolder] = await rdmProvider.getChildren(byId.alpha);
+		await mem.writeFile(alphaUri, enc(RDM_BROKEN));
+		assert.deepStrictEqual(await rdmProvider.getChildren(byId.alpha), [], 'TREE-014 #6: a root over an invalid file expands to nothing');
+		assert.deepStrictEqual(await rdmProvider.getChildren(lookupFolder), [], 'TREE-014 #6: a folder over an invalid file expands to nothing');
+		await mem.delete(alphaUri);
+		assert.deepStrictEqual(await rdmProvider.getChildren(lookupFolder), [], 'TREE-014 #6: a folder over a deleted file expands to nothing');
+		const afterDelete = await rdmProvider.getChildren(t1Group);
+		assert.deepStrictEqual(afterDelete.map(r => r.rdmTenantId), sortedIds(rdmIdsOf.t1.filter(x => x !== 'alpha')),
+			'TREE-014 #6: a deleted configuration drops its root on the next expand');
+		await mem.writeFile(alphaUri, enc(RDM_MODELS.alpha));
+	}
+
+	// ── TREE-015: RDM reveal: getParent mirrors getChildren, leaf click reveals ──
+	{
+		const { mem, mgr } = rdm;
+		const [envNode] = await rdmProvider.getChildren();
+		const tenantRows = await rdmProvider.getChildren(envNode);
+		let checked = 0;
+		for (const row of tenantRows.filter(r => r.hasRdm)) {
+			const group = (await rdmProvider.getChildren(row)).find(k => k instanceof RdmGroupNode);
+			const groupParent = await rdmProvider.getParent(group);
+			assert.ok(groupParent instanceof TenantNode, 'TREE-015 #1: the RDM group hangs off its tenant');
+			assert.strictEqual(groupParent.id, row.id, `TREE-015 #1: group parent id matches the rendered tenant row ${row.id}`);
+			assert.strictEqual(groupParent.hasRdm, true, 'TREE-015 #1: the rebuilt tenant knows it has RDM');
+			assert.strictEqual(groupParent.hasL3, row.hasL3, 'TREE-015 #1: the rebuilt tenant keeps hasL3');
+			for (const root of await rdmProvider.getChildren(group)) {
+				const rootParent = await rdmProvider.getParent(root);
+				assert.ok(rootParent instanceof RdmGroupNode, 'TREE-015 #1: a root hangs off the RDM group');
+				assert.strictEqual(rootParent.id, group.id, 'TREE-015 #1: root parent id matches the rendered group');
+				for (const folder of await rdmProvider.getChildren(root)) {
+					const folderParent = await rdmProvider.getParent(folder);
+					assert.ok(folderParent instanceof RdmRootNode, 'TREE-015 #1: a section hangs off its root');
+					assert.strictEqual(folderParent.id, root.id, 'TREE-015 #1: section parent id matches the rendered root');
+					for (const item of await rdmProvider.getChildren(folder)) {
+						const itemParent = await rdmProvider.getParent(item);
+						assert.ok(itemParent instanceof RdmFolderNode, 'TREE-015 #1: an item hangs off its section');
+						assert.strictEqual(itemParent.id, folder.id, 'TREE-015 #1: item parent id matches the rendered section');
+						assert.strictEqual(String(itemParent.label), String(folder.label), 'TREE-015 #1: item parent keeps the counted label');
+						checked++;
+					}
+				}
+			}
+		}
+		const expectedItems = Object.values(RDM_MODELS)
+			.reduce((n, m) => n + rdmSectionKeys().reduce((k, key) => k + (Array.isArray(m[key]) ? m[key].length : 0), 0), 0) + 1; // + t2/solo
+		assert.strictEqual(checked, expectedItems, `TREE-015 #1: every RDM item was walked (${checked} of ${expectedItems})`);
+
+		// #2 An item whose file no longer parses has no parent to reveal through.
+		const alphaUri = mgr.getRdmUri(RENV, 't1', 'alpha');
+		const alphaRoot = (await rdmProvider.getChildren(new RdmGroupNode(RENV, 't1'))).find(r => r.rdmTenantId === 'alpha');
+		const [folder] = await rdmProvider.getChildren(alphaRoot);
+		const [item] = await rdmProvider.getChildren(folder);
+		await mem.writeFile(alphaUri, enc(RDM_BROKEN));
+		assert.strictEqual(await rdmProvider.getParent(item), undefined, 'TREE-015 #2: item over an unreadable file has no parent');
+		await mem.writeFile(alphaUri, enc(RDM_MODELS.alpha));
+
+		// #3 Primary click: leaves reveal in the editor; group, root and section keep expand/collapse.
+		const resolved = rdmProvider.resolveTreeItem(item, item, undefined);
+		assert.strictEqual(resolved.command && resolved.command.command, 'reltio.revealInEditor', 'TREE-015 #3: an RDM item click reveals it');
+		assert.strictEqual(resolved.command.arguments[0], item, 'TREE-015 #3: reveal carries the item');
+		for (const n of [new RdmGroupNode(RENV, 't1'), alphaRoot, folder]) {
+			assert.strictEqual(rdmProvider.resolveTreeItem(n, n, undefined).command, undefined,
+				`TREE-015 #3: ${n.constructor.name} gets no click command`);
+		}
+		const preset = { command: 'custom.cmd', title: 'Custom' };
+		const [other] = await rdmProvider.getChildren(folder);
+		other.command = preset;
+		assert.strictEqual(rdmProvider.resolveTreeItem(other, other, undefined).command, preset,
+			'TREE-015 #3: an existing RDM item command is not overwritten');
+	}
+
+	// ── TREE-016: reveal for L3, history, workflow and git rows: getParent mirrors getChildren ──
+	{
+		const { mem, mgr } = rdm;
+		const histDir = mgr.getHistoryDirectoryUri(RENV, 't1');
+		await mem.writeFile(vscode.Uri.joinPath(histDir, 'L3-alice---1700000000000.reltio.json'), enc({}));
+		rdmProvider.markWorkflowsLoaded(RENV, 't1',
+			[{ id: 'p1:1:1', type: 'p1', displayName: 'P1', deploymentId: 'd', deployTime: 1 }],
+			[{ module: 'jars/a.jar', name: 'A', description: '', createdBy: 'u', createTime: 1 }],
+			[{ module: 'jars/b.jar', updateTime: 1, size: 1 }]);
+		const seen = new Set();
+		const shouldCheck = c => !(c instanceof ConfigTreeItem) || c.jsonPath.length <= 2;
+		const shouldDescend = c => !(c instanceof ConfigTreeItem) || c.jsonPath.length <= 1 || c.nodeType === 'entityType';
+		const walk = async (parent, provider, tag) => {
+			for (const child of await provider.getChildren(parent)) {
+				if (!shouldCheck(child)) continue;
+				const got = await provider.getParent(child);
+				const want = parent ? parent.id : undefined;
+				assert.strictEqual(got ? got.id : undefined, want,
+					`TREE-016 #1: ${tag} getParent(${child.constructor.name} ${child.id}) is the row it was rendered under (${want})`);
+				if (got && parent) assert.strictEqual(got.constructor.name, parent.constructor.name, `TREE-016 #1: ${child.id} parent type`);
+				seen.add(child.constructor.name);
+				if (shouldDescend(child)) await walk(child, provider, tag);
+			}
+		};
+		try {
+			await walk(undefined, rdmProvider, 'tenant workspace');
+		} finally {
+			rdmProvider.clearWorkflowCache(RENV, 't1');
+		}
+		for (const kind of ['EnvironmentNode', 'TenantNode', 'BusinessConfigFolderNode', 'HistoryFolderNode', 'HistorySnapshotNode',
+			'ConfigTreeItem', 'WorkflowsFolderNode', 'WorkflowConnectRepoActionNode', 'ProcessDefinitionsFolderNode', 'ProcessDefinitionNode',
+			'JarDeploymentsFolderNode', 'JarDeploymentNode', 'UnregisteredJarsFolderNode', 'UnregisteredJarNode']) {
+			assert.ok(seen.has(kind), `TREE-016 #1: the walk reached a ${kind}`);
+		}
+
+		// #2 Git workspace: folders hang off their parent folder or the environment, configs off their folder.
+		installMemoryFs();
+		const gitSources = [
+			{ environmentName: 'repo', tenantId: 'DP/dp_lif/BusinessConfig.json', label: 'dp_lif', folders: ['DP', 'dp_lif'] },
+			{ environmentName: 'repo', tenantId: 'DP/BusinessConfig.json', label: 'dpcfg', folders: ['DP'] },
+			{ environmentName: 'repo', tenantId: 'top', label: 'top', folders: [] },
+		];
+		const gitTokens = new TokenStore();
+		gitTokens.setToken('repo', GIT_SOURCE_TOKEN);
+		const gitProvider = new MultiTenantTreeProvider(stubManager([{ name: 'repo', tenants: [] }], gitSources), gitTokens, memento(), null);
+		seen.clear();
+		const gitWalk = async (parent) => {
+			for (const child of await gitProvider.getChildren(parent)) {
+				if (!(child instanceof EnvironmentNode || child instanceof GitFolderNode || child instanceof TenantNode)) continue;
+				const got = await gitProvider.getParent(child);
+				assert.strictEqual(got ? got.id : undefined, parent ? parent.id : undefined,
+					`TREE-016 #2: git getParent(${child.id}) is the row it was rendered under`);
+				seen.add(child.constructor.name);
+				if (!(child instanceof TenantNode)) await gitWalk(child);
+			}
+		};
+		await gitWalk(undefined);
+		assert.deepStrictEqual([...seen].sort(), ['EnvironmentNode', 'GitFolderNode', 'TenantNode'], 'TREE-016 #2: git walk reached every row type');
+
+		// #3 A config row over a missing L3 has no parent.
+		const orphan = new ConfigTreeItem('Individual', 'entityType', ['entityTypes', 0], 1, undefined, U('/nowhere/BusinessConfig.json'));
+		assert.strictEqual(await rdmProvider.getParent(orphan), undefined, 'TREE-016 #3: no parent without a readable L3');
+	}
+
+	// ── TREE-017: History rows, and removal / refresh hygiene ──
+	{
+		const { mem, mgr } = await legacyWorkspace(['t1', 't2']);
+		const histDir = mgr.getHistoryDirectoryUri(RENV, 't1');
+		const snaps = [['alice', 1700000000000], ['bob', 1710000000000], ['carol', 1690000000000]];
+		for (const [user, ts] of snaps) await mem.writeFile(vscode.Uri.joinPath(histDir, `L3-${user}---${ts}.reltio.json`), enc({}));
+		await mem.writeFile(vscode.Uri.joinPath(histDir, 'notes.txt'), enc('x'));
+		await mem.writeFile(vscode.Uri.joinPath(histDir, 'L3-dave---notanumber.reltio.json'), enc({}));
+		const provider = new MultiTenantTreeProvider(mgr, new TokenStore(), memento(), null);
+		await provider.getChildren();
+
+		// #1 Snapshots newest first, labelled dd-mm-yyyy hh:mm (user); all but the oldest have an older neighbour.
+		const bc = await provider.getChildren(new BusinessConfigFolderNode(RENV, 't1'));
+		const hist = bc.find(n => n instanceof HistoryFolderNode);
+		assert.ok(hist, 'TREE-017 #1: snapshots on disk show History without a fetch this session');
+		assert.strictEqual(hist.snapshotCount, snaps.length, 'TREE-017 #1: History counts only well-formed snapshot files');
+		const rows = await provider.getChildren(hist);
+		const pad = n => String(n).padStart(2, '0');
+		const fmt = (ts, user) => {
+			const d = new Date(ts);
+			return `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())} (${user})`;
+		};
+		const newestFirst = [...snaps].sort((a, b) => b[1] - a[1]);
+		assert.deepStrictEqual(rows.map(r => String(r.label)), newestFirst.map(([u, ts]) => fmt(ts, u)),
+			`TREE-017 #1: snapshot rows newest first, got ${JSON.stringify(rows.map(r => String(r.label)))}`);
+		assert.deepStrictEqual(rows.map(r => r.hasOlderNeighbor), newestFirst.map((_, i) => i < newestFirst.length - 1),
+			'TREE-017 #1: only the oldest snapshot has no older neighbour');
+		rows.forEach((r, i) => assert.strictEqual(r.fileUri.toString(),
+			vscode.Uri.joinPath(histDir, `L3-${newestFirst[i][0]}---${newestFirst[i][1]}.reltio.json`).toString(),
+			'TREE-017 #1: each row opens its own file'));
+
+		// #2 Removing a tenant drops its session History marker and its workflow cache.
+		const bcOf = async t => (await provider.getChildren(new BusinessConfigFolderNode(RENV, t))).map(n => n.constructor.name);
+		assert.deepStrictEqual(await bcOf('t2'), [], 'TREE-017 #2: no History before a fetch');
+		provider.markHistoryExposed(RENV, 't2');
+		provider.markWorkflowsLoaded(RENV, 't2', [], []);
+		assert.deepStrictEqual(await bcOf('t2'), ['HistoryFolderNode'], 'TREE-017 #2: a fetch exposes History');
+		assert.strictEqual(provider.hasFetchedProcessDefinitions(RENV, 't2'), true, 'TREE-017 #2: workflows cached');
+		provider.removeTenant(RENV, 't2');
+		assert.deepStrictEqual(await bcOf('t2'), [], 'TREE-017 #2: removeTenant hides the exposed History');
+		assert.strictEqual(provider.hasFetchedProcessDefinitions(RENV, 't2'), false, 'TREE-017 #2: removeTenant evicts workflows');
+
+		// #3 Removing an environment clears only that environment, even when its name prefixes another.
+		const SHORT = 'dev.reltio';
+		for (const env of [RENV, SHORT]) {
+			provider.markHistoryExposed(env, 't2');
+			provider.markWorkflowsLoaded(env, 't2', [], []);
+		}
+		provider.removeEnvironment(SHORT);
+		assert.deepStrictEqual(await bcOf('t2'), ['HistoryFolderNode'], `TREE-017 #3: removing ${SHORT} keeps ${RENV}'s History`);
+		assert.strictEqual(provider.hasFetchedProcessDefinitions(RENV, 't2'), true, `TREE-017 #3: removing ${SHORT} keeps ${RENV}'s workflows`);
+		assert.strictEqual(provider.hasFetchedProcessDefinitions(SHORT, 't2'), false, 'TREE-017 #3: the removed environment loses its workflows');
+		provider.removeEnvironment(RENV);
+		assert.deepStrictEqual(await bcOf('t2'), [], 'TREE-017 #3: removeEnvironment hides its exposed History');
+		assert.strictEqual(provider.hasFetchedProcessDefinitions(RENV, 't2'), false, 'TREE-017 #3: removeEnvironment evicts its workflows');
+
+		// #4 Refresh paths fire one debounced change each.
+		await sleep(250);
+		let events = 0;
+		provider.onDidChangeTreeData(() => { events++; });
+		for (const [name, act] of [
+			['refreshEnvironment', () => provider.refreshEnvironment(RENV)],
+			['addEnvironment', () => provider.addEnvironment('new')],
+			['addTenant', () => provider.addTenant(RENV, 't9')],
+			['refresh', () => provider.refresh()],
+		]) {
+			const before = events;
+			act();
+			act();
+			await sleep(300);
+			assert.strictEqual(events - before, 1, `TREE-017 #4: two ${name} calls fire one tree change (got ${events - before})`);
+		}
+	}
+
+	// ── TREE-018: find an entity type row by short name across tenants (reveal target) ──
+	{
+		const { mem, mgr } = await legacyWorkspace(['a', 'b', 'c', 'd']);
+		const models = {
+			a: { entityTypes: [{ uri: 'configuration/entityTypes/Organization', abstract: true }] },
+			c: 'this is not json {{{',
+			d: { entityTypes: [{ uri: 'configuration/entityTypes/Location' }, { uri: 'configuration/entityTypes/Individual', label: 'Person' }] },
+		};
+		for (const [t, m] of Object.entries(models)) await mem.writeFile(mgr.getL3Uri(RENV, t), enc(m));
+		const provider = new MultiTenantTreeProvider(mgr, new TokenStore(), memento(), null);
+		for (const [t, model] of Object.entries(models)) {
+			if (typeof model === 'string') continue;
+			for (let i = 0; i < model.entityTypes.length; i++) {
+				const et = model.entityTypes[i];
+				const short = tail(et.uri);
+				const found = await provider.findEntityTypeItem(short);
+				assert.ok(found, `TREE-018 #1: ${short} is found`);
+				assert.deepStrictEqual(found.jsonPath, ['entityTypes', i], `TREE-018 #1: ${short} jsonPath`);
+				assert.strictEqual(String(found.label), et.label || short, `TREE-018 #1: ${short} label is its label, else the uri tail`);
+				assert.strictEqual(found.description, et.abstract ? 'abstract' : undefined, `TREE-018 #1: ${short} abstract marker`);
+				assert.strictEqual(found.tenantL3Uri.toString(), mgr.getL3Uri(RENV, t).toString(), `TREE-018 #1: ${short} is scoped to tenant ${t}`);
+				// The reveal target carries the same id as the rendered row.
+				const [etFolder] = (await provider.getChildren(new BusinessConfigFolderNode(RENV, t))).filter(n => n instanceof ConfigTreeItem);
+				const rendered = (await provider.getChildren(etFolder))[i];
+				assert.strictEqual(found.id, rendered.id, `TREE-018 #1: ${short} id matches the rendered row`);
+			}
+		}
+		assert.strictEqual(await provider.findEntityTypeItem('Nope'), undefined, 'TREE-018 #2: an unknown name finds nothing');
+		assert.strictEqual(await provider.findEntityTypeItem('Person'), undefined, 'TREE-018 #2: matching is on the uri name, not the label');
+		assert.strictEqual(await new MultiTenantTreeProvider(null, new TokenStore(), memento(), null).findEntityTypeItem('Location'), undefined,
+			'TREE-018 #2: no workspace finds nothing');
+	}
+
+	// ── TREE-019: Browse Entities row counts ──
+	{
+		const { mem, mgr } = await legacyWorkspace(['t1']);
+		const P = 'configuration/entityTypes/';
+		const model = {
+			entityTypes: [
+				{ uri: `${P}Party`, abstract: true },
+				{ uri: `${P}O'Brien`, extendsTypeURI: `${P}Party` },
+				{ uri: `${P}Org`, extendsTypeURI: `${P}Party` },
+				{ uri: `${P}Solo` },
+				{ uri: `${P}Empty`, abstract: true },
+			],
+		};
+		await mem.writeFile(mgr.getL3Uri(RENV, 't1'), enc(model));
+		const tokens = new TokenStore();
+		const provider = new MultiTenantTreeProvider(mgr, tokens, memento(), null);
+		await provider.getChildren();
+		const [etFolder] = (await provider.getChildren(new BusinessConfigFolderNode(RENV, 't1'))).filter(n => n instanceof ConfigTreeItem);
+		const types = await provider.getChildren(etFolder);
+		const browseRow = async name => {
+			const et = types.find(t => String(t.label) === name);
+			return (await provider.getChildren(et)).find(c => c.nodeType === 'entityBrowser');
+		};
+		const calls = [];
+		let reply = () => ({ status: 200, ok: true, text: async () => '0' });
+		const originalFetch = global.fetch;
+		global.fetch = async (url, init) => { calls.push({ url: String(url), init }); return reply(); };
+		try {
+			// #1 No concrete type: (0) without a request.
+			assert.strictEqual(String((await browseRow('Empty')).label), 'Browse Entities (0)', 'TREE-019 #1: no concrete type shows (0)');
+			assert.strictEqual(calls.length, 0, 'TREE-019 #1: (0) needs no request');
+
+			// #2 No token: plain label, no request.
+			assert.strictEqual(String((await browseRow('Solo')).label), 'Browse Entities', 'TREE-019 #2: signed out keeps the plain label');
+			assert.strictEqual(calls.length, 0, 'TREE-019 #2: signed out sends no request');
+
+			// #3 One concrete type: a single equals() filter against the tenant on its environment host.
+			tokens.setToken(RENV, 'tok-1');
+			reply = () => ({ status: 200, ok: true, text: async () => '42' });
+			assert.strictEqual(String((await browseRow('Solo')).label), `Browse Entities (${(42).toLocaleString()})`, 'TREE-019 #3: count from the response');
+			assert.strictEqual(calls.length, 1, 'TREE-019 #3: one request');
+			assert.strictEqual(calls[0].url, `https://${RENV}/reltio/api/t1/entities/_total`, 'TREE-019 #3: request goes to the tenant on its host');
+			assert.deepStrictEqual(JSON.parse(calls[0].init.body).filter, `equals(type,'${P}Solo')`, 'TREE-019 #3: single-type filter');
+
+			// #4 Abstract type: or() over its concrete descendants; quotes in a uri are escaped.
+			calls.length = 0;
+			reply = () => ({ status: 200, ok: true, text: async () => JSON.stringify({ total: 1234567 }) });
+			assert.strictEqual(String((await browseRow('Party')).label), `Browse Entities (${(1234567).toLocaleString()})`, 'TREE-019 #4: {total} response');
+			const esc = s => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+			const concrete = getConcreteEntityTypeUris(model, ['entityTypes', 0]);
+			assert.strictEqual(JSON.parse(calls[0].init.body).filter, `or(${concrete.map(u => `equals(type,'${esc(u)}')`).join(',')})`,
+				'TREE-019 #4: abstract type filters on every concrete descendant, quotes escaped');
+
+			// #5 A failed count keeps the row usable.
+			reply = () => ({ status: 500, ok: false, text: async () => 'boom' });
+			assert.strictEqual(String((await browseRow('Solo')).label), 'Browse Entities', 'TREE-019 #5: a failed count keeps the plain label');
+		} finally {
+			global.fetch = originalFetch;
+		}
+	}
+
+	// ── TREE-020: less common L3 sections render with the right children, counts and states ──
+	{
+		const uri = U('/ws/e/t/Business Config/BusinessConfig.json');
+		const SG1 = {
+			uri: 'configuration/entityTypes/Org/survivorshipGroups/SG1', default: true,
+			mapping: [
+				{ attribute: 'configuration/entityTypes/Org/attributes/Name', survivorshipStrategy: 'LUD',
+					fallbackStrategies: [{ survivorshipStrategy: 'SRC', fallbackStrategies: [{ survivorshipStrategy: 'Frequency' }] }] },
+				{ survivorshipStrategy: 'Aggregation' },
+			],
+		};
+		const SG2 = { label: 'SG2', mapping: { attribute: 'configuration/entityTypes/Org/attributes/Phone', survivorshipStrategy: 'MinValue' } };
+		const ORG = {
+			uri: 'configuration/entityTypes/Org', label: 'Org',
+			matchGroups: [{ uri: 'configuration/entityTypes/Org/matchGroups/Neg', scope: 'INTERNAL',
+				negativeRule: { notExactSame: ['configuration/entityTypes/Org/attributes/SSN'], notFuzzySame: ['configuration/entityTypes/Org/attributes/Name'] } }],
+			survivorshipGroups: [SG1, SG2, { label: 'SG3' }],
+			associationGroups: [{ uri: 'configuration/entityTypes/Org/associationGroups/AG1', rule: { exact: ['configuration/entityTypes/Org/attributes/Name'] } }, { label: 'AG2' }],
+			surrogateCrosswalks: [{ source: 'SAP', generationLogic: 'concat' }, {}],
+			cleanseConfig: { infos: [{ uri: 'configuration/cleanse/CI1' }, { cleanseProvider: 'Provider' }], mappings: [{}] },
+			ruleBasedAttributes: [{ name: 'RB', type: 'String' }, { uri: 'configuration/entityTypes/Org/ruleBasedAttributes/RB2' }],
+			dependentAttributes: [{ attributeUri: 'configuration/entityTypes/Org/attributes/Dep' }],
+			hidden: [{ a: 1 }, { b: 2 }],
+			indexingConfig: { x: 1 }, dataPipelineConfig: { x: 1 }, matchAssets: { x: 1 },
+			lifecycleActions: { beforeSave: ['h'] },
+		};
+		const model = {
+			entityTypes: [ORG],
+			groupTypes: [{ uri: 'configuration/groupTypes/G', attributes: [{ name: 'g1' }], survivorshipGroups: [{ uri: 's/SG' }] }, { uri: 'configuration/groupTypes/Bare' }],
+			interactionTypes: [{ label: 'Email', attributes: [{ name: 'i1' }, { name: 'i2' }] }, { uri: 'configuration/interactionTypes/Bare' }],
+			categoryTypes: [{ uri: 'configuration/categoryTypes/Cat', attributes: [{ name: 'c1' }] }, { uri: 'configuration/categoryTypes/Bare' }],
+			changeRequestTypes: [{ uri: 'configuration/changeRequestTypes/CR', lifecycleActions: { a: 1 } }, { uri: 'configuration/changeRequestTypes/Plain' }],
+			roles: { notAnArray: true },
+		};
+		const C = vscode.TreeItemCollapsibleState;
+		const kids = item => getConfigNodeChildren(model, item);
+		const byLabel = (items, label) => {
+			const found = items.find(i => String(i.label) === label);
+			assert.ok(found, `TREE-020: row "${label}" exists among ${JSON.stringify(labels(items))}`);
+			return found;
+		};
+		const root = getConfigRootChildren(model, uri);
+
+		// #1 An object-valued section is one folder without a count.
+		const rolesFolder = root.find(r => r.jsonPath[0] === 'roles');
+		assert.ok(rolesFolder && String(rolesFolder.label) === 'Roles', `TREE-020 #1: object section is an uncounted folder, got ${rolesFolder && rolesFolder.label}`);
+		assert.deepStrictEqual(kids(rolesFolder), [], 'TREE-020 #1: an object section has no list items');
+
+		// #2 Entity type sub-sections, in code order, counted from their arrays.
+		const [org] = kids(root.find(r => r.jsonPath[0] === 'entityTypes'));
+		assert.strictEqual(org.collapsibleState, C.Collapsed, 'TREE-020 #2: entity type with sections is expandable');
+		const orgKids = kids(org);
+		assert.deepStrictEqual(labels(orgKids), [
+			'Browse Entities',
+			`Match Groups (${ORG.matchGroups.length})`,
+			`Survivorship Groups (${ORG.survivorshipGroups.length})`,
+			`Association Groups (${ORG.associationGroups.length})`,
+			`Surrogate Crosswalks (${ORG.surrogateCrosswalks.length})`,
+			'Cleanse Config',
+			`Rule-Based Attributes (${ORG.ruleBasedAttributes.length})`,
+			`Dependent Attributes (${ORG.dependentAttributes.length})`,
+			`Hidden Config (${ORG.hidden.length})`,
+			'Indexing Config', 'Data Pipeline Config', 'Match Assets', 'lifecycleActions',
+		], `TREE-020 #2: entity type sub-sections, got ${JSON.stringify(labels(orgKids))}`);
+
+		// #3 Sub-section rows: label from uri tail, else label, else a numbered fallback.
+		const ag = kids(byLabel(orgKids, `Association Groups (${ORG.associationGroups.length})`));
+		assert.deepStrictEqual(labels(ag), ['AG1', 'AG2'], 'TREE-020 #3: association group labels');
+		assert.deepStrictEqual(labels(kids(ag[0])), ['Rule'], 'TREE-020 #3: an association group with a rule shows it');
+		assert.deepStrictEqual(labels(kids(kids(ag[0])[0])), ['exact: Name'], 'TREE-020 #3: the association rule operands');
+		assert.deepStrictEqual(kids(ag[1]), [], 'TREE-020 #3: no rule, no children');
+		const sc = kids(byLabel(orgKids, `Surrogate Crosswalks (${ORG.surrogateCrosswalks.length})`));
+		assert.deepStrictEqual(sc.map(i => [String(i.label), i.description]), [['SAP', 'concat'], ['Surrogate Crosswalk 1', undefined]],
+			'TREE-020 #3: surrogate crosswalks by source, else numbered');
+		const rba = kids(byLabel(orgKids, `Rule-Based Attributes (${ORG.ruleBasedAttributes.length})`));
+		assert.deepStrictEqual(rba.map(i => [String(i.label), i.description]), [['RB', 'String'], ['RB2', undefined]],
+			'TREE-020 #3: rule-based attributes by name, else uri tail');
+		assert.deepStrictEqual(labels(kids(byLabel(orgKids, `Dependent Attributes (${ORG.dependentAttributes.length})`))), ['Dep'],
+			'TREE-020 #3: dependent attributes by attribute uri tail');
+		assert.deepStrictEqual(labels(kids(byLabel(orgKids, `Hidden Config (${ORG.hidden.length})`))), ORG.hidden.map((_, i) => `Hidden Config ${i}`),
+			'TREE-020 #3: hidden config rows numbered');
+		const cc = kids(byLabel(orgKids, 'Cleanse Config'));
+		assert.deepStrictEqual(labels(cc), [`Cleanse Infos (${ORG.cleanseConfig.infos.length})`, `Cleanse Mappings (${ORG.cleanseConfig.mappings.length})`],
+			'TREE-020 #3: cleanse config folders');
+		assert.deepStrictEqual(kids(cc[0]).map(i => [String(i.label), i.nodeType]), [['CI1', 'cleanseInfo'], ['Provider', 'cleanseInfo']],
+			'TREE-020 #3: cleanse infos by uri tail, else provider');
+
+		// #4 Negative match rule operands.
+		const [mg] = kids(byLabel(orgKids, `Match Groups (${ORG.matchGroups.length})`));
+		assert.strictEqual(mg.description, 'INTERNAL', 'TREE-020 #4: match group shows its scope');
+		const [neg] = kids(mg);
+		assert.strictEqual(String(neg.label), 'Negative Rule', 'TREE-020 #4: negative rule row');
+		assert.deepStrictEqual(labels(kids(neg)), ['notExactSame: SSN', 'notFuzzySame: Name'], 'TREE-020 #4: negative rule operands');
+
+		// #5 Survivorship: array and object mappings, fallback chains, default marker.
+		const sgs = kids(byLabel(orgKids, `Survivorship Groups (${ORG.survivorshipGroups.length})`));
+		assert.deepStrictEqual(sgs.map(i => [String(i.label), i.description]), [['SG1', 'default'], ['SG2', undefined], ['SG3', undefined]],
+			'TREE-020 #5: survivorship group labels and default marker');
+		const sg1 = kids(sgs[0]);
+		assert.deepStrictEqual(sg1.map(i => [String(i.label), i.description, i.collapsibleState]),
+			[['Name', 'LUD', C.Collapsed], ['Aggregation', 'Aggregation', C.None]],
+			'TREE-020 #5: array mapping rows by attribute, else strategy; expandable only with fallbacks');
+		const fb = kids(sg1[0]);
+		assert.deepStrictEqual(fb.map(i => [String(i.label), i.description, i.collapsibleState]), [['SRC', 'fallback: SRC', C.Collapsed]],
+			'TREE-020 #5: fallback strategy row');
+		assert.deepStrictEqual(labels(kids(fb[0])), ['Frequency'], 'TREE-020 #5: nested fallback row');
+		const sg2 = kids(sgs[1]);
+		assert.deepStrictEqual(sg2.map(i => [String(i.label), i.description, i.jsonPath[i.jsonPath.length - 1]]), [['Phone', 'MinValue', 'mapping']],
+			'TREE-020 #5: object mapping is one row at .mapping');
+		assert.deepStrictEqual(kids(sgs[2]), [], 'TREE-020 #5: no mapping, no rows');
+
+		// #6 Group / interaction / category / change request types: expandable only when they have content.
+		const expect = {
+			groupTypes: [['G', C.Collapsed, ['Attributes (1)', 'Survivorship Groups (1)']], ['Bare', C.None, []]],
+			interactionTypes: [['Email', C.Collapsed, ['Attributes (2)']], ['Bare', C.None, []]],
+			categoryTypes: [['Cat', C.Collapsed, ['Attributes (1)']], ['Bare', C.None, []]],
+			changeRequestTypes: [['CR', C.Collapsed, ['lifecycleActions']], ['Plain', C.None, []]],
+		};
+		for (const [key, rowsWanted] of Object.entries(expect)) {
+			const folderItem = root.find(r => r.jsonPath[0] === key);
+			assert.strictEqual(String(folderItem.label).endsWith(`(${model[key].length})`), true, `TREE-020 #6: ${key} folder count`);
+			const got = kids(folderItem).map(i => [String(i.label), i.collapsibleState, labels(kids(i))]);
+			assert.deepStrictEqual(got, rowsWanted, `TREE-020 #6: ${key} rows, states and children, got ${JSON.stringify(got)}`);
 		}
 	}
 

@@ -67,7 +67,7 @@
 				"ux/statusBar.ts",
 				"ux/uxState.ts"
 			],
-			"floor": 85
+			"floor": 96
 		},
 		{
 			"name": "Business Configuration",
