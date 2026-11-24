@@ -10,6 +10,27 @@
  *         codes appended to and never replaced, several lookup types per file,
  *         chunks, failures, no token in results; the bundled skill and the manifest.
  * Tier C (manual): live tenant in Claude Code and Cursor — see design.md.
+ *
+ * Regression checks added for RP-208563 (area RDM, plus the RDM error formatting in
+ * src/api/reltioClient.ts, area Common Utils):
+ * RDM-005  Load and write failures are reported accurately and readably.
+ *          #1-#3  A 401 on the second chunk that cannot be refreshed stops the load with
+ *                 api-error 401: the first chunk is added, the rest not sent, nothing retried.
+ *          #4-#5  A code counts as added only when a create response or the re-fetch holds it:
+ *                 without a re-fetch the rest are unconfirmed, with an empty one not stored.
+ *          #6-#10 postRdmLookupValues failures: a Reltio envelope gives "HTTP <status>: <message>
+ *                 <detail>" without repeating a detail equal to the message; an empty body gives
+ *                 "HTTP <status>."; a body over MAX_ERROR_BODY_CHARS is cut with an ellipsis; a 401
+ *                 is ReltioApiError "Unauthorized (401)" with statusCode 401.
+ *          #11-#14 putRdmConfiguration failures: 401 as above; the status, the server's message
+ *                 once, and a long body cut with an ellipsis.
+ *          Already covered above, not repeated: 250 codes with the second chunk failing on 400
+ *          (added 100, not-stored 100, not-sent 50); a failed re-fetch leaving sent codes
+ *          unconfirmed; plain-text and two-part envelope messages (test-rdm-lookup-value-authoring.cjs).
+ *          Not asserted (reported to the developer): a PUT error with a Reltio envelope is worded
+ *          with the L3 framing "Fix the issues below in your L3 JSON", which is wrong for an RDM
+ *          configuration, and an empty PUT body reads "Put configuration failed (HTTP <status>)."
+ *          rather than "HTTP <status>.".
  */
 const assert = require('node:assert');
 const fs = require('fs');
@@ -790,6 +811,88 @@ async function testNoTokenInResults() {
 	for (const text of results) assert.ok(!text.includes(TOKEN), 'the session token never appears in a result or log line');
 }
 
+// RDM-005: failures are counted per code and worded readably (RP-208563).
+async function testFailureReporting() {
+	const big = { [`/ws/${CSV_REL}`]: file(...Array.from({ length: 250 }, (_, i) => mapRow(`C${i}`, 'Reltio', `V${i}`, `V${i}`, 'true'))) };
+	const created = body => body.map(v => ({ uri: `x/${v.code}`, value: v }));
+
+	// A 401 on the second chunk, and the session cannot be refreshed.
+	let posts = 0;
+	let r = await run(request({ mode: 'load' }), {
+		tryRefresh: async () => false,
+		postValues: async (service, id, body) => {
+			posts++;
+			if (posts === 2) throw new ReltioApiError('Unauthorized (401)', 401);
+			return created(body);
+		},
+	}, big);
+	assert.strictEqual(posts, 2, 'RDM-005 #1: the load stops at the 401, with no retry and no third chunk');
+	assert.deepStrictEqual([r.result.status, r.result.error.kind, r.result.error.httpStatus], ['loaded', 'api-error', 401],
+		'RDM-005 #2: the result carries api-error 401');
+	assert.match(r.result.error.message, /The session for dev expired; OrganizationStatuses codes from chunk 2 on/,
+		'RDM-005 #2: the message says from which chunk on nothing was sent');
+	assert.deepStrictEqual(r.result.counts, { added: 100, appended: 0, unchanged: 0, 'not-stored': 0, 'not-sent': 150, unconfirmed: 0 },
+		'RDM-005 #3: the first chunk is added and the rest not sent');
+
+	// The create response holds only some codes.
+	const half = async (service, id, body) => created(body.filter((_, i) => i % 2 === 0));
+	let fetches = 0;
+	r = await run(request({ mode: 'load' }), {
+		fetchValues: async () => {
+			if (++fetches > 2) throw new Error('Network error');
+			return [];
+		},
+		postValues: half,
+	});
+	assert.deepStrictEqual(r.result.codes.map(c => [c.code, c.outcome]), [['A', 'added'], ['B', 'unconfirmed'], ['Bankrupt', 'added'], ['C', 'unconfirmed']],
+		'RDM-005 #4: without a re-fetch, a code the response does not hold is unconfirmed, never added');
+	r = await run(request({ mode: 'load' }), { fetchValues: async () => [], postValues: half });
+	assert.deepStrictEqual(r.result.codes.map(c => [c.code, c.outcome]), [['A', 'added'], ['B', 'not-stored'], ['Bankrupt', 'added'], ['C', 'not-stored']],
+		'RDM-005 #5: with a re-fetch that lacks it, the code is not stored');
+
+	// How postRdmLookupValues and putRdmConfiguration word a failure.
+	const { postRdmLookupValues, putRdmConfiguration } = importDist('api/reltioClient');
+	const max = Number(/const MAX_ERROR_BODY_CHARS = ([\d_]+);/.exec(read('src/api/reltioClient.ts').replace(/\r\n/g, '\n'))[1].replace(/_/g, ''));
+	const failWith = async (status, text, call) => {
+		const original = globalThis.fetch;
+		globalThis.fetch = async () => new Response(text, { status });
+		try {
+			await call();
+		} catch (e) {
+			return e;
+		} finally {
+			globalThis.fetch = original;
+		}
+		assert.fail(`RDM-005: a ${status} response must throw`);
+	};
+	const post = () => postRdmLookupValues('https://rdm.reltio.com', 'RdmT', [], TOKEN);
+	const putConfig = () => putRdmConfiguration('https://rdm.reltio.com', 'RdmT', '{}', TOKEN);
+	const envelope = (errorMessage, errorDetailMessage) => JSON.stringify({ severity: 'Error', errorCode: 1, errorMessage, errorDetailMessage });
+	const long = `${'x'.repeat(max)}TAIL`;
+
+	let e = await failWith(400, envelope('Invalid source', 'Invalid source'), post);
+	assert.strictEqual(e.message, 'HTTP 400: Invalid source', 'RDM-005 #6: a detail equal to the message is not repeated');
+	e = await failWith(422, envelope(undefined, 'Unknown source FOO'), post);
+	assert.strictEqual(e.message, 'HTTP 422: Unknown source FOO', 'RDM-005 #7: a detail alone is used');
+	e = await failWith(400, '   ', post);
+	assert.strictEqual(e.message, 'HTTP 400.', 'RDM-005 #8: an empty body gives the status alone');
+	e = await failWith(500, long, post);
+	assert.strictEqual(e.message, `HTTP 500: ${'x'.repeat(max)}…`, 'RDM-005 #9: a long body is cut with an ellipsis');
+	e = await failWith(401, envelope('ignored', 'ignored'), post);
+	assert.ok(e instanceof ReltioApiError, 'RDM-005 #10: a 401 is a ReltioApiError');
+	assert.deepStrictEqual([e.message, e.statusCode], ['Unauthorized (401)', 401], 'RDM-005 #10: worded Unauthorized (401), status 401');
+
+	e = await failWith(401, '', putConfig);
+	assert.ok(e instanceof ReltioApiError, 'RDM-005 #11: a PUT 401 is a ReltioApiError');
+	assert.deepStrictEqual([e.message, e.statusCode], ['Unauthorized (401)', 401], 'RDM-005 #11: worded Unauthorized (401), status 401');
+	e = await failWith(400, envelope('Invalid lookup type', 'Invalid lookup type'), putConfig);
+	assert.strictEqual(e.statusCode, 400, 'RDM-005 #12: a PUT failure keeps its status');
+	assert.ok(e.message.includes('HTTP 400'), 'RDM-005 #12: the PUT message states the status');
+	assert.strictEqual(e.message.split('Invalid lookup type').length - 1, 1, 'RDM-005 #13: the server\'s message appears once');
+	e = await failWith(500, long, putConfig);
+	assert.ok(e.message.endsWith(`${'x'.repeat(max)}…`) && !e.message.includes('TAIL'), 'RDM-005 #14: a long PUT body is cut with an ellipsis');
+}
+
 // The approval dialog states everything the extension resolved.
 {
 	const approval = {
@@ -865,6 +968,7 @@ async function testNoTokenInResults() {
 	await testSizeBeforeRead();
 	await testChangedWhileApproving();
 	await testNoTokenInResults();
+	await testFailureReporting();
 	console.log('test-rdm-lookup-csv-load: OK');
 })().catch(e => {
 	console.error(e);
