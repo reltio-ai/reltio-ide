@@ -109,7 +109,7 @@ const SETTINGS_NOT_READ = new Set([]);
 function testSettingsAndActivationManifest() {
 	const props = pkg.contributes.configuration.properties;
 	const declared = new Set(Object.keys(props).filter(k => k.startsWith('reltio.')).map(k => k.slice('reltio.'.length)));
-	assert.strictEqual(declared.size, 12, `ACT-003 #1: expected 12 declared reltio.* settings, found ${declared.size}`);
+	assert.strictEqual(declared.size, 13, `ACT-003 #1: expected 13 declared reltio.* settings, found ${declared.size}`);
 
 	const files = srcFiles();
 	const constants = new Map();

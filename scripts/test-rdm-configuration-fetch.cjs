@@ -268,7 +268,7 @@ assert.ok(
 
 // Tier B: the fetch chain runs on every Get Configuration and every connect flow, so a 403
 // must end it quietly, like a tenant without RDM, before any error message is shown.
-const extSource = fs.readFileSync(path.join(repoRoot, 'src', 'extension.ts'), 'utf8');
+const extSource = fs.readFileSync(path.join(repoRoot, 'src', 'extension.ts'), 'utf8').replace(/\r\n/g, '\n');
 const sliceFn = (name, end) => {
 	const start = extSource.indexOf(`async function ${name}(`);
 	assert.ok(start >= 0, `${name} must exist`);

@@ -819,7 +819,7 @@ async function testNoTokenInResults() {
 	const description = /^description: (.+)$/m.exec(front)[1];
 	assert.ok(description.length > 0 && description.length <= 1024, 'agents reject a description over 1024 characters');
 	assert.deepStrictEqual(
-		skill.split('\n').filter(l => l.startsWith('## ')).map(l => l.slice(3)),
+		skill.split(/\r?\n/).filter(l => l.startsWith('## ')).map(l => l.slice(3)),
 		['When to use', 'Inputs', 'Procedure', 'Outputs'],
 		'house sections',
 	);

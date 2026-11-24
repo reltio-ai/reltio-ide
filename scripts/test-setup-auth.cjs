@@ -408,12 +408,12 @@ async function waitForOpenExternal(opened, message) {
 		);
 		assert.deepStrictEqual(
 			envs.find(e => e.name === 'dev.reltio.com').tenants,
-			[{ tenantId: 't1', hasL3: false }],
+			[{ tenantId: 't1', hasL3: false, hasRdm: false }],
 			'SETUP-004 #1: tenant t1 must be found with hasL3 false',
 		);
 		assert.deepStrictEqual(
 			await reader.scanTenants('dev.reltio.com'),
-			[{ tenantId: 't1', hasL3: false }],
+			[{ tenantId: 't1', hasL3: false, hasRdm: false }],
 			'SETUP-004 #1: scanTenants must return t1',
 		);
 

@@ -24,7 +24,7 @@ const Ajv = require('ajv');
 const { importDist } = require('./lib/import-dist.cjs');
 
 const repoRoot = path.join(__dirname, '..');
-const read = p => fs.readFileSync(path.join(repoRoot, p), 'utf8');
+const read = p => fs.readFileSync(path.join(repoRoot, p), 'utf8').replace(/\r\n/g, '\n');
 const { buildRdmLookupTypeObject } = importDist('rdm/rdmSkeletons');
 
 const rel = 'skills/reltio-default/rdm-lookup-type-concepts/SKILL.md';
@@ -41,7 +41,7 @@ const frontmatterOf = text => {
 	assert.ok(description && description.length <= 1024, 'agents reject a description over 1024 characters');
 	assert.ok(description.includes('Add lookup type OrganizationStatuses'), 'the description carries the request it answers, so agents pick the skill');
 	assert.deepStrictEqual(
-		skill.split('\n').filter(l => l.startsWith('## ')).map(l => l.slice(3)),
+		skill.split(/\r?\n/).filter(l => l.startsWith('## ')).map(l => l.slice(3)),
 		['When to use', 'Inputs', 'Procedure', 'Outputs'],
 		'house sections',
 	);

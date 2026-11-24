@@ -50,6 +50,15 @@
 			"floor": 91
 		},
 		{
+			"name": "RDM",
+			"patterns": [
+				"rdm/**",
+				"tree/rdmSubtree.ts",
+				"workspace/rdmRelocation.ts"
+			],
+			"floor": 1
+		},
+		{
 			"name": "Tenant Explorer & UX",
 			"patterns": [
 				"tree/**",

@@ -57,7 +57,12 @@ const {
 	BusinessConfigFolderNode,
 	HistoryFolderNode,
 	HistorySnapshotNode,
+	RdmGroupNode,
+	RdmRootNode,
+	RdmFolderNode,
+	RdmItemNode,
 } = importDist('tree/multiTenantNodes');
+const { rdmSectionKeys } = importDist('tree/rdmSubtree');
 const workflowNodes = importDist('tree/workflowNodes');
 const { MultiTenantTreeProvider } = importDist('tree/multiTenantTreeProvider');
 const { TokenStore, GIT_SOURCE_TOKEN } = importDist('api/tokenStore');
@@ -1223,6 +1228,17 @@ function evalWhenClause(when, ctx, known) {
 		}));
 		const draft = { processId: 'p', processName: 'P', fileName: 'p.bpmn20.xml', fileUri: U('/w/p.bpmn20.xml') };
 		for (const source of ['local', 'repo']) add('wfDraft', new W.WorkflowDraftNode('e', 't', draft, source), { local: source === 'local' });
+		// RDM rows live in their own reltio.rdm.* namespace (multiTenantNodes.ts). Section keys are read
+		// from the real tree code, so a new section is picked up here.
+		const rdmFile = U('/ws/dev/t1/RDM_Config.json');
+		add('rdmGroup', new RdmGroupNode('e', 't'));
+		for (const unreadable of [false, true]) add('rdmRoot', new RdmRootNode('e', 't', 'rdm1', rdmFile, unreadable));
+		const rdmKeys = rdmSectionKeys();
+		assert.ok(rdmKeys.includes('lookupTypes') && rdmKeys.includes('sources'), 'TREE-013 #2: RDM section keys read from src');
+		for (const key of rdmKeys) {
+			add('rdmFolder', new RdmFolderNode('e', 't', 'rdm1', rdmFile, key, key, 1, 'folder'), { sectionKey: key });
+			add('rdmItem', new RdmItemNode('e', 't', 'rdm1', rdmFile, key, [key, 0], 'x', `rdm/${key}/x`, 'symbol-enum', 'x'), { sectionKey: key });
+		}
 
 		// Evaluate each view/item/context entry against each producible value. Inline entries are
 		// keyed `<command>@inline`; right-click entries by the command alone.
@@ -1253,12 +1269,45 @@ function evalWhenClause(when, ctx, known) {
 		// rows (WorkflowRepo* docs, D6).
 		const ACTIONLESS = ['gitFolder', 'businessConfig', 'wfFetchAction', 'wfConnectRepoAction', 'wfRepoGroup', 'wfRepoModule', 'wfRepoJavaFile'];
 		for (const r of records) {
+			// The RDM grouping row matches the RDM "Show in Editor" regex but its handler does nothing
+			// for it; that is reported to the developer, so its action list is not pinned here.
+			if (r.kind === 'rdmGroup') continue;
 			const entries = itemMenu.filter(e => shows(e, ctxFor(r, 'tenant')));
 			if (ACTIONLESS.includes(r.kind)) {
 				assert.deepStrictEqual(entries.map(keyOf), [], `TREE-013 #3: ${r.value} carries no context actions`);
 			} else {
 				assert.ok(entries.length > 0, `TREE-013 #3: ${r.value} (${r.kind}) has at least one context action`);
 			}
+		}
+
+		// #3b RDM rows: each RDM command shows on exactly the RDM rows it is meant for, and the L3
+		// Delete / Rename (which attach to reltio.item.*) never reach an RDM row.
+		{
+			const rdmCmds = r => itemMenu.filter(e => shows(e, ctxFor(r, 'tenant'))).map(e => e.command);
+			for (const r of records.filter(x => x.kind.startsWith('rdm') && x.kind !== 'rdmGroup')) {
+				const cmds = rdmCmds(r);
+				for (const c of ['reltio.deleteNode', 'reltio.renameNode']) {
+					assert.ok(!cmds.includes(c), `TREE-013 #3b: ${c} must not show on RDM row ${r.value}`);
+				}
+				assert.ok(cmds.includes('reltio.revealInEditor'), `TREE-013 #3b: ${r.value} offers Show in Editor`);
+			}
+			for (const r of records.filter(x => x.kind === 'rdmRoot')) {
+				for (const c of ['reltio.addRdmLookupType', 'reltio.addRdmSource', 'reltio.applyRdmConfiguration']) {
+					assert.ok(rdmCmds(r).includes(c), `TREE-013 #3b: ${c} shows on the RDM root`);
+				}
+			}
+			const lookupItem = records.find(x => x.kind === 'rdmItem' && x.sectionKey === 'lookupTypes');
+			const sourceItem = records.find(x => x.kind === 'rdmItem' && x.sectionKey === 'sources');
+			assert.ok(rdmCmds(lookupItem).includes('reltio.getRdmLookupValues'), 'TREE-013 #3b: Get Lookup Values shows on a lookup type');
+			assert.ok(!rdmCmds(sourceItem).includes('reltio.getRdmLookupValues'), 'TREE-013 #3b: Get Lookup Values does not show on a source');
+			const lookupFolder = records.find(x => x.kind === 'rdmFolder' && x.sectionKey === 'lookupTypes');
+			const sourceFolder = records.find(x => x.kind === 'rdmFolder' && x.sectionKey === 'sources');
+			assert.deepStrictEqual(
+				[rdmCmds(lookupFolder).includes('reltio.addRdmLookupType'), rdmCmds(lookupFolder).includes('reltio.addRdmSource')],
+				[true, false], 'TREE-013 #3b: the Lookup Types folder offers only Add Lookup Type');
+			assert.deepStrictEqual(
+				[rdmCmds(sourceFolder).includes('reltio.addRdmSource'), rdmCmds(sourceFolder).includes('reltio.addRdmLookupType')],
+				[true, false], 'TREE-013 #3b: the Sources folder offers only Add Source');
 		}
 
 		// #4 Signed-out / signed-in gating on environment rows (tenant workspace).
@@ -1325,7 +1374,11 @@ function evalWhenClause(when, ctx, known) {
 		const cfg = (...types) => r => r.kind === 'config' && types.includes(r.nodeType);
 		const attrTargets = ['entityType', 'relationType', 'nestedAttribute', 'attributesFolder'];
 		const spec = {
-			'reltio.revealInEditor': r => r.kind === 'config',
+			'reltio.revealInEditor': r => r.kind === 'config' || r.kind.startsWith('rdm'),
+			'reltio.getRdmLookupValues': r => r.kind === 'rdmItem' && r.sectionKey === 'lookupTypes',
+			'reltio.addRdmLookupType': r => r.kind === 'rdmRoot' || (r.kind === 'rdmFolder' && r.sectionKey === 'lookupTypes'),
+			'reltio.addRdmSource': r => r.kind === 'rdmRoot' || (r.kind === 'rdmFolder' && r.sectionKey === 'sources'),
+			'reltio.applyRdmConfiguration': r => r.kind === 'rdmRoot',
 			'reltio.showOntologyFromTree': cfg('entityTypesFolder', 'relationTypesFolder'),
 			'reltio.insertSimpleAttribute': cfg(...attrTargets),
 			'reltio.insertNestedAttribute': cfg(...attrTargets),
@@ -1408,6 +1461,8 @@ function evalWhenClause(when, ctx, known) {
 			'reltio.deleteNode': ['reltio.item.entityBrowser'], // BUG-012
 			'reltio.renameNode': ['reltio.item.entityBrowser'], // BUG-012
 			'reltio.resetOAuthClient': ['reltio.environment.authorized.oauthReady.noTenants'], // BUG-013
+			// The RDM grouping row offers Show in Editor, whose handler does nothing for it (reported to the developer).
+			'reltio.revealInEditor': ['reltio.rdm.group'],
 		};
 		for (const [k, got] of tenantWs) {
 			const skip = SKIP[k] ?? [];
