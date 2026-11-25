@@ -737,7 +737,10 @@ async function waitForOpenExternal(opened, message) {
 		}
 		assert.strictEqual(isSafePathSegment('361.reltio.com'), true, 'SETUP-010 #1: a valid host must be safe');
 		const root = vscode.Uri.file(path.resolve('/ws'));
-		for (const escape of ['../x.json', 'a/../../x', 'C:\\x.json', '/etc/x', '']) {
+		// 'C:\x.json' is an absolute path only where the path module is Windows; on POSIX it is a plain relative name.
+		const escapes = ['../x.json', 'a/../../x', '/etc/x', ''];
+		if (process.platform === 'win32') escapes.push('C:\\x.json');
+		for (const escape of escapes) {
 			const r = resolveTokenFileUri(root, escape);
 			assert.ok(typeof r.error === 'string', `SETUP-010 #1: tokenFile ${JSON.stringify(escape)} must return {error}`);
 		}

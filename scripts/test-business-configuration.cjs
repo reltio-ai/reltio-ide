@@ -811,11 +811,13 @@ async function testWindowsAndLineEndings() {
 
 	// 2. CRLF and tab-indented fixtures.
 	{
-		assert.ok(fixture.text.includes('\r\n'), 'BIZCFG-013 #2: the canonical fixture is CRLF');
+		// The checked-out fixture is CRLF on a Windows clone and LF elsewhere, so build the CRLF variant here.
+		const crlfText = fixture.text.replace(/\r?\n/g, '\r\n');
+		assert.ok(crlfText.includes('\r\n') && !/(^|[^\r])\n/.test(crlfText), 'BIZCFG-013 #2: the CRLF variant of the fixture is pure CRLF');
 		/** Which line-ending styles a text uses: a pure CRLF file must stay pure CRLF, an LF file LF. */
 		const eols = t => ({ crlf: t.includes('\r\n'), lf: /(^|[^\r])\n/.test(t), cr: /\r(?!\n)/.test(t) });
 		const tabbed = JSON.stringify(fixture.model, null, '\t');
-		for (const [label, text] of [['CRLF', fixture.text], ['tab', tabbed]]) {
+		for (const [label, text] of [['CRLF', crlfText], ['tab', tabbed]]) {
 			// Deletions: first, middle and last entity type.
 			const doc = parseDocument(text);
 			const n = doc.model.entityTypes.length;
