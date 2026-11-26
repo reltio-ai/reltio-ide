@@ -13,6 +13,7 @@ const SCRIPTS = [
 	'test-apply-tenant-configuration-action.cjs',
 	'test-attribute-skeleton-mandatory-fields.cjs',
 	'test-autocomplete-improvements.cjs',
+	'test-bpmn-local-validation.cjs',
 	'test-browser-oauth-login.cjs',
 	'test-config-tree-view.cjs',
 	'test-configuration-history-review.cjs',

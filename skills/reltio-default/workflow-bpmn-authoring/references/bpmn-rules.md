@@ -417,6 +417,14 @@ disagree, or a real Reltio-authored file contradicts a rule stated elsewhere in 
 confirm with a Reltio Workflow SME, or test against a live tenant, before treating an item below as
 settled.
 
+**Diagram sizes disagree, and that disagreement does not change deploy.** §11 keeps event `36×36`,
+gateway `50×50`, and task `100×80` because those are the sizes this extension's diagram generator
+writes. The Reltio designer sizes are start and end `50×50`, exclusive gateway `50×50`, user and
+service tasks `100×50`, data object `100×50`, laid out left to right with loops routed orthogonally
+around other shapes. Either size set is legal. Keep §11 when this extension generates the diagram.
+The local check in §18 does not measure those numbers; it only requires that each shape has bounds
+and each edge has two waypoints.
+
 1. **Whether the type task listener is mandatory on every user task, or only the process's first
    review step.** §3 defaults to putting both `TaskStartEventListener` and a type listener
    (`DCRTypeTaskListener`/`EntityTypeTaskListener`/`RelationTypeTaskListener`) on *every* `userTask`,
@@ -774,6 +782,35 @@ Rules for the gate:
 Because this needs Java, the request becomes a BPMN-and-Java change: hand the Java to
 `workflow-jar-customization`, and end with the PR question and tree actions from the Outputs of
 `SKILL.md`.
+
+## 18. Check the file locally before anyone deploys it
+
+`scripts/validate-bpmn-definition.cjs` is the whole check. It reads the `.bpmn20.xml` on disk and
+makes no REST call. Run it from the repository root:
+
+```bash
+node scripts/validate-bpmn-definition.cjs path/to/process.bpmn20.xml
+```
+
+A non-zero exit is a failure. Repair the file and run the script at most two more times, then stop.
+Do not deploy a file the script rejects.
+
+| Rule | Failure |
+|---|---|
+| The file is empty, not well-formed, or its name does not end in `.bpmn20.xml` | The script exits non-zero and leaves the file unchanged |
+| Exactly one start event, and every node with no outgoing flow is an end event, data object, text annotation, association, extension elements, or documentation | `No start event found`, `More than 1 start event found`, or `Node cannot be a leaf` |
+| A data object with id and name `manualStart` is present, and `manualStart` / `deleted` values are only `true` or `false` | `manualStart not found` or `dataObject value not valid` |
+| Every user task has extension elements, sequence-flow endpoints exist, and `decision == '…'` names a value of that task's `decision` enum | form-property, source/target, or `decision enum value not found` |
+| Every flow node, including `dataObject`, has a `BPMNShape` with `Bounds`, and every sequence flow has a `BPMNEdge` with at least two waypoints | `BPMN DI is incomplete` |
+
+Authoring notes the script does not measure, already written here so there is nothing further to
+look up: emit one `<definitions>` document and no markdown fence; give data objects such as
+`manualStart` and `deleted` their own shapes; route a backward edge with three or more orthogonal
+waypoints around other shapes rather than a two-point diagonal. An explanation names the process
+and then each step in order — who acts, which decision values exist, and which path each value
+takes — and does not rewrite the file. The modelling context is already captured in §§3–5 (form
+properties, listeners, service-task classes, gateways, and the sample flows); do not invent a
+second class list beside §5.
 
 ## Deny-list — never generate any of these
 

@@ -20,7 +20,8 @@ The requirement cannot be expressed as ordering: a clarification loop back to th
 1. **`references/java-patterns.md`** (beside this file) — the actual interfaces (`WorkflowTaskListener`, `WorkflowExecutionListener`, the validator contract), code skeletons, the real `pom.xml` transcribed from Reltio's own customer-repository provisioning template, and a Known Ambiguities section for the coverage-gate number, where the sources disagree (the validator-signature disagreement is resolved there). Read it before writing a class, not after.
 2. The existing Java in the tenant's provisioned Bitbucket repository — the samples there are the most reliable pattern source, and the one place that can resolve anything `references/java-patterns.md` flags as unconfirmed for *your* tenant's platform version.
 3. The BPMN that will reference the class, so the `activiti:class` name and the implementation cannot drift apart.
-4. Optional **`skills/workspace/workflow-jar-customization/SKILL.md`**.
+4. **Official code examples** — [github.com/reltio-ai/samples-custom-workflow](https://github.com/reltio-ai/samples-custom-workflow), the working Java, BPMN, and unit-test modules. Use them when the tenant repository does not already show the shape you need.
+5. Optional **`skills/workspace/workflow-jar-customization/SKILL.md`**.
 
 ## Procedure
 
