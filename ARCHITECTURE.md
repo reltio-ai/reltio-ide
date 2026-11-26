@@ -783,7 +783,7 @@ npm test    # compile + scripts/run-unit-tests.cjs (code-model first)
 
 - `scripts/run-unit-tests.cjs` — explicit registry; `test-code-model-and-schema.cjs` first, then alphabetical
 - `scripts/test-<openspec-change-slug>.cjs` — one per shippable OpenSpec change (umbrella `reltio-metadata-editor` uses child scripts)
-- `scripts/lib/` — shared helpers (`import-dist`, `load-canonical-fixture`, `walk-configuration-uris`, `assert-navigation`, `assert-tree-walk`, `assert-completion-scopes`, `vscode-stub`, `memory-fs` (in-memory `workspace.fs` for folder, gitignore and sync code), `validate-velocity-packs`)
+- `scripts/lib/` — shared helpers (`import-dist`, `load-canonical-fixture`, `walk-configuration-uris`, `assert-navigation`, `assert-tree-walk`, `assert-completion-scopes`, `vscode-stub`, `memory-fs` (in-memory `workspace.fs` for folder, gitignore and sync code), `activation-harness` (runs the real compiled `activate()` against the stub, the in-memory fs and a fake clock, so a test can call the commands it registers; used by `test-extension-activation` and `test-rdm-commands`), `validate-velocity-packs`)
 - `samples/code-model-manifest.json` — sole committed expectations file for parse/structure counts
 
 **Rule for every new OpenSpec change** that adds or modifies runtime behavior:

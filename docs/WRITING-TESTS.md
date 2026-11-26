@@ -43,6 +43,7 @@ Read this before writing a test. Background on the gate itself is in [ARCHITECTU
   | `load-canonical-fixture.cjs`, `load-sample.cjs` | Parsed fixture and sample files |
   | `memory-fs.cjs` | In-memory `vscode.workspace.fs` for code that walks directories |
   | `menu-when.cjs` | Evaluate `when` clauses from `package.json` `contributes.menus`, for menu and sub-item visibility |
+  | `activation-harness.cjs` | Run the real compiled `activate()` against the stub, an in-memory file system and a fake clock, and call the commands it registers (`rec.commands`). Require it before any other `dist/` import. |
   | `assert-navigation.cjs`, `assert-completion-scopes.cjs`, `assert-tree-walk.cjs`, `walk-configuration-uris.cjs` | Navigation, completion and tree self-oracles |
 
 - **Check IDs.** Every assertion message starts with a check ID and number so a failure points at a behavior: `'GIT-001 #2: ...'`. For a new feature, pick a short upper-case topic code that is not already used in `scripts/` (grep first), and number behaviors `<CODE>-001`, `<CODE>-002`. Each behavior can hold several numbered assertions (`#1`, `#2`).

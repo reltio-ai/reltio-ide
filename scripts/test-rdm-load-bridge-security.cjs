@@ -29,7 +29,8 @@
  *          The extension passes a strict boolean (`=== 'Load'`, asserted in
  *          test-rdm-lookup-csv-load.cjs), so this is noted for hardening, not reported as a bug.
  *
- * Tier C (manual): the modal approval dialog itself — RDM-011 and design.md.
+ * Tier C (manual): the modal approval dialog as it looks in VS Code — design.md. The request file
+ * watcher (RDM-011) is automated in test-rdm-commands.cjs.
  */
 const assert = require('node:assert');
 const { importDist } = require('./lib/import-dist.cjs');
