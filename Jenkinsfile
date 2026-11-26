@@ -73,7 +73,7 @@ pipeline {
                 }
             }
             steps {
-                sh 'npm run build --ignore-scripts'
+                sh 'npm run build'
             }
         }
 

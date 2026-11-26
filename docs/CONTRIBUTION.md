@@ -151,9 +151,9 @@ Scaffolding without the agent: `npm run openspec -- new change "<name>"`. For JS
 
 ## Regression gate and proposed tests
 
-`npm run build` and `npm run package` run the unit tests and a per-area coverage check first (`prebuild` = `npm run test:gate`). A failing test or an area below its floor stops the build. Run `npm run test:gate` before a PR; use `npm run build --ignore-scripts` (no `--` separator) only when the gate already passed. If you add a file under `src/`, add its path to an area in `scripts/module-coverage.config.json`, or the check fails. If you add tests, raise the area floor (never lower it). Details, floors, and troubleshooting: [ARCHITECTURE.md](../ARCHITECTURE.md) "Regression gate and coverage".
+`npm run package` runs the unit tests and a per-area coverage check first (`prepackage` = `npm run test:gate`); CI and Jenkins run the same gate as an explicit step. A failing test or an area below its floor stops the build. `npm run build` is a plain build and is not gated. Run `npm run test:gate` before a PR. If you add a file under `src/`, add its path to an area in `scripts/module-coverage.config.json`, or the check fails. If you add tests, raise the area floor (never lower it). Details, floors, and troubleshooting: [ARCHITECTURE.md](../ARCHITECTURE.md) "Regression gate and coverage".
 
-After pulling this change, run `npm ci`: the gate needs the new `c8` devDependency, and without it `npm run build` fails with "c8 not found".
+After pulling this change, run `npm ci`: the gate needs the new `c8` devDependency, and without it `npm run package` and `npm run test:gate` fail with "c8 not found".
 
 Writing the tests for a feature (conventions, where a test goes, coverage floors, the required failure simulation, how to handle bugs found): [WRITING-TESTS.md](WRITING-TESTS.md). Tests ship in the same branch as the feature.
 

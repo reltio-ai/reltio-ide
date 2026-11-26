@@ -33,4 +33,4 @@ jobs:
         run: npm run test:gate
 
       - name: Build
-        run: npm run build --ignore-scripts
+        run: npm run build

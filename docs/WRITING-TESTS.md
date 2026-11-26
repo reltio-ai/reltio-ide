@@ -6,7 +6,7 @@ Read this before writing a test. Background on the gate itself is in [ARCHITECTU
 
 ## How the gate works
 
-`npm run build` and `npm run package` run `npm run test:gate` first. A failing test, or a feature area below its coverage floor, stops the build.
+`npm run package` runs `npm run test:gate` first (`prepackage` hook), and CI and Jenkins run it as their own step. `npm run build` is not gated. A failing test, or a feature area below its coverage floor, stops the build.
 
 | Command | Use |
 |---|---|
@@ -15,7 +15,7 @@ Read this before writing a test. Background on the gate itself is in [ARCHITECTU
 | `npm test` | Compile and run every script, no coverage. |
 | `npm run test:gate` | Compile, run all scripts under `c8`, then check per-area coverage floors. This is the real gate. |
 
-A successful `npm run build` removes `dist/` (`gate:cleanup`). Compile again before running a single script.
+`dist/` holds the `tsc` output until `npm run package` or `npm run clean` removes it. If it is missing, run `npm run compile` before running a single script.
 
 ## Where a test goes
 
@@ -109,7 +109,7 @@ For an extended existing script, break the behavior your new assertions cover an
 - Do commit the tests with the feature, in the same branch.
 - Do keep every existing test green. Never delete, loosen or reorder an existing assertion to make room for yours.
 - Don't edit `scripts/lib/` in a way that changes what other tests check. Extend the stub at runtime in your own script instead.
-- Don't lower a coverage floor, set `enforceTarget` to `true` until every area is at 70, or add `--ignore-scripts` to a build, package or release step (it removes the gate).
+- Don't lower a coverage floor, set `enforceTarget` to `true` until every area is at 70, or add `--ignore-scripts` to a package or release step (it removes the gate).
 - Don't add oracle JSON, a test framework or a dependency.
 - Don't bump the `package.json` version.
 
