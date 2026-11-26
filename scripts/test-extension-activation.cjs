@@ -14,12 +14,12 @@
  *   ACT-006  activation without a folder, workspace source choice, config-driven sync, document close.
  *   ACT-007  apply-defaults gating, OAuth session restore, background failures.
  *   ACT-008  first-run Setup Guide auto-open once; walkthrough suppression.
- *            #2(b) (OAuth credentials without an environment) is blocked by BUG-006.
+ *            #2(b) (OAuth credentials without an environment) is blocked by RP-209773.
  *   ACT-010  #2 (dynamic half): no token string reaches globalState, workspaceState or settings
  *            during session restore. The static half lives in test-harden-reltio-client-base-url.cjs.
  *   ACT-011  timers stop after dispose; Windows path handling.
- *            #1 rebuildUriIndex debounceTimer after dispose is blocked by BUG-001;
- *            #2 backslash L3.json / BusinessConfig.json matching is blocked by BUG-007.
+ *            #1 rebuildUriIndex debounceTimer after dispose is blocked by RP-209776;
+ *            #2 backslash L3.json / BusinessConfig.json matching is blocked by RP-209768.
  *   ACT-012  slow work stays off the activation critical path.
  * Tier C (manual): ACT-009 (fresh install in a real host, reload, Restricted Mode).
  *
@@ -999,7 +999,7 @@ async function testFirstRunGuideAndWalkthrough() {
 		await activateWith({ ctx: makeContext({ globalState: gs }), setup: mem => addEnvironment(mem, 'dev', 'dev.reltio.com') });
 		assert.strictEqual(gs.map.get('reltio.walkthroughSeen'), true, 'ACT-008 #2: (a) a workspace with an environment must mark the walkthrough seen');
 	}
-	// (b) no environment but stored OAuth client credentials: blocked by BUG-006 (the credential check only
+	// (b) no environment but stored OAuth client credentials: blocked by RP-209773 (the credential check only
 	// iterates scanned environments, so it can never be true when there are none).
 	{
 		const gs = memento();
@@ -1041,7 +1041,7 @@ async function testTimersAfterDisposeAndWindowsPaths() {
 		assert.strictEqual(rec.repoConfigLookups.length, before.repo, 'ACT-011 #1: the repo rediscovery debounce must not fire after dispose');
 		assert.strictEqual(rec.tokenReloads.length, before.reload, 'ACT-011 #1: the token-file reload must not fire after dispose');
 		assert.strictEqual(rec.sync.length, before.sync, 'ACT-011 #1: the overrides resync must not fire after dispose');
-		// The plain rebuildUriIndex debounceTimer is not disposed: blocked by BUG-001.
+		// The plain rebuildUriIndex debounceTimer is not disposed: blocked by RP-209776.
 	}
 	// Control: the same timers do fire when nothing is disposed (so the checks above are meaningful).
 	{
@@ -1067,7 +1067,7 @@ async function testTimersAfterDisposeAndWindowsPaths() {
 		const before = rec.builds;
 		await fire('activeEditor', { document: doc('C:\\ws\\x.reltio.json') });
 		assert.strictEqual(rec.builds - before, 1, 'ACT-011 #2: a backslash *.reltio.json path must match');
-		// 'C:\\ws\\env\\tenant\\L3.json' (basename match on backslash paths): blocked by BUG-007.
+		// 'C:\\ws\\env\\tenant\\L3.json' (basename match on backslash paths): blocked by RP-209768.
 	}
 	{
 		await activateWith({ setup: mem => addEnvironment(mem, 'dev', 'dev.reltio.com') });

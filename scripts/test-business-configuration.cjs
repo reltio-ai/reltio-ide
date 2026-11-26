@@ -8,7 +8,7 @@
  * edit workflows, security, performance and Windows path / CRLF handling.
  *   BIZCFG-001  parseDocument (trailing commas, empty input), findNodeRangeForDeletion,
  *               findArrayInsertionPoint, prettyPrintJsonIfPossible.
- *               #2 "UriIndex.build runs on an empty document" is blocked by BUG-005 (skipped).
+ *               #2 "UriIndex.build runs on an empty document" is blocked by RP-209770 (skipped).
  *   BIZCFG-002  deleteNode / renameNode produce minimal WorkspaceEdits, cancel and unchanged name
  *               are no-ops, lifecycleActions is read-only, nextDefaultLabel and every skeleton.
  *   BIZCFG-005  UriIndex rebuild reset, unresolved filtering (_vertical), virtual attribute URIs
@@ -200,7 +200,7 @@ function testParserPrimitives() {
 		let doc;
 		assert.doesNotThrow(() => { doc = parseDocument(text); }, `BIZCFG-001 #2: parseDocument(${JSON.stringify(text)}) does not throw`);
 		assert.deepStrictEqual(doc.model, {}, `BIZCFG-001 #2: parseDocument(${JSON.stringify(text)}).model is {}`);
-		// Blocked by BUG-005: UriIndex.build(model, ast) throws "Cannot read properties of undefined
+		// Blocked by RP-209770: UriIndex.build(model, ast) throws "Cannot read properties of undefined
 		// (reading 'type')" because parseDocument returns ast undefined for empty input. Skipped.
 	}
 

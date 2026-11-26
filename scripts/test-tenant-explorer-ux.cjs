@@ -8,14 +8,14 @@
  * (environment and tenant node values, lazy resolveTreeItem commands), TREE-004 (tree provider
  * children, git source ordering, debounced refresh), TREE-005 (UX state derivation and context
  * publishing), TREE-006 (recents, production hosts, status bar), TREE-007 (environment context
- * menu gating; the git-workspace check for reltio.configureOAuthClient is blocked by BUG-008),
+ * menu gating; the git-workspace check for reltio.configureOAuthClient is blocked by RP-209772),
  * TREE-008 (corrupt or missing L3 gives an empty Business Config), TREE-009 (quick switch and
  * tenant row guidance; the real click flow is manual QA, Tier C), TREE-010 (no secrets in node
  * fields), TREE-011 (large-scale tree performance), TREE-012 (bad stored data, status bar timer,
  * Windows paths; real UI across OSes is manual QA, Tier C), TREE-013 (menu visibility for every
  * node type: view/item/context incl. inline, view/title and commandPalette when-clauses evaluated
  * against every contextValue the tree nodes can produce; Delete / Rename on Browse Entities is
- * blocked by BUG-012, Reset OAuth Client on a no-tenants browser-login environment by BUG-013),
+ * blocked by RP-209767, Reset OAuth Client on a no-tenants browser-login environment by RP-209771),
  * TREE-014 (RDM rows under a tenant: RDM group between Business Config and Workflows, one root
  * per RDM tenant sorted by id, unreadable root, counted sections, item labels, editor text over
  * disk, file removed or broken after render), TREE-015 (RDM reveal: getParent mirrors getChildren
@@ -793,7 +793,7 @@ function evalWhenClause(when, ctx, known) {
 		}
 
 		// No tenant-connectivity entry shows in a git workspace (only Remove Repository does).
-		// reltio.configureOAuthClient is excluded: blocked by BUG-008.
+		// reltio.configureOAuthClient is excluded: blocked by RP-209772.
 		for (const e of envEntries) {
 			if (e.command === 'reltio.removeGitSource' || e.command === 'reltio.configureOAuthClient') continue;
 			assert.deepStrictEqual(appliesIn(e, 'git'), [], `TREE-007 #1: ${e.command} (${e.group}) must not show in a git workspace`);
@@ -1341,7 +1341,7 @@ function evalWhenClause(when, ctx, known) {
 		}
 
 		// #5 Git workspace: on environment, tenant and history rows only Remove Repository / Remove
-		// Tenant, Open L3 and the L3 create actions remain. configureOAuthClient is excluded: BUG-008.
+		// Tenant, Open L3 and the L3 create actions remain. configureOAuthClient is excluded: RP-209772.
 		const isEnvTenantHistory = r => ['env', 'tenant', 'historyFolder', 'snapshot'].includes(r.kind);
 		const gitScoped = matched('git', isEnvTenantHistory);
 		const L3_INSERTS = {
@@ -1355,7 +1355,7 @@ function evalWhenClause(when, ctx, known) {
 			if (k === 'reltio.removeGitSource') expected = valuesWhere(r => r.kind === 'env');
 			else if (k === 'reltio.removeGitTenant') expected = valuesWhere(r => r.kind === 'tenant');
 			else if (k === 'reltio.openL3@inline' || L3_INSERTS[k]) expected = valuesWhere(r => r.kind === 'tenant' && r.hasL3);
-			if (k === 'reltio.configureOAuthClient') continue; // BUG-008
+			if (k === 'reltio.configureOAuthClient') continue; // RP-209772
 			assert.deepStrictEqual(sorted(got), expected, `TREE-013 #5: ${k} in a git workspace`);
 		}
 		for (const k of ['reltio.removeGitSource', 'reltio.removeGitTenant']) {
@@ -1471,9 +1471,9 @@ function evalWhenClause(when, ctx, known) {
 		}
 		// Known product bugs, left out of the comparison only for the affected value.
 		const SKIP = {
-			'reltio.deleteNode': ['reltio.item.entityBrowser'], // BUG-012
-			'reltio.renameNode': ['reltio.item.entityBrowser'], // BUG-012
-			'reltio.resetOAuthClient': ['reltio.environment.authorized.oauthReady.noTenants'], // BUG-013
+			'reltio.deleteNode': ['reltio.item.entityBrowser'], // RP-209767
+			'reltio.renameNode': ['reltio.item.entityBrowser'], // RP-209767
+			'reltio.resetOAuthClient': ['reltio.environment.authorized.oauthReady.noTenants'], // RP-209771
 			// The RDM grouping row offers Show in Editor, whose handler does nothing for it (reported to the developer).
 			'reltio.revealInEditor': ['reltio.rdm.group'],
 		};

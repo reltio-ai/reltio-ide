@@ -11,9 +11,9 @@
  *           discovery limits (build output, size, id-less, baseline, depth, candidate cap),
  *           storableRepoUrl drops http(s) userinfo, toOpenableHttpsUrl opens https only.
  *   WF-009  Hostile input: sidecar relativePath, server process ids and BPMN text cannot escape
- *           or stall. Blocked in part: a trailing-dot id is accepted (blocked by BUG-011), and
+ *           or stall. Blocked in part: a trailing-dot id is accepted (blocked by RP-209777), and
  *           100k unterminated "<!--" or 100k "<process " without ">" take seconds to parse
- *           (blocked by BUG-010); those assertions are skipped.
+ *           (blocked by RP-209769); those assertions are skipped.
  */
 const assert = require('assert');
 const { importDist } = require('./lib/import-dist.cjs');
@@ -533,7 +533,7 @@ async function captureClone(url, branch) {
 	});
 
 	test('WF-009 #2 hostile server process ids are rejected everywhere', async () => {
-		// 'trailing.' is not listed: a trailing-dot id is accepted today (blocked by BUG-011).
+		// 'trailing.' is not listed: a trailing-dot id is accepted today (blocked by RP-209777).
 		const ids = ['a/b', 'a\\b', '..', 'a\u0000b', 'con', 'NUL', 'Com1', 'x'.repeat(201)];
 		for (const id of ids) {
 			assert.ok(processIdValidationMessage(id), `WF-009 #2: ${JSON.stringify(id.slice(0, 20))} gets a validation message`);
@@ -553,7 +553,7 @@ async function captureClone(url, branch) {
 	test('WF-009 #3 hostile BPMN text returns within budget, expands no entity', () => {
 		const head = '<definitions><process id="p" isExecutable="true">';
 		const inputs = {
-			// Skipped, blocked by BUG-010: 100k unterminated '<!--' and 100k '<process ' with no '>'
+			// Skipped, blocked by RP-209769: 100k unterminated '<!--' and 100k '<process ' with no '>'
 			// take about 8 s and 30 s in extractProcessModel / analyseBpmn.
 			bigAttribute: `${head}<userTask id="t" name="${'a'.repeat(1024 * 1024)}"/></process></definitions>`,
 			deepNesting: `${head}${'<subProcess id="s">'.repeat(50000)}${'</subProcess>'.repeat(50000)}</process></definitions>`,
