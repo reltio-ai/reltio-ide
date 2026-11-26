@@ -12,11 +12,14 @@
  *
  * Regression checks added for RP-208563 (area RDM):
  * RDM-009  Panel HTML is nonce-protected and the service URI cache stays per tenant and in memory.
- *          #1-#5  Rendered twice with markup in codes, sources and suggestions: every script and
- *                 style carries the CSP nonce, no inline handlers, markup escaped, the script body
- *                 has no data in it, and the nonce and render token differ per render.
- *          #6-#9  The cache recalls per environment and tenant only, ignores an empty URI,
- *                 empties on clear, and its source writes to no file or storage.
+ *          #5     Rendered twice with markup in codes, sources and suggestions, the render token
+ *                 differs per render.
+ *          #7, #9 An empty URI is not stored over a known one, and the cache's source writes to no
+ *                 file or storage.
+ *          Removed as duplicates: #1-#4 and the rest of #5, the CSP nonce on every script and
+ *          style, no inline handlers, markup escaped, no data in the script, a fresh nonce and a
+ *          hex token (test-rdm-lookup-value-authoring.cjs); #6, recall per environment and
+ *          tenant, and #8, clearing (the cache checks above and test-rdm-configuration-fetch.cjs).
  *
  * The fixture is one lookup type from one tenant, where every source happens to
  * map exactly one value. Assertions derive from the fixture or from constructed
@@ -295,48 +298,16 @@ for (const forbidden of ['sources', 'rdm.root', 'rdm.group', 'reltio.item.', 're
 	const render = () => renderLookupValuesHtml(evilRows, evilRows, ctx, { sourceSuggestions: [evil, `"><svg onload=alert(1)>`] });
 	const first = render();
 	const second = render();
-	const nonceOf = h => /script-src 'nonce-([a-f0-9]+)'/.exec(h)[1];
 	const tokenOf = h => /<body data-render="([^"]*)">/.exec(h)[1];
-	const scriptOf = h => /<script\b[^>]*>([\s\S]*?)<\/script>/.exec(h)[1];
-
-	for (const h of [first, second]) {
-		const nonce = nonceOf(h);
-		const tags = h.match(/<(style|script)\b[^>]*>/g) || [];
-		assert.ok(tags.length >= 2, 'RDM-009 #1: the panel has its style and script blocks');
-		for (const tag of tags) {
-			assert.ok(tag.includes(`nonce="${nonce}"`), `RDM-009 #1: every script and style carries the CSP nonce: ${tag}`);
-		}
-		const markup = h.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '');
-		for (const tag of markup.match(/<[a-zA-Z][^>]*>/g)) {
-			// Attribute names only: escaped data inside a quoted value is text, not a handler.
-			const names = tag.replace(/"[^"]*"|'[^']*'/g, '""');
-			assert.ok(!/\son[a-z]+\s*=/i.test(names), `RDM-009 #2: no inline handler: ${tag}`);
-		}
-		assert.ok(!markup.includes('<img') && !markup.includes('<svg') && !markup.includes('<b '), 'RDM-009 #3: markup in data stays escaped');
-		assert.strictEqual((h.match(/<script\b/g) || []).length, 1, 'RDM-009 #3: data adds no script element');
-	}
-	assert.strictEqual(scriptOf(first), scriptOf(renderLookupValuesHtml([], [], ctx)), 'RDM-009 #4: the script body has no data interpolated into it');
-	assert.notStrictEqual(nonceOf(first), nonceOf(second), 'RDM-009 #5: the nonce differs per render');
 	assert.notStrictEqual(tokenOf(first), tokenOf(second), 'RDM-009 #5: the render token differs per render');
-	assert.match(tokenOf(first), /^[a-f0-9]{32}$/, 'RDM-009 #5: the render token is random hex');
 }
 
 {
 	clearRdmServiceUriCache();
-	rememberRdmServiceUri('dev', 'T1', 'https://rdm-dev-1.reltio.com');
-	rememberRdmServiceUri('dev', 'T2', 'https://rdm-dev-2.reltio.com');
-	rememberRdmServiceUri('prod', 'T1', 'https://rdm-prod-1.reltio.com');
 	rememberRdmServiceUri('prod', 'T2', 'https://rdm-prod-2.reltio.com');
-	assert.deepStrictEqual(
-		[['dev', 'T1'], ['dev', 'T2'], ['prod', 'T1'], ['prod', 'T2'], ['dev', 'T3'], ['qa', 'T1']].map(([e, t]) => recallRdmServiceUri(e, t)),
-		['https://rdm-dev-1.reltio.com', 'https://rdm-dev-2.reltio.com', 'https://rdm-prod-1.reltio.com', 'https://rdm-prod-2.reltio.com', undefined, undefined],
-		'RDM-009 #6: each environment and tenant recalls its own URI only',
-	);
 	rememberRdmServiceUri('prod', 'T2', '');
 	assert.strictEqual(recallRdmServiceUri('prod', 'T2'), 'https://rdm-prod-2.reltio.com', 'RDM-009 #7: an empty URI is not stored over a known one');
 	clearRdmServiceUriCache();
-	assert.deepStrictEqual([['dev', 'T1'], ['prod', 'T2']].map(([e, t]) => recallRdmServiceUri(e, t)), [undefined, undefined],
-		'RDM-009 #8: clearing empties the cache');
 
 	// The physical configuration holds credentials: the cache must never reach disk or storage.
 	const cacheSource = fs.readFileSync(path.join(repoRoot, 'src/rdm/rdmServiceCache.ts'), 'utf8').replace(/\r\n/g, '\n');

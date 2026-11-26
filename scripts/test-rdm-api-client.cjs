@@ -7,13 +7,15 @@
  * `fetch` so the real functions are exercised and nothing reaches the network.
  *
  * RDM-003  Contracts: RDM request URLs, verbatim PUT body, and menu guard on RDM nodes.
- *          #1-#3  fetchTenantPhysicalConfiguration, fetchRdmConfiguration, fetchRdmLookupValues,
- *                 postRdmLookupValues and putRdmConfiguration build /reltio/tenants/{id},
- *                 /configuration/{id} and /lookups/{id}[/{type}] with encodeURIComponent, for ids
- *                 holding "/", "?", "#", "%" and spaces: one segment per id, no query, no fragment.
- *          #4-#6  putRdmConfiguration PUTs to /configuration/{rdmTenantId} with Content-Type
- *                 application/json, the body byte-identical to the text given (custom whitespace
- *                 and key order), and the token in Authorization.
+ *          #1     fetchTenantPhysicalConfiguration, fetchRdmConfiguration, fetchRdmLookupValues,
+ *                 postRdmLookupValues and putRdmConfiguration send one request to exactly
+ *                 /reltio/tenants/{id}, /configuration/{id} and /lookups/{id}[/{type}] with
+ *                 encodeURIComponent, for ids holding "/", "?", "#", "%" and spaces.
+ *          #4-#6  putRdmConfiguration uses PUT with Content-Type application/json, and the body is
+ *                 byte-identical to the text given (custom whitespace and key order).
+ *          Removed as duplicates: #2 and #3, no query or fragment and one segment per id (the
+ *          exact URL in #1 already fixes both); the single PUT and its URL in #4 (#1); and the
+ *          token in Authorization in #5 (RDM-007 #6 in test-rdm-load-bridge-security.cjs).
  *          Menu guard (#3 of the row): already covered by test-rdm-tree-view.cjs and
  *          test-rdm-configuration-authoring.cjs (Delete and Rename gates against every RDM
  *          context value, RDM nodes in the reltio.rdm.* namespace). Not repeated here.
@@ -58,23 +60,20 @@ const enc = encodeURIComponent;
 const IDS = ['a/b', 'q?x=1', 'h#frag', 'p%2F', 'with space', 'plain_Id-1'];
 
 (async () => {
-	// RDM-003 #1-#3: every function, every awkward id.
+	// RDM-003 #1: every function, every awkward id.
 	for (const id of IDS) {
 		const type = `T ${id}`;
 		const cases = [
-			['fetchTenantPhysicalConfiguration', () => fetchTenantPhysicalConfiguration(ENV_HOST, id, TOKEN), `https://${ENV_HOST}/reltio/tenants/${enc(id)}`, 3],
-			['fetchRdmConfiguration', () => fetchRdmConfiguration(SERVICE, id, TOKEN), `${SERVICE}/configuration/${enc(id)}`, 2],
-			['putRdmConfiguration', () => putRdmConfiguration(SERVICE, id, '{}', TOKEN), `${SERVICE}/configuration/${enc(id)}`, 2],
-			['fetchRdmLookupValues', () => fetchRdmLookupValues(SERVICE, id, type, TOKEN), `${SERVICE}/lookups/${enc(id)}/${enc(type)}`, 3],
-			['postRdmLookupValues', () => postRdmLookupValues(SERVICE, id, [], TOKEN), `${SERVICE}/lookups/${enc(id)}`, 2],
+			['fetchTenantPhysicalConfiguration', () => fetchTenantPhysicalConfiguration(ENV_HOST, id, TOKEN), `https://${ENV_HOST}/reltio/tenants/${enc(id)}`],
+			['fetchRdmConfiguration', () => fetchRdmConfiguration(SERVICE, id, TOKEN), `${SERVICE}/configuration/${enc(id)}`],
+			['putRdmConfiguration', () => putRdmConfiguration(SERVICE, id, '{}', TOKEN), `${SERVICE}/configuration/${enc(id)}`],
+			['fetchRdmLookupValues', () => fetchRdmLookupValues(SERVICE, id, type, TOKEN), `${SERVICE}/lookups/${enc(id)}/${enc(type)}`],
+			['postRdmLookupValues', () => postRdmLookupValues(SERVICE, id, [], TOKEN), `${SERVICE}/lookups/${enc(id)}`],
 		];
-		for (const [name, call, expected, segments] of cases) {
+		for (const [name, call, expected] of cases) {
 			const calls = await capture(call);
 			assert.strictEqual(calls.length, 1, `RDM-003 #1: ${name} sends one request for "${id}"`);
 			assert.strictEqual(calls[0].url, expected, `RDM-003 #1: ${name} encodes "${id}" with encodeURIComponent`);
-			const parsed = new URL(calls[0].url);
-			assert.strictEqual(parsed.search + parsed.hash, '', `RDM-003 #2: ${name} adds no query or fragment for "${id}"`);
-			assert.strictEqual(parsed.pathname.split('/').length - 1, segments, `RDM-003 #3: ${name} keeps one path segment per id for "${id}"`);
 		}
 	}
 
@@ -82,12 +81,10 @@ const IDS = ['a/b', 'q?x=1', 'h#frag', 'p%2F', 'with space', 'plain_Id-1'];
 	{
 		const body = '{\r\n    "tenantId" : "RdmT",\n\t"lookupTypes": [ ],\n  "a": 1 ,"Z":{"x" :null}   \n}\n';
 		const calls = await capture(() => putRdmConfiguration(SERVICE, 'RdmT', body, TOKEN));
-		assert.strictEqual(calls.length, 1, 'RDM-003 #4: one PUT');
-		const [{ url, init }] = calls;
-		assert.strictEqual(url, `${SERVICE}/configuration/RdmT`, 'RDM-003 #4: PUT to /configuration/{rdmTenantId}');
+		// Without a request, #4 finds no method and fails on its own message.
+		const [{ init } = { init: { headers: {} } }] = calls;
 		assert.strictEqual(init.method, 'PUT', 'RDM-003 #4: the method is PUT');
 		assert.strictEqual(init.headers['Content-Type'], 'application/json', 'RDM-003 #5: Content-Type is application/json');
-		assert.strictEqual(init.headers.Authorization, `Bearer ${TOKEN}`, 'RDM-003 #5: Authorization carries the token');
 		assert.strictEqual(typeof init.body, 'string', 'RDM-003 #6: the body is sent as the text given');
 		assert.ok(Buffer.from(init.body).equals(Buffer.from(body)), 'RDM-003 #6: the body is byte-identical to the input');
 	}

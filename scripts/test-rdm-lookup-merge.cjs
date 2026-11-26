@@ -9,26 +9,29 @@
  * test-rdm-configuration-fetch.cjs; this script adds what those do not assert.
  *
  * RDM-002  Pure-function units: merge immutability, panel message validation, discovery shape.
- *          #1-#4  A deep-frozen stored value survives mergeLookupValue, planLookupValues,
- *                 planWarnings and unknownSourceWarnings unchanged and without an exception; the
- *                 merged result is a separate copy holding the new mapping.
+ *          #1     A deep-frozen stored value goes through mergeLookupValue, planLookupValues,
+ *                 planWarnings and unknownSourceWarnings without an exception, so none of them
+ *                 writes to it.
  *          #5     One submission breaking several rules (a "/" code, a repeated code, 101 codes)
  *                 is rejected with every error listed.
- *          #6-#7  extractRdmConfig on a physical configuration carrying messaging credentials and
- *                 storage accounts returns only its own keys and none of those values.
- *                 (The row asks for exactly serviceUri and rdmTenantIds; the result also carries
- *                 rejectedRdmTenantIds by design, asserted in test-rdm-configuration-fetch.cjs.)
+ *          #6     extractRdmConfig on a physical configuration carrying messaging credentials and
+ *                 storage accounts returns exactly the discovery fields, the service URI trimmed.
  *          Already covered elsewhere, not repeated: wrong types, unknown type, extra fields,
  *          padded strings, 101 codes alone (test-rdm-lookup-value-authoring.cjs); null, strings,
- *          missing rdmConfig, blank serviceUri, invalid rdmTenants, id order
- *          (test-rdm-configuration-fetch.cjs).
- * RDM-004  Load into existing codes keeps stored values and skips conflicting mappings.
- *          #1-#4  A load that adds a SAP mapping to stored B, while the CSV states other enabled
- *                 and endDate values, posts B as fetched plus only the SAP mapping, and warns that
- *                 the stored values are kept.
- *          #5-#9  A row conflicting with a stored mapping is skipped with a warning naming its
- *                 line, the stored value is never overwritten, an identical row counts as already
- *                 present, and a load with nothing to append sends nothing and asks nothing.
+ *          missing rdmConfig, blank serviceUri, invalid rdmTenants, id order, the result's keys
+ *          (test-rdm-configuration-fetch.cjs). Removed as duplicates (former #2-#4, #7): the
+ *          stored value unchanged and the merged copy separate (#1 and
+ *          test-rdm-lookup-value-authoring.cjs), no credential in the result (#6).
+ * RDM-004  Load into existing codes keeps stored values.
+ *          #2     A load that adds a SAP mapping to stored B, while the CSV states other enabled
+ *                 and endDate values, posts B with enabled, endDate, version and every other
+ *                 stored field as fetched.
+ *          #4     The plan warns, with the line, that the stored enabled and endDate are kept.
+ *          Removed as duplicates (former #1, #3, #5-#9, and the mapping and outcome parts of #2
+ *          and #4): the load and its single request, the stored mappings untouched, only SAP
+ *          appended, conflicts skipped with a warning, an identical row already present, and a
+ *          load with nothing to append (test-rdm-lookup-csv-load.cjs,
+ *          test-rdm-lookup-value-authoring.cjs).
  *
  * Tier C (manual): none for these behaviors.
  */
@@ -86,28 +89,18 @@ const CONFIG = {
 
 {
 	const frozen = deepFreeze(storedB());
-	const snapshot = storedB();
 	const parsed = csv(file(mapRow('B', 'Reltio', 'B', 'Business')));
 	const type = parsed.types[0];
 	const [draft] = type.values;
 
-	let merge;
-	let plan;
 	try {
-		merge = mergeLookupValue(frozen, draft);
-		plan = planLookupValues([draft], [frozen], TARGET);
+		mergeLookupValue(frozen, draft);
+		const plan = planLookupValues([draft], [frozen], TARGET);
 		planWarnings(plan, type);
 		unknownSourceWarnings(type, [frozen], deepFreeze(copy(CONFIG)));
 	} catch (e) {
 		assert.fail(`RDM-002 #1: merging into a frozen stored value threw: ${e.message}`);
 	}
-	assert.deepStrictEqual(frozen, snapshot, 'RDM-002 #2: the stored value deep-equals its snapshot after merge, plan and warnings');
-	assert.notStrictEqual(merge.merged, frozen, 'RDM-002 #3: the merged value is a separate object');
-	assert.notStrictEqual(merge.merged.sourceMappings, frozen.sourceMappings, 'RDM-002 #3: with its own mappings array');
-	assert.deepStrictEqual(merge.merged.sourceMappings.map(m => m.source), ['BvD', 'DnB', 'Reltio'],
-		'RDM-002 #4: the merged copy holds the stored mappings plus the new one');
-	assert.deepStrictEqual(merge.appended, [{ source: 'Reltio', code: 'B' }], 'RDM-002 #4: only the new mapping is appended');
-	assert.deepStrictEqual(plan.items.map(i => i.kind), ['append'], 'RDM-002 #4: the plan appends to the frozen value');
 }
 
 // ---------------------------------------------------------------------------
@@ -148,14 +141,8 @@ const CONFIG = {
 		},
 	};
 	const out = extractRdmConfig(physical);
-	assert.deepStrictEqual(Object.keys(out).sort(), ['rdmTenantIds', 'rejectedRdmTenantIds', 'serviceUri'],
-		'RDM-002 #6: the result carries only the discovery keys');
 	assert.deepStrictEqual(out, { serviceUri: 'https://rdm.reltio.com', rdmTenantIds: ['RdmB', 'RdmA'], rejectedRdmTenantIds: [] },
 		'RDM-002 #6: the service URI is trimmed and the ids keep their order');
-	const text = JSON.stringify(out);
-	for (const secret of SECRETS) {
-		assert.ok(!text.includes(secret), `RDM-002 #7: no credential or storage value leaks into the result (${secret})`);
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -199,7 +186,7 @@ function makeDeps(csvText, serverValues) {
 const request = mode => ({ requestId: 'r1', mode, csvFile: CSV_REL, rdmConfigFile: CONFIG_REL });
 
 (async () => {
-	// RDM-004 #1-#4: stored fields are carried back; only the new mapping is added.
+	// RDM-004 #2, #4: stored fields are carried back, and the plan says they are kept.
 	{
 		const text = file(
 			row({ code: 'B', type: ORG, enabled: 'false', endDate: '1900000000000' }), // 2
@@ -207,54 +194,16 @@ const request = mode => ({ requestId: 'r1', mode, csvFile: CSV_REL, rdmConfigFil
 		);
 		const { deps, calls } = makeDeps(text, [storedB()]);
 		const result = await handleLookupLoadRequest(request('load'), deps);
-		assert.strictEqual(result.status, 'loaded', `RDM-004 #1: the load completes (${result.message})`);
-		assert.strictEqual(calls.post.length, 1, 'RDM-004 #1: one request');
-		const [b] = calls.post[0];
+		// Without a request, #2 compares nothing and fails on its own message.
+		const [b = {}] = calls.post[0] ?? [];
 		const { sourceMappings, ...rest } = b;
 		const { sourceMappings: storedMappings, ...storedRest } = storedB();
 		assert.deepStrictEqual(rest, storedRest, 'RDM-004 #2: enabled, endDate, version and every other stored field are sent as fetched');
-		assert.deepStrictEqual(sourceMappings.slice(0, storedMappings.length), storedMappings, 'RDM-004 #2: existing mappings are untouched');
-		assert.deepStrictEqual(sourceMappings.slice(storedMappings.length).map(m => [m.source, m.values.map(v => [v.code, v.value])]),
-			[['SAP', [['B', 'Business']]]], 'RDM-004 #3: only the SAP mapping is added');
-		const kept = result.warnings.map(w => w.message).filter(m => /Stored values are never changed/.test(m));
+		const kept = (result.warnings ?? []).map(w => w.message).filter(m => /Stored values are never changed/.test(m));
 		assert.deepStrictEqual(kept, [
 			'Line 2: B is stored with enabled true, not false. Stored values are never changed, so it stays true.',
 			'Line 2: B is stored with endDate 1800000000000, not 1900000000000. Stored values are never changed, so it stays 1800000000000.',
 		], 'RDM-004 #4: a warning says each stored value is kept, with the line that asked otherwise');
-		assert.deepStrictEqual(result.codes.map(c => [c.code, c.outcome]), [['B', 'appended']], 'RDM-004 #4: B is reported appended');
-	}
-
-	// RDM-004 #5-#9: a conflicting row is skipped; an identical row is already present.
-	{
-		const text = file(
-			mapRow('B', 'BvD', 'B', 'Biz'), // 2: conflicts with the stored "Business"
-			mapRow('B', 'DnB', 'DB', 'Biz DnB'), // 3: identical to what is stored
-		);
-		const type = csv(text).types[0];
-		const plan = planLookupValues(type.values, [storedB()], TARGET);
-		assert.deepStrictEqual(plan.conflicts.map(c => [c.source, c.code, c.storedValue, c.value]), [['BvD', 'B', 'Business', 'Biz']],
-			'RDM-004 #5: the conflicting row is a conflict, with both values');
-		assert.deepStrictEqual(plan.alreadyPresent.map(n => [n.source, n.code, type.mappingLines.B[n.index]]), [['DnB', 'DB', 3]],
-			'RDM-004 #6: the identical row counts as already present');
-		assert.deepStrictEqual(plan.items.map(i => [i.kind, i.element]), [['unchanged', undefined]],
-			'RDM-004 #6: nothing is appendable, so nothing would be sent');
-
-		const planned = await handleLookupLoadRequest(request('plan'), makeDeps(text, [storedB()]).deps);
-		const conflict = planned.warnings.find(w => /already maps/.test(w.message));
-		assert.ok(conflict, 'RDM-004 #7: the plan warns about the conflicting row');
-		assert.deepStrictEqual(conflict.lines, [2], 'RDM-004 #7: the warning names the conflicting line');
-		assert.strictEqual(conflict.message,
-			'Line 2: B already maps BvD code "B" to "Business", not "Biz". The stored value is kept and this row is skipped.',
-			'RDM-004 #7: the warning says the stored value is kept and the row skipped');
-		assert.deepStrictEqual(planned.errors, [], 'RDM-004 #7: a conflict is a warning, not an error');
-
-		const { deps, calls, server } = makeDeps(text, [storedB()]);
-		const loaded = await handleLookupLoadRequest(request('load'), deps);
-		assert.strictEqual(loaded.status, 'loaded', 'RDM-004 #8: the load finishes');
-		assert.strictEqual(calls.post.length, 0, 'RDM-004 #8: nothing is sent when nothing is appendable');
-		assert.strictEqual(calls.approve.length, 0, 'RDM-004 #8: and nobody is asked to approve');
-		assert.deepStrictEqual(loaded.codes.map(c => [c.code, c.outcome]), [['B', 'unchanged']], 'RDM-004 #8: B is unchanged');
-		assert.strictEqual(server.get('B').sourceMappings[0].values[0].value, 'Business', 'RDM-004 #9: the stored "Business" is never overwritten');
 	}
 
 	console.log('test-rdm-lookup-merge: OK');

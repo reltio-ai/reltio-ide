@@ -17,9 +17,14 @@
  * against every contextValue the tree nodes can produce; Delete / Rename on Browse Entities is
  * blocked by RP-209767, Reset OAuth Client on a no-tenants browser-login environment by RP-209771),
  * TREE-014 (RDM rows under a tenant: RDM group between Business Config and Workflows, one root
- * per RDM tenant sorted by id, unreadable root, counted sections, item labels, editor text over
- * disk, file removed or broken after render), TREE-015 (RDM reveal: getParent mirrors getChildren
- * for group / root / section / item, unreadable item has no parent, leaf click reveals), TREE-016
+ * per RDM tenant sorted by id, unreadable root, section and item context values, item labels,
+ * editor text over disk, file removed or broken after render), TREE-015 (RDM reveal: getParent
+ * mirrors getChildren for group / root / section / item, unreadable item has no parent, leaf click
+ * reveals). RDM checks removed as duplicates of test-rdm-tree-view.cjs,
+ * test-rdm-configuration-authoring.cjs and test-rdm-lookup-values.cjs: TREE-013 #3b (RDM menus,
+ * also pinned exactly by TREE-013 #8), the group's label and expand state, the unreadable root's
+ * wording, section order and counts, item jsonPath and description, and the item's parent type
+ * and id. TREE-016
  * (reveal for L3, history, workflow and git rows: getParent returns the row each was rendered
  * under; config rows deeper than an entity type are not walked), TREE-017 (History snapshot rows
  * newest first, removeTenant / removeEnvironment drop History exposure and workflow cache for
@@ -1293,36 +1298,6 @@ function evalWhenClause(when, ctx, known) {
 			}
 		}
 
-		// #3b RDM rows: each RDM command shows on exactly the RDM rows it is meant for, and the L3
-		// Delete / Rename (which attach to reltio.item.*) never reach an RDM row.
-		{
-			const rdmCmds = r => itemMenu.filter(e => shows(e, ctxFor(r, 'tenant'))).map(e => e.command);
-			for (const r of records.filter(x => x.kind.startsWith('rdm') && x.kind !== 'rdmGroup')) {
-				const cmds = rdmCmds(r);
-				for (const c of ['reltio.deleteNode', 'reltio.renameNode']) {
-					assert.ok(!cmds.includes(c), `TREE-013 #3b: ${c} must not show on RDM row ${r.value}`);
-				}
-				assert.ok(cmds.includes('reltio.revealInEditor'), `TREE-013 #3b: ${r.value} offers Show in Editor`);
-			}
-			for (const r of records.filter(x => x.kind === 'rdmRoot')) {
-				for (const c of ['reltio.addRdmLookupType', 'reltio.addRdmSource', 'reltio.applyRdmConfiguration']) {
-					assert.ok(rdmCmds(r).includes(c), `TREE-013 #3b: ${c} shows on the RDM root`);
-				}
-			}
-			const lookupItem = records.find(x => x.kind === 'rdmItem' && x.sectionKey === 'lookupTypes');
-			const sourceItem = records.find(x => x.kind === 'rdmItem' && x.sectionKey === 'sources');
-			assert.ok(rdmCmds(lookupItem).includes('reltio.getRdmLookupValues'), 'TREE-013 #3b: Get Lookup Values shows on a lookup type');
-			assert.ok(!rdmCmds(sourceItem).includes('reltio.getRdmLookupValues'), 'TREE-013 #3b: Get Lookup Values does not show on a source');
-			const lookupFolder = records.find(x => x.kind === 'rdmFolder' && x.sectionKey === 'lookupTypes');
-			const sourceFolder = records.find(x => x.kind === 'rdmFolder' && x.sectionKey === 'sources');
-			assert.deepStrictEqual(
-				[rdmCmds(lookupFolder).includes('reltio.addRdmLookupType'), rdmCmds(lookupFolder).includes('reltio.addRdmSource')],
-				[true, false], 'TREE-013 #3b: the Lookup Types folder offers only Add Lookup Type');
-			assert.deepStrictEqual(
-				[rdmCmds(sourceFolder).includes('reltio.addRdmSource'), rdmCmds(sourceFolder).includes('reltio.addRdmLookupType')],
-				[true, false], 'TREE-013 #3b: the Sources folder offers only Add Source');
-		}
-
 		// #4 Signed-out / signed-in gating on environment rows (tenant workspace).
 		const envOf = k => sorted(tenantWs.get(k) ?? []).map(v => records.find(r => r.value === v)).filter(r => r.kind === 'env');
 		for (const k of ['reltio.loginWithBrowser', 'reltio.loginWithBrowser@inline', 'reltio.signInEnvironment@inline']) {
@@ -1561,9 +1536,7 @@ function evalWhenClause(when, ctx, known) {
 				`TREE-014 #1: ${row.tenantId} children are ${expected.join(', ')}, got ${kids.map(k => k.constructor.name).join(', ')}`);
 			const group = kids.find(k => k instanceof RdmGroupNode);
 			if (group) {
-				assert.strictEqual(String(group.label), 'RDM', 'TREE-014 #1: the group row is labelled RDM');
 				assert.strictEqual(group.id, `rdmgroup:${RENV}/${row.tenantId}`, 'TREE-014 #1: group id is env and tenant scoped');
-				assert.strictEqual(group.collapsibleState, vscode.TreeItemCollapsibleState.Collapsed, 'TREE-014 #1: the group is expandable');
 			}
 		}
 
@@ -1582,7 +1555,6 @@ function evalWhenClause(when, ctx, known) {
 				broken ? vscode.TreeItemCollapsibleState.None : vscode.TreeItemCollapsibleState.Collapsed,
 				`TREE-014 #2: ${root.rdmTenantId} collapsible state`);
 			if (broken) {
-				assert.strictEqual(root.description, 'could not be read', 'TREE-014 #2: unreadable root says so');
 				assert.deepStrictEqual(await rdmProvider.getChildren(root), [], 'TREE-014 #2: unreadable root has no children');
 			}
 		}
@@ -1591,13 +1563,7 @@ function evalWhenClause(when, ctx, known) {
 		const byId = Object.fromEntries(roots.map(r => [r.rdmTenantId, r]));
 		for (const [id, model] of Object.entries(RDM_MODELS)) {
 			const folders = await rdmProvider.getChildren(byId[id]);
-			const keys = rdmSectionKeys().filter(k => Array.isArray(model[k]) && model[k].length > 0);
-			assert.deepStrictEqual(folders.map(f => f.sectionKey), keys,
-				`TREE-014 #3: ${id} shows only non-empty known sections in order, got ${JSON.stringify(folders.map(f => f.sectionKey))}`);
 			for (const f of folders) {
-				const m = /^(.+) \((\d+)\)$/.exec(String(f.label));
-				assert.ok(m, `TREE-014 #3: folder label "${f.label}" carries a count`);
-				assert.strictEqual(Number(m[2]), model[f.sectionKey].length, `TREE-014 #3: ${id}/${f.sectionKey} count`);
 				assert.strictEqual(f.contextValue, `reltio.rdm.folder.${f.sectionKey}`, 'TREE-014 #3: folder contextValue');
 
 				// #4 Items: label, else the uri's last segment, else (unnamed); uri as description; leaves.
@@ -1606,8 +1572,6 @@ function evalWhenClause(when, ctx, known) {
 				assert.deepStrictEqual(items.map(i => String(i.label)), entries.map(e => e.label || tail(e.uri) || '(unnamed)'),
 					`TREE-014 #4: ${id}/${f.sectionKey} item labels`);
 				items.forEach((item, i) => {
-					assert.deepStrictEqual(item.jsonPath, [f.sectionKey, i], 'TREE-014 #4: item jsonPath is [section, index]');
-					assert.strictEqual(item.description, entries[i].uri, 'TREE-014 #4: item description is its uri');
 					assert.strictEqual(item.typeName, tail(entries[i].uri), 'TREE-014 #4: typeName is the uri tail');
 					assert.strictEqual(item.contextValue, `reltio.rdm.item.${f.sectionKey}`, 'TREE-014 #4: item contextValue');
 				});
@@ -1670,9 +1634,7 @@ function evalWhenClause(when, ctx, known) {
 					assert.strictEqual(folderParent.id, root.id, 'TREE-015 #1: section parent id matches the rendered root');
 					for (const item of await rdmProvider.getChildren(folder)) {
 						const itemParent = await rdmProvider.getParent(item);
-						assert.ok(itemParent instanceof RdmFolderNode, 'TREE-015 #1: an item hangs off its section');
-						assert.strictEqual(itemParent.id, folder.id, 'TREE-015 #1: item parent id matches the rendered section');
-						assert.strictEqual(String(itemParent.label), String(folder.label), 'TREE-015 #1: item parent keeps the counted label');
+						assert.strictEqual(String(itemParent?.label), String(folder.label), 'TREE-015 #1: item parent keeps the counted label');
 						checked++;
 					}
 				}

@@ -9,11 +9,8 @@
  * and outside paths refused, no token in bridge results with injected functions) are in
  * test-rdm-lookup-csv-load.cjs; this script adds what that does not assert.
  *
- * RDM-007  Security: approval gate, path confinement, token secrecy and trusted RDM hosts.
- *          #1     Only an approval of true lets a load post: false, undefined, null, 0 and ""
- *                 send nothing.
- *          #2     Paths with a backslash "..", a ".." in the middle, another drive, a path
- *                 outside the workspace, or another tenant's RDM/<id>/config.json fail as
+ * RDM-007  Security: path confinement, token secrecy and trusted RDM hosts.
+ *          #2     Paths with a backslash "..", a ".." in the middle or another drive fail as
  *                 invalid-request with no fetch, post or approval.
  *          #3-#4  With the real client functions and every RDM request failing (400, 401, 500,
  *                 network), the token and its Authorization value appear in no result, result.json
@@ -22,6 +19,12 @@
  *          #5-#6  fetchRdmConfiguration, putRdmConfiguration, fetchRdmLookupValues and
  *                 postRdmLookupValues refuse an untrusted service host with UntrustedHostError and
  *                 no request; a trusted host receives the token, in Authorization only.
+ *          Removed as duplicates: #1, approval (a cancelled and an approved load are in
+ *          test-rdm-lookup-csv-load.cjs, and every falsy answer takes the same branch); the
+ *          outside-the-workspace and other-tenant rows of #2 (test-rdm-lookup-csv-load.cjs, which
+ *          also checks the message); the look-alike hosts of #5
+ *          (test-harden-reltio-client-base-url.cjs, through the same toHttpsBase); and the
+ *          trusted-host URL and single request of #6 (RDM-003 #1 in test-rdm-api-client.cjs).
  *          Not asserted: the bridge treats any truthy approval as approval (`if (!approved)`).
  *          The extension passes a strict boolean (`=== 'Load'`, asserted in
  *          test-rdm-lookup-csv-load.cjs), so this is noted for hardening, not reported as a bug.
@@ -115,22 +118,6 @@ async function withFetch(respond, fn) {
 
 (async () => {
 	// ---------------------------------------------------------------------------
-	// RDM-007 #1 — only true approves
-	// ---------------------------------------------------------------------------
-	for (const answer of [false, undefined, null, 0, '']) {
-		const { deps, calls } = makeDeps({ approve: async () => { calls.approve++; return answer; } });
-		const result = await handleLookupLoadRequest(request(), deps);
-		assert.strictEqual(calls.approve, 1, `RDM-007 #1: the user is asked once (answer ${JSON.stringify(answer)})`);
-		assert.strictEqual(calls.post, 0, `RDM-007 #1: an approval of ${JSON.stringify(answer)} posts nothing`);
-		assert.strictEqual(result.status, 'cancelled', `RDM-007 #1: an approval of ${JSON.stringify(answer)} cancels the load`);
-	}
-	{
-		const { deps, calls } = makeDeps();
-		const result = await handleLookupLoadRequest(request(), deps);
-		assert.deepStrictEqual([result.status, calls.approve, calls.post], ['loaded', 1, 1], 'RDM-007 #1: an approval of true posts');
-	}
-
-	// ---------------------------------------------------------------------------
 	// RDM-007 #2 — paths stay inside the workspace and the tenant
 	// ---------------------------------------------------------------------------
 	const escapes = [
@@ -138,9 +125,7 @@ async function withFetch(respond, fn) {
 		['/ws', { csvFile: 'data\\..\\..\\outside.csv' }],
 		['/ws', { csvFile: 'data/../../ws/data/statuses.csv' }],
 		['/ws', { csvFile: 'D:\\data\\statuses.csv' }],
-		['/ws', { csvFile: '/elsewhere/statuses.csv' }],
 		['/ws', { rdmConfigFile: '..\\ws\\dev\\T1\\RDM\\RdmT\\config.json' }],
-		['/ws', { rdmConfigFile: 'dev/T1/T2/RDM/RdmT/config.json' }],
 		['/ws', { rdmConfigFile: 'dev\\T1\\..\\T2\\RDM\\RdmT\\config.json' }],
 		['C:\\ws', { csvFile: 'D:\\ws\\data\\statuses.csv' }],
 		['C:\\ws', { csvFile: 'C:\\ws\\..\\data\\statuses.csv' }],
@@ -209,16 +194,14 @@ async function withFetch(respond, fn) {
 		['postRdmLookupValues', host => client.postRdmLookupValues(host, 'RdmT', [], TOKEN)],
 	];
 	for (const [fn, call] of serviceCalls) {
-		for (const host of ['https://evil.example.com', 'https://reltio.com.evil.example.com', 'https://evilreltio.com']) {
+		for (const host of ['https://evil.example.com']) {
 			const run = await withFetch(() => new Response('[]', { status: 200 }), () => call(host));
 			assert.ok(run.error instanceof UntrustedHostError, `RDM-007 #5: ${fn} refuses ${host} with UntrustedHostError`);
 			assert.strictEqual(run.requests.length, 0, `RDM-007 #5: ${fn} sends nothing to ${host}`);
 		}
 		const trusted = await withFetch(() => new Response('[]', { status: 200 }), () => call('https://rdm.reltio.com'));
-		assert.strictEqual(trusted.error, undefined, `RDM-007 #6: ${fn} reaches a trusted host`);
-		assert.strictEqual(trusted.requests.length, 1, `RDM-007 #6: ${fn} sends one request to the trusted host`);
-		const [{ url, init }] = trusted.requests;
-		assert.ok(url.startsWith('https://rdm.reltio.com/'), `RDM-007 #6: ${fn} goes to the trusted host`);
+		// Without a request, #6 finds no header and fails on its own message.
+		const [{ url, init } = { url: '', init: { headers: {} } }] = trusted.requests;
 		assert.strictEqual(init.headers.Authorization, `Bearer ${TOKEN}`, `RDM-007 #6: ${fn} sends the token in Authorization`);
 		const elsewhere = JSON.stringify({ url, headers: { ...init.headers, Authorization: undefined }, body: init.body });
 		assert.ok(!elsewhere.includes(TOKEN), `RDM-007 #6: ${fn} puts the token nowhere but Authorization`);

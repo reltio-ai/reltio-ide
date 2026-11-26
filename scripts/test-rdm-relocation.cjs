@@ -8,20 +8,20 @@
  * before a healthy one) are in test-rdm-component-folder.cjs; this script adds what that does
  * not assert.
  *
- * RDM-008  Relocation never overwrites and is idempotent; bridge accepts Windows path spellings.
- *          #1-#3  With Windows-style Uris, an occupied config destination and then an occupied
- *                 baseline destination each list the tenant under conflicts, call no rename and
- *                 leave both legacy files in place.
+ * RDM-008  Relocation never overwrites; bridge accepts Windows path spellings.
  *          #4     Through the real vscode-backed filesystem (vscodeRelocationFs), every rename
  *                 passes overwrite: false.
- *          #5     A second run over a relocated workspace does nothing.
- *          #6-#8  A baseline rename that throws after the config moved reports the tenant failed
+ *          #6-#7  A baseline rename that throws after the config moved reports the tenant failed
  *                 once with the config at its new path; a rerun leaves the stray legacy baseline
- *                 where it is (pins current behavior; the owner may want different intent); a
- *                 healthy tenant after the failing one still moves.
+ *                 where it is (pins current behavior; the owner may want different intent).
  *          #9-#10 With a Windows workspace root, csvFile and rdmConfigFile spelled with
  *                 backslashes, mixed separators and another drive-letter case resolve inside the
  *                 workspace, match rdmConfigUri, and the request reaches status planned.
+ *          Removed as duplicates (test-rdm-component-folder.cjs runs the same code): #1-#3, an
+ *          occupied config or baseline destination is a conflict with no rename and both legacy
+ *          files kept (relocation never reads the path spelling, so Windows-style Uris reach the
+ *          same code); #5, a second run does nothing; #8, a healthy tenant after a failing one
+ *          still moves.
  *
  * The vscode stub keeps backslashes in Uri.path. For #9-#10 this script swaps in a Uri.file and
  * Uri.joinPath that behave as VS Code does on Windows (backslashes become "/", the drive letter
@@ -70,18 +70,7 @@ function memoryFs(existing) {
 }
 
 (async () => {
-	// ---------------------------------------------------------------------------
-	// RDM-008 #1-#3 — an occupied destination leaves both files (Windows Uris)
-	// ---------------------------------------------------------------------------
 	const t = target('A');
-	for (const [taken, which] of [[t.config.fsPath, 'config'], [t.baseline.fsPath, 'baseline']]) {
-		const existing = [t.legacyConfig.fsPath, t.legacyBaseline.fsPath, taken];
-		const f = memoryFs(existing);
-		const r = await relocateRdmTargets([t], f);
-		assert.deepStrictEqual(r, { moved: [], conflicts: ['dev/T1: A'], failed: [] }, `RDM-008 #1: a taken ${which} destination is a conflict`);
-		assert.ok(!f.ops.some(o => o.startsWith('mv')), `RDM-008 #2: no rename is called when the ${which} destination is taken`);
-		assert.deepStrictEqual([...f.files].sort(), [...existing].sort(), `RDM-008 #3: both legacy files stay when the ${which} destination is taken`);
-	}
 
 	// ---------------------------------------------------------------------------
 	// RDM-008 #4 — the real filesystem adapter never overwrites
@@ -112,16 +101,8 @@ function memoryFs(existing) {
 	}
 
 	// ---------------------------------------------------------------------------
-	// RDM-008 #5-#8 — repeat runs and a failure between the two moves
+	// RDM-008 #6-#7 — a failure between the two moves
 	// ---------------------------------------------------------------------------
-	{
-		const f = memoryFs([t.legacyConfig.fsPath, t.legacyBaseline.fsPath]);
-		await relocateRdmTargets([t], f);
-		const before = f.ops.length;
-		const again = await relocateRdmTargets([t], f);
-		assert.deepStrictEqual(again, { moved: [], conflicts: [], failed: [] }, 'RDM-008 #5: a second run reports nothing');
-		assert.strictEqual(f.ops.length, before, 'RDM-008 #5: a second run touches nothing');
-	}
 	{
 		const bad = target('E');
 		const good = target('F');
@@ -134,8 +115,6 @@ function memoryFs(existing) {
 		const r = await relocateRdmTargets([bad, good], f);
 		assert.deepStrictEqual(r.failed, ['dev/T1: E'], 'RDM-008 #6: the mid-pair failure is reported once');
 		assert.ok(f.files.has(bad.config.fsPath) && !f.files.has(bad.legacyConfig.fsPath), 'RDM-008 #6: the config is at its new path');
-		assert.deepStrictEqual(r.moved, ['dev/T1: F'], 'RDM-008 #8: the healthy tenant after it still moves');
-		assert.ok(f.files.has(good.config.fsPath) && f.files.has(good.baseline.fsPath), 'RDM-008 #8: both of its files moved');
 
 		f.rename = rename;
 		const rerun = await relocateRdmTargets([bad, good], f);
