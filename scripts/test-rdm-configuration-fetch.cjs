@@ -16,8 +16,9 @@
  * data or leaks state (a 403 stays quiet, connect flows keep local edits, a Git-workspace
  * placeholder is never used as a session, a sign-out forgets cached RDM addresses). Structure
  * checks (queue shape, helper names, call counts) were removed because a harmless refactor
- * broke them. Real behavior coverage of those flows needs an activate() harness like the one in
- * test-extension-activation.cjs; add it there rather than extending the text checks.
+ * broke them. Real behavior coverage of those flows is in test-rdm-commands.cjs, which drives
+ * activate() through scripts/lib/activation-harness.cjs; add new checks there rather than
+ * extending the text checks.
  *
  * RDM configurations vary per tenant. Assertions here are derived from whatever
  * the fixture contains rather than from hard-coded identifiers or counts, so a
