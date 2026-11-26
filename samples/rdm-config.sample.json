@@ -1,0 +1,78 @@
+{
+  "tenantId": "RdmSampleTenant",
+  "label": "RdmSampleTenant",
+  "trackTranscodeErrors": true,
+  "lookupTypes": [
+    {
+      "uri": "rdm/lookupTypes/OtherNameTypes",
+      "label": "OtherNameTypes",
+      "enabled": true,
+      "startDate": 0,
+      "endDate": 0
+    },
+    {
+      "uri": "rdm/lookupTypes/MaritalStatuses",
+      "label": "MaritalStatuses",
+      "enabled": true,
+      "startDate": 0,
+      "endDate": 0
+    },
+    {
+      "uri": "rdm/lookupTypes/ChannelTypes",
+      "label": "ChannelTypes",
+      "enabled": true,
+      "startDate": 0,
+      "endDate": 0
+    },
+    {
+      "uri": "rdm/lookupTypes/StockExchanges",
+      "label": "StockExchanges",
+      "enabled": true,
+      "startDate": 0,
+      "endDate": 0
+    },
+    {
+      "uri": "rdm/lookupTypes/SubscriptionTypes",
+      "label": "SubscriptionTypes",
+      "enabled": true,
+      "startDate": 0,
+      "endDate": 0
+    },
+    {
+      "uri": "rdm/lookupTypes/Genders",
+      "label": "Genders",
+      "enabled": true,
+      "startDate": 0,
+      "endDate": 0
+    }
+  ],
+  "sources": [
+    {
+      "uri": "rdm/sources/BvD",
+      "label": "BvD",
+      "abbreviation": "BvD",
+      "canonicalValueProvider": false
+    },
+    {
+      "uri": "rdm/sources/ServiceNow",
+      "label": "ServiceNow",
+      "abbreviation": "ServiceNow",
+      "canonicalValueProvider": false
+    },
+    {
+      "uri": "rdm/sources/ERP",
+      "label": "ERP",
+      "abbreviation": "ERP",
+      "canonicalValueProvider": false
+    },
+    {
+      "uri": "rdm/sources/SAP",
+      "label": "SAP",
+      "abbreviation": "SAP",
+      "canonicalValueProvider": false
+    }
+  ],
+  "updatedBy": "sample.user@example.invalid",
+  "updateDate": 1784222395329,
+  "version": 1
+}
