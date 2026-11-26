@@ -36,7 +36,7 @@
 				"workspace/environmentManager.ts",
 				"workspace/applyDefaultEnvironments.ts"
 			],
-			"floor": 80
+			"floor": 82
 		},
 		{
 			"name": "Git Integration",
@@ -104,7 +104,7 @@
 			"patterns": [
 				"extension.ts"
 			],
-			"floor": 31
+			"floor": 35
 		}
 	]
 }

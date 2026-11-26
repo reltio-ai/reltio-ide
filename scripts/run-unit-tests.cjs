@@ -42,6 +42,7 @@ const SCRIPTS = [
 	'test-ontology-view.cjs',
 	'test-ontology-webview-hardening.cjs',
 	'test-rdm-api-client.cjs',
+	'test-rdm-commands.cjs',
 	'test-rdm-component-folder.cjs',
 	'test-rdm-configuration-authoring.cjs',
 	'test-rdm-configuration-fetch.cjs',
