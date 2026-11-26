@@ -176,6 +176,8 @@ function run() {
 					attributesAdded: result.workflow.attributesAdded,
 					attributesUpdated: result.workflow.attributesUpdated,
 					cloudProvider: result.workflow.cloudProvider ?? 'aws',
+					baseClass: result.baseClass,
+					baseClassQualifiedName: result.baseClassQualifiedName,
 					objectAttributesConfirmed: result.workflow.objectAttributesConfirmed === true,
 					designApproved: result.workflow.designApproved === true,
 					connectivityStatus: result.workflow.connectivityStatus ?? 'unknown',
@@ -187,6 +189,21 @@ function run() {
 		}
 		case 'java':
 			return lca.requireJava(payload.language);
+		case 'render-class': {
+			const provider = payload.provider || 'aws';
+			const hook = payload.hook;
+			const className = payload.className || (payload.typeName && hook ? lca.lcaClassName(payload.typeName, hook) : undefined);
+			if (!hook || !className || !payload.javaPackage) {
+				return { error: 'javaPackage, hook, and className or typeName are required' };
+			}
+			const source = lca.renderLcaClass({
+				provider,
+				javaPackage: payload.javaPackage,
+				className,
+				hook,
+			});
+			return { source, check: lca.baseClassMatchesCloud(source, provider) };
+		}
 		case 'present-inputs':
 			return { text: lca.formatObjectAttributeConfirmation(payload) };
 		case 'present-design':
@@ -226,7 +243,7 @@ function run() {
 		default:
 			return {
 				error: 'Unknown command',
-				commands: ['tenant-gate', 'resolve-type', 'resolve-attributes', 'package', 'cloud', 'hook', 'propose-l3', 'gate', 'env', 'physical', 'deploy-error', 'intent', 'step', 'java', 'present-inputs', 'present-design', 'present-diff', 'context-open', 'context-save'],
+				commands: ['tenant-gate', 'resolve-type', 'resolve-attributes', 'package', 'cloud', 'hook', 'propose-l3', 'gate', 'env', 'physical', 'deploy-error', 'intent', 'step', 'java', 'render-class', 'present-inputs', 'present-design', 'present-diff', 'context-open', 'context-save'],
 			};
 	}
 }

@@ -3,6 +3,8 @@ export type CloudProvider = 'aws' | 'gcp' | 'azure' | 'native';
 export interface CloudSelection {
 	provider: CloudProvider;
 	baseClass: string;
+	/** Fully qualified name. Generated source imports this and extends `baseClass`. */
+	baseClassQualifiedName: string;
 	defaulted: boolean;
 	registrationPrefix: string | null;
 }
@@ -11,21 +13,25 @@ const SELECTIONS: Record<CloudProvider, Omit<CloudSelection, 'defaulted'>> = {
 	aws: {
 		provider: 'aws',
 		baseClass: 'LifeCycleActionHandler',
+		baseClassQualifiedName: 'com.reltio.lifecycle.lambda.LifeCycleActionHandler',
 		registrationPrefix: 'Lambda/BinaryJSON/',
 	},
 	gcp: {
 		provider: 'gcp',
 		baseClass: 'LifeCycleGoogleFunction',
+		baseClassQualifiedName: 'com.reltio.lifecycle.googlefunction.LifeCycleGoogleFunction',
 		registrationPrefix: 'googlefunction/BinaryJSON/',
 	},
 	azure: {
 		provider: 'azure',
 		baseClass: 'LifeCycleAzureFunction',
+		baseClassQualifiedName: 'com.reltio.lifecycle.azurefunction.LifeCycleAzureFunction',
 		registrationPrefix: 'AzureFunction/BinaryJSON/',
 	},
 	native: {
 		provider: 'native',
 		baseClass: 'LifeCycleActionBase',
+		baseClassQualifiedName: 'com.reltio.lifecycle.framework.LifeCycleActionBase',
 		registrationPrefix: null,
 	},
 };

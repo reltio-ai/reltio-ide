@@ -1,4 +1,4 @@
-import type { CloudProvider } from './cloud';
+import { selectCloud, type CloudProvider } from './cloud';
 
 const CLOUD_LABEL: Record<CloudProvider, string> = {
 	aws: 'AWS Lambda',
@@ -63,6 +63,12 @@ export function formatDeploymentPreview(input: {
 function bulletList(names: string[] | undefined): string {
 	if (!names?.length) return 'None';
 	return names.map(name => `- ${name}`).join('\n');
+}
+
+function handlerLine(cloud: CloudProvider): string {
+	const selected = selectCloud(cloud);
+	if ('error' in selected) return cloud;
+	return `${selected.baseClass} (${selected.baseClassQualifiedName})`;
 }
 
 export function formatObjectAttributeConfirmation(input: {
@@ -131,6 +137,10 @@ export function formatImplementationDesign(input: {
 		'Cloud',
 		'-----',
 		CLOUD_LABEL[input.cloud],
+		'',
+		'Base Class',
+		'----------',
+		handlerLine(input.cloud),
 		'',
 		'Attributes Read',
 		'---------------',
