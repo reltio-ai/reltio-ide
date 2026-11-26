@@ -11,6 +11,11 @@
  *         validates against the schema, every class named is used by a Velocity Pack, and SKILL.md
  *         covers every status, reason, failure kind and outcome the bridge can emit.
  * Tier C (manual): openspec/changes/match-rule-generation-skill/design.md
+ *
+ * Regression rows: UTIL-007 skill sync reports conflicts
+ * and invalid skills instead of overwriting or substituting (testSkillConflictsAndProblems).
+ * Regression rows: BIZCFG-004 configFile
+ * traversal and outside-workspace paths are refused before any call (testConfigFileContainment).
  */
 const assert = require('assert');
 const fs = require('fs');
@@ -111,6 +116,33 @@ async function testBridgeRejectsMalformedRequests() {
 		assert.strictEqual(result.error.kind, 'invalid-request', name);
 		assert.strictEqual(calls.length, 0, `${name}: nothing sent`);
 	}
+}
+
+/** BIZCFG-004: configFile traversal and outside-workspace paths never reach the tenant. */
+async function testConfigFileContainment() {
+	for (const configFile of ['../outside/x.json', 'a/../../b.json', 'C:\\other\\x.json', '/etc/passwd']) {
+		const { result, calls } = await run(request({ configFile }));
+		assert.deepStrictEqual(
+			[result.status, result.error && result.error.kind],
+			['failed', 'invalid-request'],
+			`BIZCFG-004 #1: ${configFile} is refused as an invalid request`,
+		);
+		assert.ok(/inside the workspace/.test(result.error.message), `BIZCFG-004 #1: ${configFile} names the "inside the workspace" rule: ${result.error.message}`);
+		assert.strictEqual(calls.length, 0, `BIZCFG-004 #1: ${configFile} never calls verify`);
+	}
+	const resolved = [];
+	const { result, calls } = await run(request({ configFile: 'tenant\\BusinessConfig.json' }), {
+		resolveTenant: async uri => { resolved.push(uri.path); return TENANT; },
+	});
+	assert.strictEqual(result.status, 'verified', 'BIZCFG-004 #1: the valid backslash path is accepted');
+	assert.deepStrictEqual(resolved, ['/ws/tenant/BusinessConfig.json'], 'BIZCFG-004 #1: the backslash path resolves under the root with forward slashes');
+	assert.ok(calls.length > 0, 'BIZCFG-004 #1: the valid path reaches verify');
+	const mixed = [];
+	const upper = await run(request({ configFile: '/WS/Tenant/BusinessConfig.json' }), {
+		resolveTenant: async uri => { mixed.push(uri.path); return TENANT; },
+	});
+	assert.strictEqual(upper.result.status, 'verified', 'BIZCFG-004 #1: an absolute path inside the root in another case is accepted');
+	assert.deepStrictEqual(mixed, ['/WS/Tenant/BusinessConfig.json'], 'BIZCFG-004 #1: the case-normalised comparison keeps the original path');
 }
 
 async function testBridgeVerifies() {
@@ -606,15 +638,75 @@ function testSkillContent() {
 	}
 }
 
+/** UTIL-007: conflicts are reported and left alone; each invalid skill is named with its reason. */
+async function testSkillConflictsAndProblems() {
+	// 1. A bundled skill's path already holds user content the stamp does not own.
+	installMemoryFs();
+	const src = U('/ext/skills/reltio-default');
+	await seedBundledSkills(src);
+	const userCopy = vscode.Uri.joinPath(ROOT, '.claude', 'skills', 'reltio-match-groups-from-concept', 'SKILL.md');
+	await vscode.workspace.fs.writeFile(userCopy, Buffer.from('user content'));
+	const r = await discovery.syncAgentSkills(ROOT, src, [], { install: true });
+	assert.ok(r.conflicts.includes('.claude/skills/reltio-match-groups-from-concept'), 'UTIL-007 #1: report.conflicts lists the occupied path');
+	assert.strictEqual(await read(userCopy), 'user content', 'UTIL-007 #1: user content is unchanged');
+	assert.ok(!r.owned.includes('.claude/skills/reltio-match-groups-from-concept'), 'UTIL-007 #1: the path is absent from the owned list written to the stamp');
+
+	// 2. Each problem yields one invalid message naming the playbook and the reason.
+	installMemoryFs();
+	const bad = U('/ext3/skills');
+	const put = (rel, text) => vscode.workspace.fs.writeFile(vscode.Uri.joinPath(bad, ...rel.split('/')), Buffer.from(text));
+	const md = (name, description) => `---\n${name === undefined ? '' : `name: ${name}\n`}description: ${description}\n---\n`;
+	const cases = [
+		['no-skill-md', null, /no SKILL\.md/],
+		['no-name', md(undefined, 'd'), /no frontmatter "name"/],
+		['upper', md('Reltio-Upper', 'd'), /must be lowercase letters, digits and single hyphens/],
+		['double-hyphen', md('a--b', 'd'), /must be lowercase letters, digits and single hyphens/],
+		['too-long', md('x'.repeat(65), 'd'), /at most 64 characters/],
+		['long-description', md('long-description', 'd'.repeat(1025)), /description exceeds 1024 characters/],
+	];
+	for (const [playbook, text] of cases) {
+		if (text === null) await put(`${playbook}/README.md`, 'no skill here');
+		else await put(`${playbook}/SKILL.md`, text);
+	}
+	await put('edge/SKILL.md', md('y'.repeat(64), 'e'.repeat(1024)));
+	const resolved = await discovery.resolveSkills(bad, undefined);
+	assert.strictEqual(resolved.invalid.length, cases.length, `UTIL-007 #2: one invalid message per bad skill: ${JSON.stringify(resolved.invalid)}`);
+	for (const [playbook, , reason] of cases) {
+		const msgs = resolved.invalid.filter(m => m.startsWith(`${playbook}:`));
+		assert.strictEqual(msgs.length, 1, `UTIL-007 #2: exactly one message names ${playbook}`);
+		assert.ok(reason.test(msgs[0]), `UTIL-007 #2: ${playbook} message gives the reason: ${msgs[0]}`);
+	}
+	assert.deepStrictEqual(resolved.skills.map(s => s.playbook), ['edge'], 'UTIL-007 #2: a 64-char name and a 1024-char description are accepted');
+	const synced = await discovery.syncAgentSkills(ROOT, bad, [], { install: true });
+	assert.deepStrictEqual(
+		synced.owned.filter(rel => rel.startsWith('.claude/skills/')),
+		[`.claude/skills/${'y'.repeat(64)}`],
+		'UTIL-007 #2: no invalid skill is installed',
+	);
+
+	// An override renaming the default is rejected, and the default is not silently substituted.
+	installMemoryFs();
+	await seedBundledSkills(src);
+	const overrides = vscode.Uri.joinPath(ROOT, 'skills', 'workspace');
+	await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(overrides, 'match-groups-from-concept', 'SKILL.md'), Buffer.from(md('renamed-rules', 'Renamed.')));
+	const withOverride = await discovery.resolveSkills(src, overrides);
+	const renameMsgs = withOverride.invalid.filter(m => m.startsWith('skills/workspace/match-groups-from-concept:'));
+	assert.strictEqual(renameMsgs.length, 1, 'UTIL-007 #2: one message names the renaming override');
+	assert.ok(/must keep the default's name "reltio-match-groups-from-concept"/.test(renameMsgs[0]), `UTIL-007 #2: the rename reason is given: ${renameMsgs[0]}`);
+	assert.ok(!withOverride.skills.some(s => s.playbook === 'match-groups-from-concept'), 'UTIL-007 #2: the default is not substituted for the broken override');
+}
+
 (async () => {
 	await testBridgeGates();
 	await testBridgeRejectsMalformedRequests();
+	await testConfigFileContainment();
 	await testBridgeVerifies();
 	await testBridgeAuthAndFailures();
 	await testVerifyMatchesClient();
 	await testAgentSkillSync();
 	await testWorkspaceOverrides();
 	await testHostLayouts();
+	await testSkillConflictsAndProblems();
 	testModeSyncTrigger();
 	testSkillContent();
 	console.log('test-match-rule-generation-skill: OK');

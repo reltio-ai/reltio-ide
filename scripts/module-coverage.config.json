@@ -1,0 +1,110 @@
+{
+	"target": 70,
+	"enforceTarget": false,
+	"areas": [
+		{
+			"name": "Workflows",
+			"patterns": [
+				"workflow/**",
+				"providers/bpmnContentProvider.ts",
+				"api/workflowAdapterClient.ts",
+				"tree/workflowNodes.ts",
+				"tree/processDefinitionRows.ts",
+				"workspace/workflow*.ts"
+			],
+			"floor": 96
+		},
+		{
+			"name": "LCA",
+			"patterns": [
+				"lca/**",
+				"commands/lcaActions.ts"
+			],
+			"floor": 84
+		},
+		{
+			"name": "Setup & Authentication",
+			"patterns": [
+				"api/oauthCredentialsResolve.ts",
+				"api/oauthCredentialsStore.ts",
+				"api/oauthLogin.ts",
+				"api/sessionStore.ts",
+				"api/tokenStore.ts",
+				"ux/setupGuidePanel.ts",
+				"ux/setupWizard.ts",
+				"ux/termsOfUse.ts",
+				"workspace/environmentManager.ts",
+				"workspace/applyDefaultEnvironments.ts"
+			],
+			"floor": 80
+		},
+		{
+			"name": "Git Integration",
+			"patterns": [
+				"workspace/gitConfigSource.ts",
+				"workspace/gitSourceMarker.ts",
+				"workspace/tenantGitBinding.ts",
+				"workspace/tenantFolderStructure.ts",
+				"workspace/layoutMigration.ts"
+			],
+			"floor": 91
+		},
+		{
+			"name": "RDM",
+			"patterns": [
+				"rdm/**",
+				"tree/rdmSubtree.ts",
+				"workspace/rdmRelocation.ts"
+			],
+			"floor": 91
+		},
+		{
+			"name": "Tenant Explorer & UX",
+			"patterns": [
+				"tree/**",
+				"ux/quickSwitch.ts",
+				"ux/recents.ts",
+				"ux/statusBar.ts",
+				"ux/uxState.ts"
+			],
+			"floor": 96
+		},
+		{
+			"name": "Business Configuration",
+			"patterns": [
+				"parser/**",
+				"model/**",
+				"navigation/**",
+				"ontology/**",
+				"entityBrowser/**",
+				"commands/editCommands.ts",
+				"commands/elementSkeletons.ts",
+				"commands/revealCommand.ts",
+				"commands/revealInsertion.ts",
+				"workspace/configurationHistory.ts",
+				"workspace/reltioAutoSave.ts",
+				"workspace/l3Discovery.ts",
+				"workspace/matchVerification.ts",
+				"api/formatJson.ts"
+			],
+			"floor": 46
+		},
+		{
+			"name": "Common Utils",
+			"patterns": [
+				"util/**",
+				"workspace/agentSkillDiscovery.ts",
+				"workspace/reltioAgentSync.ts",
+				"api/reltioClient.ts"
+			],
+			"floor": 97
+		},
+		{
+			"name": "Extension Activation",
+			"patterns": [
+				"extension.ts"
+			],
+			"floor": 31
+		}
+	]
+}

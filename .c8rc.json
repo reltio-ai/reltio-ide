@@ -1,0 +1,9 @@
+{
+  "all": true,
+  "exclude-after-remap": true,
+  "src": ["src"],
+  "exclude": ["src/webview/**", "scripts/**", "dist/**"],
+  "reporter": ["text-summary", "json-summary"],
+  "reports-dir": "coverage",
+  "clean": true
+}

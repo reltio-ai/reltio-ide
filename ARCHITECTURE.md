@@ -793,6 +793,37 @@ npm test    # compile + scripts/run-unit-tests.cjs (code-model first)
 3. Add at least one task in the change `tasks.md` to implement or update the test script.
 4. Do **not** add expectation/oracle JSON for model-derived tests — extend the canonical fixture and/or code-model manifest instead.
 
+### Regression gate and coverage
+
+`npm run package` runs the `prepackage` hook first: `npm run test:gate`. `npm run build` is a plain build and is not gated.
+
+| Script | What it does |
+|--------|--------------|
+| `npm test` | `compile` + runner, no coverage (unchanged) |
+| `npm run test:gate` | `compile`, then `c8 node scripts/run-unit-tests.cjs`, then `scripts/test-module-coverage-check.cjs` (self-test of the checker), then `scripts/check-module-coverage.cjs` |
+
+A failing test, a failing coverage self-test, or a coverage area below its floor stops the package. `package` then runs `clean`, which removes the gate's tsc output from `dist/`, so the VSIX file list is unchanged. CI and Jenkins run an explicit Test step (`npm run test:gate`) before `npm run build`. `release.yml` runs `npm run package` only, so the gate runs once per release. `build` and the `build:*` scripts are not gated, by design (fast local builds and watch mode).
+
+**Bypass warning:** `npm run package --ignore-scripts` skips the `prepackage` hook. Adding `--ignore-scripts` to a package step removes the gate in that pipeline.
+
+**Coverage areas:** line coverage via `c8` (`.c8rc.json`; `src/webview/` is excluded because tsconfig does not compile it). Files are grouped into 9 feature areas by first-match path patterns in [`scripts/module-coverage.config.json`](scripts/module-coverage.config.json): Workflows, LCA, Setup & Authentication, Git Integration, RDM, Tenant Explorer & UX, Business Configuration, Common Utils (which includes the shared agent-skill sync files `workspace/agentSkillDiscovery.ts` and `workspace/reltioAgentSync.ts`), Extension Activation. The RDM area maps `rdm/**`, `tree/rdmSubtree.ts` and `workspace/rdmRelocation.ts`, and sits before the `tree/**` pattern of Tenant Explorer & UX. Every non-webview file under `src/` must belong to an area; an unmapped file fails the check, so a new file needs a pattern in the right area.
+
+Each area has a `floor`, seeded 2 points below its measured baseline. `target` is 70 and `enforceTarget` is false, so areas below 70 only warn (currently Setup & Authentication, Business Configuration, Extension Activation). `enforceTarget` is a single global flag, so set it to true only once ALL areas are at or above 70; setting it earlier fails the build for every area still under 70. An invalid config (missing or non-numeric `floor` or `target`, empty `patterns`, non-boolean `enforceTarget`) fails the gate.
+
+**Raising a floor:** floors are only ever raised. After adding tests, either edit the floor by hand or run:
+
+```bash
+npm run compile && npx c8 node scripts/run-unit-tests.cjs && node scripts/check-module-coverage.cjs --write-baseline
+```
+
+`--write-baseline` recomputes floors from the current numbers (2 points under the measured value) and never lowers an existing floor (enforced in code); review the diff before committing.
+
+**Developer notes:**
+
+- `dist/` holds the gate's tsc output (including an unbundled `dist/extension.js`) until `npm run package` or `npm run clean` removes it. Run `npm run compile` before running a single `node scripts/test-<name>.cjs` if `dist/` is missing.
+- `c8` 12 needs Node ^20.19 || ^22.12 || >=23 (CI uses Node 22).
+- Windows: `resources/velocity-packs/**` is marked `-text` in `.gitattributes` because a test sums the exact bytes in `manifest.json`. A clone made before that attribute existed can have CRLF copies, which fails `test-skills-and-enablement-packs-library.cjs` ("Declared bytes do not match filesystem sum") and blocks the gate. Fix, only when `git status` shows no local changes in that folder: `git ls-files resources/velocity-packs | xargs rm -f && git checkout -- resources/velocity-packs`.
+
 ## Architectural Opportunities
 
 **VS Code integration tests:** `@vscode/test-electron` could complement CLI unit tests for command handlers and tree context menus; not in scope for the current harness.

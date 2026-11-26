@@ -79,11 +79,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Tests are not repeated here: they are a required check on the pull
-      # request that produced this commit.
-      - name: Build extension
-        run: npm run build
-
+      # `npm run package` cleans, builds and packages. Its `prepackage` hook
+      # runs the test gate first, so a failing test or a coverage area below
+      # its floor stops the release. Do not add --ignore-scripts here.
       - name: Package VSIX
         run: npm run package
 

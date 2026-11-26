@@ -53,6 +53,18 @@ pipeline {
             }
         }
 
+        stage('Test') {
+            agent {
+                docker {
+                    image "${nodeVersion}"
+                    reuseNode true
+                }
+            }
+            steps {
+                sh 'npm run test:gate'
+            }
+        }
+
         stage('Build') {
             agent {
                 docker {
@@ -62,18 +74,6 @@ pipeline {
             }
             steps {
                 sh 'npm run build'
-            }
-        }
-
-        stage('Test') {
-            agent {
-                docker {
-                    image "${nodeVersion}"
-                    reuseNode true
-                }
-            }
-            steps {
-                sh 'npm run test'
             }
         }
 

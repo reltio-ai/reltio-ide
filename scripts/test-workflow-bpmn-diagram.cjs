@@ -63,6 +63,13 @@
  *  16.  The webview never interpolates document text into HTML, and checks the
  *       origin of every message before reading it.
  *
+ * Regression rows:
+ *   WF-003  Edge cases: two processes plus a comment plus DI in one file; attribute decoding
+ *           without double unescape, single quotes, prefixed vs unprefixed class; boundary
+ *           events attached to a host touch its edge and their flows are straight lines, an
+ *           orphan boundary event still gets bounds; generateDiagramSection returns undefined
+ *           with no process id or no nodes, and withGeneratedDiagram replaces an existing DI.
+ *
  * Tier C (manual) — documented in design.md's test plan.
  */
 
@@ -1284,6 +1291,113 @@ function disjoint(a, b) {
 			!/script-src[^;]*unsafe-inline/.test(panel),
 			'the CSP must not allow unsafe-inline scripts',
 		);
+	}
+
+	// ── WF-003: parsing, escaping, boundary layout and diagram generation edge cases ──
+	{
+		// #1: two processes reusing the same local ids, a commented-out serviceTask, and DI.
+		const first = `<process id="first" isExecutable="true">
+    <startEvent id="start" name="First start" />
+    <!-- <serviceTask id="ghost" name="Commented out" /> -->
+    <sequenceFlow id="f1" sourceRef="start" targetRef="end" />
+    <endEvent id="end" name="First end" />
+  </process>`;
+		const second = `<process id="second" isExecutable="true">
+    <startEvent id="start" name="Second start" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="end" />
+    <serviceTask id="extra" name="Second only" />
+    <endEvent id="end" name="Second end" />
+  </process>`;
+		const plain = `<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">\n  ${first}\n  ${second}\n</definitions>\n`;
+		const base = extractProcessModel(plain);
+		const xml = withDiagramSection(plain, renderDiagramSection('first', base, layoutChain(base.nodes, base.flows)));
+		const model = extractProcessModel(xml);
+		assert.deepStrictEqual(model.nodes.map(n => n.name), ['First start', 'First end'],
+			'WF-003 #1: nodes come only from the first process, no comment or DI phantoms');
+		assert.deepStrictEqual(model.flows.map(f => f.id), ['f1'], 'WF-003 #1: flows come only from the first process');
+		assert.deepStrictEqual(model.duplicates, [], 'WF-003 #1: ids reused by the second process are not duplicates');
+		for (const element of [...model.nodes, ...model.flows]) {
+			assert.ok(xml.startsWith(`<${element.tag ?? 'sequenceFlow'} id="${element.id}"`, element.offset),
+				`WF-003 #1: ${element.id} offset indexes the original text`);
+		}
+		assert.ok(xml.startsWith('<process id="first"', model.processTag.offset), 'WF-003 #1: the process tag offset indexes the original text');
+
+		// #2: attribute decoding, quoting and prefixes.
+		const named = extractProcessModel(
+			'<definitions><process id="p" name="a &amp;lt; b &lt;c&gt; &quot;q&quot;"><startEvent id=\'s\' name=\'single\' />' +
+			'<serviceTask id="pre" activiti:class="com.acme.A" /><serviceTask id="bare" class="com.acme.A" /></process></definitions>',
+		);
+		assert.strictEqual(named.processName, 'a &lt; b <c> "q"', 'WF-003 #2: name decodes once, no double unescape');
+		const byId = new Map(named.nodes.map(n => [n.id, n]));
+		assert.strictEqual(byId.get('s') && byId.get('s').name, 'single', 'WF-003 #2: single-quoted attributes are read');
+		assert.strictEqual(byId.get('pre').delegateClass, 'com.acme.A', 'WF-003 #2: activiti:class is read');
+		assert.strictEqual(byId.get('bare').delegateClass, byId.get('pre').delegateClass,
+			'WF-003 #2: prefixed and unprefixed class yield the same value');
+
+		// #3: a boundary event attached to a task, with a flow in and a flow out.
+		const attached = extractProcessModel(`<definitions><process id="b" isExecutable="true">
+    <startEvent id="start" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="task" />
+    <userTask id="task" name="Review" />
+    <sequenceFlow id="f2" sourceRef="task" targetRef="end" />
+    <endEvent id="end" />
+    <boundaryEvent id="timer" attachedToRef="task" />
+    <sequenceFlow id="fOut" sourceRef="timer" targetRef="late" />
+    <startEvent id="kick" />
+    <sequenceFlow id="fIn" sourceRef="kick" targetRef="timer" />
+    <endEvent id="late" name="Late" />
+  </process></definitions>`);
+		const layout = await layoutProcess(attached);
+		const host = layout.bounds.get('task');
+		const event = layout.bounds.get('timer');
+		assert.ok(host && event, 'WF-003 #3: host and attached event both have bounds');
+		assert.ok(event.x < host.x + host.width && host.x + host.width < event.x + event.width,
+			'WF-003 #3: the attached event straddles the host\'s right edge');
+		assert.ok(event.y < host.y + host.height && host.y + host.height < event.y + event.height,
+			'WF-003 #3: the attached event straddles the host\'s bottom edge');
+		const straight = (flowId, from, to) => {
+			const a = layout.bounds.get(from);
+			const b = layout.bounds.get(to);
+			assert.deepStrictEqual(layout.waypoints.get(flowId), [
+				{ x: a.x + a.width, y: a.y + a.height / 2 },
+				{ x: b.x, y: b.y + b.height / 2 },
+			], `WF-003 #3: ${flowId} touching the attached event is a straight line (not routed by ELK)`);
+		};
+		straight('fOut', 'timer', 'late');
+		straight('fIn', 'kick', 'timer');
+
+		// The orphan: attachedToRef names a missing node; it is laid out like any node.
+		const orphan = extractProcessModel(`<definitions><process id="o" isExecutable="true">
+    <startEvent id="start" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="orphan" />
+    <boundaryEvent id="orphan" attachedToRef="missing" />
+    <sequenceFlow id="f2" sourceRef="orphan" targetRef="end" />
+    <endEvent id="end" />
+  </process></definitions>`);
+		const orphanLayout = await layoutProcess(orphan);
+		assert.ok(orphanLayout.bounds.get('orphan'), 'WF-003 #3: the orphan boundary event still has bounds');
+		for (const id of ['f1', 'f2']) {
+			const points = orphanLayout.waypoints.get(id);
+			assert.ok(points && points.length >= 2, `WF-003 #3: ${id} touching the orphan has waypoints`);
+		}
+
+		// #4: nothing to draw, and replacing an existing diagram.
+		const noId = '<definitions><process name="n"><startEvent id="s" /><endEvent id="e" /></process></definitions>';
+		assert.strictEqual(await generateDiagramSection(noId), undefined, 'WF-003 #4: no process id returns undefined');
+		assert.strictEqual(await withGeneratedDiagram(noId), noId, 'WF-003 #4: no process id leaves the XML untouched');
+		const empty = '<definitions><process id="p"></process></definitions>';
+		assert.strictEqual(await generateDiagramSection(empty), undefined, 'WF-003 #4: zero flow nodes returns undefined');
+		assert.strictEqual(await withGeneratedDiagram(empty), empty, 'WF-003 #4: zero flow nodes leaves the XML untouched');
+
+		const once = await withGeneratedDiagram(BRANCHING);
+		const twice = await withGeneratedDiagram(once);
+		assert.strictEqual((twice.match(/<bpmndi:BPMNDiagram\b/g) || []).length, 1, 'WF-003 #4: exactly one BPMNDiagram after regenerating');
+		assert.strictEqual((twice.match(/<bpmndi:BPMNPlane\b[^>]*bpmnElement="review"/g) || []).length, 1, 'WF-003 #4: one plane for the process id');
+		const branching = extractProcessModel(BRANCHING);
+		for (const node of branching.nodes) {
+			assert.strictEqual((twice.match(new RegExp(`<bpmndi:BPMNShape\\b[^>]*bpmnElement="${node.id}"`, 'g')) || []).length, 1,
+				`WF-003 #4: one shape for ${node.id}`);
+		}
 	}
 
 	// ── 17. Registered in the runner ────────────────────────────────────────

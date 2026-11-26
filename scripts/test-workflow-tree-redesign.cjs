@@ -22,6 +22,10 @@
  *   7. Node shapes: contextValues, descriptions, icons.
  *   8. package.json menus reach the right rows.
  *   9. The bundled skills tell the user to connect before any Java is written.
+ *
+ * Regression rows:
+ *   WF-004  A move that fails part-way through adoption is rolled back: moved entries return to
+ *           staging, the generated README is rewritten, the error propagates, drafts untouched.
  */
 const assert = require('assert');
 const fs = require('fs');
@@ -687,6 +691,46 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 				fs.rmSync(outer, { recursive: true, force: true });
 			}
 		}
+	}
+
+	// ── WF-004 #2: a failed move is rolled back ───────────────────────────────
+	{
+		const mem = installMemoryFs();
+		const WF = vscode.Uri.file('/rb/Workflows');
+		const ST = vscode.Uri.file(`/rb/${WORKFLOW_REPO_STAGING_DIR}`);
+		await mem.writeFile(vscode.Uri.joinPath(WF, 'README.md'), enc(GENERATED_README));
+		await mem.writeFile(vscode.Uri.joinPath(WF, 'bpmn/mine.bpmn20.xml'), enc('<m/>'));
+		await mem.writeFile(vscode.Uri.joinPath(ST, 'pom.xml'), enc('<project/>'));
+		await mem.writeFile(vscode.Uri.joinPath(ST, 'README.md'), enc('# repo'));
+		await mem.writeFile(vscode.Uri.joinPath(ST, 'mod/pom.xml'), enc('<project/>'));
+		await mem.writeFile(vscode.Uri.joinPath(ST, 'bpmn/in-repo.bpmn20.xml'), enc('<r/>'));
+		await mem.writeFile(vscode.Uri.joinPath(ST, '.git/info/.keep'), enc(''));
+		const snapshot = () => [...mem._files.entries()].map(([k, v]) => `${k}=${v.toString()}`).sort();
+		const before = snapshot();
+
+		const rename = mem.rename;
+		let calls = 0;
+		const failure = new Error('simulated rename failure');
+		mem.rename = async (from, to, opts) => {
+			calls++;
+			if (calls === 2) throw failure;
+			return rename(from, to, opts);
+		};
+		try {
+			await assert.rejects(() => adoptStagedRepository(WF, ST), e => e === failure, 'WF-004 #2: the rename error propagates');
+		} finally {
+			mem.rename = rename;
+		}
+		const f = mem._files;
+		assert.ok(![...f.keys()].some(k => k.startsWith('/rb/Workflows/') && !k.endsWith('/README.md') && !k.endsWith('/bpmn/mine.bpmn20.xml')),
+			'WF-004 #2: moved entries are renamed back out of Workflows/');
+		assert.ok(f.has(`/rb/${WORKFLOW_REPO_STAGING_DIR}/pom.xml`) && f.has(`/rb/${WORKFLOW_REPO_STAGING_DIR}/mod/pom.xml`)
+			&& f.has(`/rb/${WORKFLOW_REPO_STAGING_DIR}/.git/info/.keep`) && f.has(`/rb/${WORKFLOW_REPO_STAGING_DIR}/bpmn/in-repo.bpmn20.xml`),
+			'WF-004 #2: staging still holds every item');
+		assert.strictEqual(f.has('/rb/Workflows/README.md') && dec(f.get('/rb/Workflows/README.md')), GENERATED_README,
+			'WF-004 #2: the generated README text is rewritten');
+		assert.strictEqual(dec(f.get('/rb/Workflows/bpmn/mine.bpmn20.xml')), '<m/>', 'WF-004 #2: user drafts untouched');
+		assert.deepStrictEqual(snapshot(), before, 'WF-004 #2: the filesystem is back to its state before the attempt');
 	}
 
 	console.log('test-workflow-tree-redesign: OK');
