@@ -6,9 +6,9 @@
  * Tier A (static, no VS Code host):
  *   ACT-001  command manifest: declared, registered, allowlisted and menu/welcome-referenced ids agree.
  *   ACT-003  declared reltio.* settings equal the settings read; activation events and entry point.
- *   ACT-004  extension.ts: a single UriIndex build site and the documented activation order.
  * Tier B (stub-driven activate(): the shared vscode stub is extended at runtime in this script,
  * and dist/ module exports are wrapped as spies, so the real compiled activate() runs end to end):
+ *   ACT-004  one rebuild pipeline (build, then every provider, then diagnostics) and the activation order.
  *   ACT-002  Reltio document matching, rebuild triggers, trusted host suffixes, Classic UX.
  *   ACT-005  every disposable created during activation is disposed; token-file watchers.
  *   ACT-006  activation without a folder, workspace source choice, config-driven sync, document close.
@@ -36,7 +36,6 @@ const { loadCanonicalFixture, repoRoot } = require('./lib/load-canonical-fixture
 
 const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
 const srcRoot = path.join(repoRoot, 'src');
-const extSrc = fs.readFileSync(path.join(srcRoot, 'extension.ts'), 'utf8');
 
 /** Every non-webview .ts file under src/, as { rel, text }. */
 function srcFiles() {
@@ -158,61 +157,6 @@ function testSettingsAndActivationManifest() {
 	}
 	assert.ok(pkg.activationEvents.includes('onLanguage:json'), 'ACT-003 #2: activationEvents must include onLanguage:json');
 	assert.strictEqual(pkg.activationEvents.length, 7, `ACT-003 #2: expected 7 activation events, found ${pkg.activationEvents.length}`);
-}
-
-// ── ACT-004: static source checks in extension.ts ───────────────────────────
-/** Body of the named inner function: from its declaration to the next line that closes at the same indent. */
-function functionBody(text, name) {
-	const start = text.indexOf(`function ${name}(`);
-	assert.ok(start >= 0, `ACT-004: function ${name} not found`);
-	const lineStart = text.lastIndexOf('\n', start) + 1;
-	const indent = text.slice(lineStart, start).match(/^\s*/)[0];
-	const end = text.indexOf(`\n${indent}}`, start);
-	return { start, end, body: text.slice(start, end) };
-}
-
-function testStaticExtensionSource() {
-	// 1. A single UriIndex build site, feeding every provider then the diagnostics.
-	const count = (s, needle) => s.split(needle).length - 1;
-	const rb = functionBody(extSrc, 'rebuildUriIndex');
-	assert.strictEqual(count(extSrc, 'uriIndex.build('), 1, 'ACT-004 #1: uriIndex.build( must occur exactly once in extension.ts');
-	assert.ok(rb.body.includes('uriIndex.build('), 'ACT-004 #1: uriIndex.build( must sit inside rebuildUriIndex');
-	let lastAt = rb.body.indexOf('uriIndex.build(');
-	for (const p of ['linkProvider', 'defProvider', 'refProvider', 'uriCompletionProvider']) {
-		const needle = `${p}.setIndex(`;
-		assert.strictEqual(count(extSrc, needle), 1, `ACT-004 #1: ${needle} must occur exactly once in extension.ts`);
-		const at = rb.body.indexOf(needle);
-		assert.ok(at > lastAt, `ACT-004 #1: ${needle} must be inside rebuildUriIndex, after the build`);
-		lastAt = at;
-	}
-	const diagAt = rb.body.indexOf('diagnosticsManager.update(doc, uriIndex)');
-	assert.ok(diagAt > lastAt, 'ACT-004 #1: diagnosticsManager.update(doc, uriIndex) must follow the provider updates in rebuildUriIndex');
-	for (const { rel, text } of srcFiles()) {
-		if (rel === 'extension.ts') continue;
-		assert.ok(!/\buriIndex\.build\(/.test(text), `ACT-004 #1: ${rel} calls uriIndex.build; rebuildUriIndex is the single refresh path`);
-	}
-
-	// 2. Activation order.
-	const activateAt = extSrc.indexOf('export async function activate(');
-	assert.ok(activateAt >= 0, 'ACT-004 #2: activate() not found');
-	const body = extSrc.slice(activateAt);
-	const markers = [
-		['applyTrustedHostSuffixes()', body.indexOf('applyTrustedHostSuffixes();')],
-		['new TokenStore()', body.indexOf('new TokenStore()')],
-		["createTreeView('reltioConfigTree')", body.indexOf("createTreeView('reltioConfigTree'")],
-		["registerCommand('reltio.resyncAgentAssets')", body.indexOf("registerCommand('reltio.resyncAgentAssets'")],
-		['function rebuildUriIndex', body.indexOf('function rebuildUriIndex(')],
-		['initial activeEditor rebuild', body.indexOf('const activeEditor = vscode.window.activeTextEditor')],
-		['setupTokenFileWatchers()', body.search(/\n\tsetupTokenFileWatchers\(\);/)],
-		['applyDefaultsOnActivate block', body.indexOf("get<boolean>('applyDefaultsOnActivate'")],
-	];
-	for (const [label, at] of markers) assert.ok(at >= 0, `ACT-004 #2: ${label} not found in activate()`);
-	for (let i = 1; i < markers.length; i++) {
-		assert.ok(
-			markers[i - 1][1] < markers[i][1],
-			`ACT-004 #2: ${markers[i - 1][0]} must come before ${markers[i][0]} in activate()`,
-		);
-	}
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -472,6 +416,7 @@ importDist('api/oauthLogin').refreshTokens = (rt, creds) => {
 const applyDefaultsModule = importDist('workspace/applyDefaultEnvironments');
 applyDefaultsModule.applyDefaultEnvironments = opts => {
 	rec.applyDefaults.push(opts);
+	rec.log.push('applyDefaults');
 	return rec.applyDefaultsImpl(opts);
 };
 applyDefaultsModule.reloadTokenFileIntoStore = async binding => {
@@ -486,11 +431,26 @@ const { UriIndex } = importDist('navigation/uriIndex');
 const realBuild = UriIndex.prototype.build;
 UriIndex.prototype.build = function (...args) {
 	rec.builds++;
+	rec.log.push('build');
 	return realBuild.apply(this, args);
 };
+for (const [mod, cls, label] of [
+	['navigation/documentLinkProvider', 'ReltioDocumentLinkProvider', 'link'],
+	['navigation/definitionProvider', 'ReltioDefinitionProvider', 'definition'],
+	['navigation/referenceProvider', 'ReltioReferenceProvider', 'reference'],
+	['navigation/uriCompletionProvider', 'ReltioUriCompletionProvider', 'completion'],
+]) {
+	const proto = importDist(mod)[cls].prototype;
+	const realSetIndex = proto.setIndex;
+	proto.setIndex = function (...args) {
+		rec.log.push(`setIndex:${label}`);
+		return realSetIndex.apply(this, args);
+	};
+}
 const { DiagnosticsManager } = importDist('navigation/diagnosticsManager');
 DiagnosticsManager.prototype.update = function (doc) {
 	rec.diagUpdate.push(doc.uri.toString());
+	rec.log.push('diagnostics');
 };
 DiagnosticsManager.prototype.clear = function (uri) {
 	rec.diagClear.push(uri.toString());
@@ -710,6 +670,48 @@ async function testDocumentMatchingAndTriggers() {
 	await activateWith({ config: { 'reltio.uxMode': 'default' } });
 	assert.strictEqual(rec.statusItems.length, 1, 'ACT-002 #4: default mode must create the status bar item');
 	assert.strictEqual(rec.guideOpened, 1, 'ACT-002 #4: default mode must open the Setup Guide once in a workspace with no environments');
+}
+
+// ── ACT-004 ─────────────────────────────────────────────────────────────────
+/** Index of the first log entry equal to `kind`, failing the test if it is absent. */
+function logAt(kind, log) {
+	const at = log.indexOf(kind);
+	assert.ok(at >= 0, `ACT-004 #2: "${kind}" never happened during activation (log: ${log.join(', ')})`);
+	return at;
+}
+
+async function testRebuildPipelineAndActivationOrder() {
+	// 1. Every refresh (editor switch and debounced edit) is one build, then every provider, then the diagnostics.
+	const pipeline = ['build', 'setIndex:link', 'setIndex:definition', 'setIndex:reference', 'setIndex:completion', 'diagnostics'];
+	await activateWith({ folder: false });
+	{
+		const from = rec.log.length;
+		await fire('activeEditor', { document: doc('/ws/x.reltio.json') });
+		assert.deepStrictEqual(rec.log.slice(from), pipeline, 'ACT-004 #1: an editor switch must refresh as build, providers, diagnostics');
+	}
+	{
+		const from = rec.log.length;
+		await fire('changeDoc', { document: doc('/ws/x.reltio.json') });
+		clock.tick(300);
+		assert.deepStrictEqual(rec.log.slice(from), pipeline, 'ACT-004 #1: a debounced edit must refresh as build, providers, diagnostics');
+	}
+	await activateWith({ folder: false, activeEditor: { document: doc('/ws/x.reltio.json') } });
+	assert.deepStrictEqual(rec.log.filter(k => pipeline.includes(k)), pipeline, 'ACT-004 #1: the startup refresh must run the same pipeline once');
+
+	// 2. Activation order: allowlist first; tree view and providers exist before the first refresh; apply-defaults runs last.
+	await activateWith({
+		config: { 'reltio.applyDefaultsOnActivate': true },
+		activeEditor: { document: doc('/ws/x.reltio.json') },
+	});
+	const log = rec.log;
+	assert.strictEqual(rec.applyDefaults.length, 1, 'ACT-004 #2: setup must trigger apply-defaults once');
+	assert.strictEqual(log[0], 'setTrustedHostSuffixes', 'ACT-004 #2: the host allowlist must be applied before any other setup');
+	const at = k => logAt(k, log);
+	const firstRefresh = at('build');
+	for (const k of ['treeView', 'provider:link', 'provider:definition', 'provider:reference', 'provider:completion', 'command:reltio.resyncAgentAssets']) {
+		assert.ok(at(k) < firstRefresh, `ACT-004 #2: ${k} must exist before the first refresh`);
+	}
+	assert.ok(firstRefresh < at('applyDefaults'), 'ACT-004 #2: apply-defaults must run after the first refresh');
 }
 
 // ── ACT-005 ─────────────────────────────────────────────────────────────────
@@ -1119,8 +1121,8 @@ async function testOffCriticalPath() {
 async function main() {
 	testCommandManifest();
 	testSettingsAndActivationManifest();
-	testStaticExtensionSource();
 	await testDocumentMatchingAndTriggers();
+	await testRebuildPipelineAndActivationOrder();
 	await testDisposablesAndTokenWatchers();
 	await testNoFolderSourceChoiceSyncAndClose();
 	await testActivationWorkflows();
