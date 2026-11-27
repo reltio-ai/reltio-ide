@@ -190,19 +190,23 @@ function run() {
 		case 'java':
 			return lca.requireJava(payload.language);
 		case 'render-class': {
-			const provider = payload.provider || 'aws';
+			const provider = payload.provider;
 			const hook = payload.hook;
 			const className = payload.className || (payload.typeName && hook ? lca.lcaClassName(payload.typeName, hook) : undefined);
-			if (!hook || !className || !payload.javaPackage) {
-				return { error: 'javaPackage, hook, and className or typeName are required' };
+			if (!provider || !hook || !className || !payload.javaPackage) {
+				return { error: 'provider, javaPackage, hook, and className or typeName are required' };
 			}
-			const source = lca.renderLcaClass({
-				provider,
-				javaPackage: payload.javaPackage,
-				className,
-				hook,
-			});
-			return { source, check: lca.baseClassMatchesCloud(source, provider) };
+			try {
+				const source = lca.renderLcaClass({
+					provider,
+					javaPackage: payload.javaPackage,
+					className,
+					hook,
+				});
+				return { source, check: lca.baseClassMatchesCloud(source, provider) };
+			} catch (error) {
+				return { error: error instanceof Error ? error.message : String(error) };
+			}
 		}
 		case 'present-inputs':
 			return { text: lca.formatObjectAttributeConfirmation(payload) };

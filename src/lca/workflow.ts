@@ -705,16 +705,6 @@ export function step(workflow: LcaWorkflow, userText: string, options: StepOptio
 		};
 	}
 
-	if (isTestAndGenerateConflict(userText)) {
-		return finish(
-			workflow,
-			'ASK',
-			workflow.phase,
-			['ask'],
-			'You asked to test and to generate an LCA. Which should I do? I will not write code or run a test until you choose one.',
-		);
-	}
-
 	let current = workflow;
 	const prior = workflow;
 	if (options.trust === 'caller') {
@@ -737,6 +727,7 @@ export function step(workflow: LcaWorkflow, userText: string, options: StepOptio
 			attributesSpecified: false,
 		};
 	}
+	const trusted = current;
 
 	const extracted = extractFacts(userText, current, options.claimed);
 	current = extracted.workflow;
@@ -753,6 +744,16 @@ export function step(workflow: LcaWorkflow, userText: string, options: StepOptio
 			'ASK',
 			['ask'],
 			TENANT_CONNECTION_MESSAGE,
+		);
+	}
+
+	if (isTestAndGenerateConflict(userText)) {
+		return finish(
+			trusted,
+			'ASK',
+			trusted.phase,
+			['ask'],
+			'You asked to test and to generate an LCA. Which should I do? I will not write code or run a test until you choose one.',
 		);
 	}
 

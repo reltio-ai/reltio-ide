@@ -11,7 +11,9 @@
  *  - LCA-010 discoverTenantL3 cap, skipped folders and depth bound
  *  - LCA-012 generated Java extends the selected cloud's handler: step facts, renderLcaClass,
  *    baseClassMatchesCloud, design text, selectCloud aliases and cloudRegistration prefixes
- *  - LCA-013 test and generate in one request asks which, writes nothing
+ *  - LCA-012 #7 render-class requires a provider and returns errors as JSON
+ *  - LCA-013 test and generate in one request asks which, writes nothing; a unit test or sample
+ *    request for the LCA is one request; caller trust and the tenant check apply first
  *  - LCA-014 step() turns: two hooks, no attributes, idle yes, yes in GENERATE, early deploy, a question
  *    at the L3 and deploy gates, inspect, polite build, how-to-deploy, validation mid-flow, native and
  *    gcp deploy credentials, new build after COMPLETE, beginCodeChange, actionSucceeded
@@ -1417,6 +1419,10 @@ assert.strictEqual(gcpReady.consoleUpdate, undefined);
 	assert.strictEqual(baseClassMatchesCloud(swapped, 'aws').ok, false, 'LCA-012 #3: aws import with a gcp extends fails');
 	const commented = awsSource.replace('{', '{\n  // LifeCycleGoogleFunction\n');
 	assert.strictEqual(baseClassMatchesCloud(commented, 'aws').ok, false, 'LCA-012 #3: another cloud handler anywhere in the source fails');
+	const unknownBase = awsSource.replace('extends LifeCycleActionHandler', 'extends SomethingElse');
+	const unknownCheck = baseClassMatchesCloud(unknownBase, 'aws');
+	assert.strictEqual(unknownCheck.ok, false, 'LCA-012 #3: correct import with an unknown base class fails');
+	assert.strictEqual(unknownCheck.declared, 'SomethingElse', 'LCA-012 #3: the declared base class is reported');
 	assert.throws(() => renderLcaClass({ provider: 'aws', javaPackage, className, hook: 'BeforeSave' }), Error, 'LCA-012 #3: unknown hook refused');
 	assert.throws(() => renderLcaClass({ provider: 'aws', javaPackage: 'com.example.lca', className, hook: 'beforeSave' }), Error, 'LCA-012 #3: com.example package refused');
 
@@ -1431,6 +1437,18 @@ assert.strictEqual(gcpReady.consoleUpdate, undefined);
 	assert.strictEqual(cloudRegistration('gcp', 'fn'), 'googlefunction/BinaryJSON/fn', 'LCA-012 #5: gcp prefix');
 	assert.strictEqual(cloudRegistration('azure', 'fn'), 'AzureFunction/BinaryJSON/fn', 'LCA-012 #5: azure prefix');
 	assert.strictEqual(cloudRegistration('native', 'MyAction'), 'MyAction', 'LCA-012 #5: native name unprefixed');
+
+	const { execFileSync } = require('child_process');
+	const renderClass = payload => JSON.parse(execFileSync(process.execPath, [path.join(__dirname, 'lca-agent.cjs'), 'render-class', JSON.stringify(payload)], { encoding: 'utf8' }));
+	const request = { javaPackage, typeName: 'HCP', hook: 'beforeSave' };
+	const noProvider = renderClass(request);
+	assert.match(noProvider.error || '', /provider/, 'LCA-012 #7: render-class without a provider returns an error');
+	assert.strictEqual(noProvider.source, undefined, 'LCA-012 #7: render-class never defaults to a cloud');
+	assert.ok(renderClass({ ...request, provider: 'oracle' }).error, 'LCA-012 #7: an unknown provider returns an error as JSON');
+	assert.ok(renderClass({ ...request, provider: 'gcp', hook: 'BeforeSave' }).error, 'LCA-012 #7: an unknown hook returns an error as JSON');
+	const gcpClass = renderClass({ ...request, provider: 'gcp' });
+	assert.match(gcpClass.source, /extends LifeCycleGoogleFunction \{/, 'LCA-012 #7: gcp render-class extends the gcp handler');
+	assert.strictEqual(gcpClass.check.ok, true, 'LCA-012 #7: gcp render-class passes its check');
 }
 
 // LCA-013: test and generate in one request asks which
@@ -1441,7 +1459,12 @@ assert.strictEqual(gcpReady.consoleUpdate, undefined);
 	assert.strictEqual(isTestAndGenerateConflict('Help me test this'), false, 'LCA-013 #1: test alone is not a conflict');
 	assert.strictEqual(classifyTurn(mixedText), 'ask', 'LCA-013 #1: conflict classifies as ask');
 	assert.strictEqual(classifyTurn('Help me test this'), 'test', 'LCA-013 #1: test alone classifies as test');
-	const mixed = step(createWorkflow({
+	assert.strictEqual(isTestAndGenerateConflict('Help me test this and also generate a lifecycle action for HCP.'), true, 'LCA-013 #1: "lifecycle action" counts as the LCA');
+	for (const single of ['Write a unit test for the LCA', 'Generate a unit test for my HCP LCA', 'Create a sample request to test the LCA']) {
+		assert.strictEqual(isTestAndGenerateConflict(single), false, `LCA-013 #1: "${single}" is one request`);
+		assert.strictEqual(classifyTurn(single), 'test', `LCA-013 #1: "${single}" classifies as test`);
+	}
+	const generating = createWorkflow({
 		state: 'DESIGN_APPROVED',
 		phase: 'GENERATE',
 		intent: 'generate',
@@ -1451,10 +1474,21 @@ assert.strictEqual(gcpReady.consoleUpdate, undefined);
 		targetType: 'HCP',
 		hook: 'beforeSave',
 		attributesRead: ['FirstName'],
-	}), mixedText, { trust: 'persisted', l3Model: model });
+	});
+	const mixed = step(generating, mixedText, { trust: 'persisted', l3Model: model });
 	assert.deepStrictEqual(mixed.allowedActions, ['ask'], 'LCA-013 #2: only ask is allowed');
 	assert.strictEqual(mixed.writeFiles, false, 'LCA-013 #2: no files are written');
 	assert.match(mixed.message, /Which should I do/, 'LCA-013 #2: asks which to do');
+	const unitTest = step(generating, 'Write a unit test for the LCA', { trust: 'persisted', l3Model: model });
+	assert.ok(!/Which should I do/.test(unitTest.message), 'LCA-013 #2: a unit-test request in GENERATE is not blocked by the question');
+
+	const selfApproved = createWorkflow({ ...generating, deploymentApproved: true, l3UpdateApproved: true });
+	const callerMixed = step(selfApproved, mixedText, { trust: 'caller' });
+	assert.strictEqual(callerMixed.workflow.deploymentApproved, false, 'LCA-013 #3: caller trust clears a self-set deploy approval');
+	assert.strictEqual(callerMixed.workflow.l3UpdateApproved, false, 'LCA-013 #3: caller trust clears a self-set L3 approval');
+	assert.strictEqual(callerMixed.workflow.designApproved, false, 'LCA-013 #3: caller trust clears a self-set design approval');
+	const offline = step(generating, mixedText, { trust: 'persisted', tenantConnected: false });
+	assert.strictEqual(offline.message, TENANT_CONNECTION_MESSAGE, 'LCA-013 #3: a disconnected tenant is reported first');
 }
 
 // LCA-014: conversation turns through step()

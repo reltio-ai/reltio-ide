@@ -50,6 +50,16 @@ export function isExplicitApproval(text: string): boolean {
 	return true;
 }
 
+const LCA_NOUN = /\b(lcas?|lifecycle actions?)\b/i;
+const TEST_ARTIFACT = /\b(unit tests?|integration tests?|sample requests?|tests?)\b/i;
+
+/** A clause whose build verb makes the LCA itself, not a test or a sample request for it. */
+function buildsTheLca(text: string): boolean {
+	return text
+		.split(/\b(?:and|then|also)\b|[,.;]/i)
+		.some(clause => BUILD.test(clause) && LCA_NOUN.test(clause) && !TEST_ARTIFACT.test(clause));
+}
+
 /**
  * Testing and generating in the same utterance is two requests.
  * The turn asks which one to do and does not start either.
@@ -57,7 +67,7 @@ export function isExplicitApproval(text: string): boolean {
 export function isTestAndGenerateConflict(text: string): boolean {
 	const value = text.trim();
 	if (isAdviceQuestion(value)) return false;
-	return TEST.test(value) && BUILD.test(value) && /\blca\b/i.test(value);
+	return TEST.test(value) && buildsTheLca(value);
 }
 
 /** Classify the user request. Validation-only stays on DVF and does not start LCA generation. */
