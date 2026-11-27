@@ -1,7 +1,7 @@
-import type { CloudProvider } from './cloud';
+import { selectCloud, type CloudProvider } from './cloud';
 import { missingEnvKeys } from './envCheck';
 import { ALL_LCA_HOOKS } from './hooks';
-import { classifyTurn, isExplicitApproval, type LcaIntent } from './intent';
+import { classifyTurn, isExplicitApproval, isTestAndGenerateConflict, type LcaIntent } from './intent';
 import type { ProjectContext } from './context';
 import { listObjectTypes, resolveAttributes, resolveObjectType } from './l3Lookup';
 import { assessPhysicalAccess } from './physicalConfig';
@@ -445,6 +445,9 @@ export interface StepResult {
 	consoleUpdate?: string;
 	/** .env key names that are missing. Values are never included. */
 	missingCredentials?: string[];
+	/** Set when this turn may write Java. The class extends this handler and no other. */
+	baseClass?: string;
+	baseClassQualifiedName?: string;
 }
 
 export interface StepOptions {
@@ -464,7 +467,7 @@ export interface StepOptions {
 }
 
 function finish(workflow: LcaWorkflow, phase: LcaPhase, persistedPhase: LcaPhase, allowedActions: AllowedAction[], message: string, questions?: string[]): StepResult {
-	return {
+	const result: StepResult = {
 		phase,
 		persistedPhase,
 		workflow: { ...workflow, phase: persistedPhase },
@@ -473,6 +476,14 @@ function finish(workflow: LcaWorkflow, phase: LcaPhase, persistedPhase: LcaPhase
 		message,
 		questions,
 	};
+	if (result.writeFiles) {
+		const selected = selectCloud(workflow.cloudProvider ?? 'aws');
+		if (!('error' in selected)) {
+			result.baseClass = selected.baseClass;
+			result.baseClassQualifiedName = selected.baseClassQualifiedName;
+		}
+	}
+	return result;
 }
 
 const POST_DESIGN_STATES: ReadonlySet<WorkflowState> = new Set([
@@ -716,6 +727,7 @@ export function step(workflow: LcaWorkflow, userText: string, options: StepOptio
 			attributesSpecified: false,
 		};
 	}
+	const trusted = current;
 
 	const extracted = extractFacts(userText, current, options.claimed);
 	current = extracted.workflow;
@@ -732,6 +744,16 @@ export function step(workflow: LcaWorkflow, userText: string, options: StepOptio
 			'ASK',
 			['ask'],
 			TENANT_CONNECTION_MESSAGE,
+		);
+	}
+
+	if (isTestAndGenerateConflict(userText)) {
+		return finish(
+			trusted,
+			'ASK',
+			trusted.phase,
+			['ask'],
+			'You asked to test and to generate an LCA. Which should I do? I will not write code or run a test until you choose one.',
 		);
 	}
 

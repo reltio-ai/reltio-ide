@@ -7,9 +7,12 @@
  * LCA-002 (buildDeployPlan aws/gcp args, presentEnvKeys placeholder handling), LCA-004 (deploy
  * refusals for azure/native and missing .env keys, deployFailureGuidance redaction and per-class
  * next action), LCA-008 (function-name injection, artifact path containment, childEnv secret values,
- * redactCommandOutput), LCA-011 (readProjectContext on corrupt, mismatched and partial files).
+ * redactCommandOutput), LCA-011 (readProjectContext on corrupt, mismatched and partial files),
+ * LCA-018 (missingEnvKeys for gcp/azure/native, discoverEnvFile, discoverPhysicalConfig, physical
+ * access edge cases), LCA-019 (hasGeneratedJava, findDeployArtifact), LCA-020 (formatLifecycleDiff).
  *
- * LCA-003, LCA-005, LCA-006, LCA-009 and LCA-010 extend test-lca-workflow.cjs. LCA-007 is manual (Tier C).
+ * LCA-003, LCA-005, LCA-006, LCA-009, LCA-010 and LCA-012..LCA-017 extend test-lca-workflow.cjs.
+ * LCA-007 is manual (Tier C).
  * No cloud CLI runs: buildDeployPlan only returns the argument list.
  */
 const assert = require('assert');
@@ -311,6 +314,78 @@ const goodEnv = 'AWS_REGION=us-east-1\nAWS_PROFILE=dev\n';
 	assert.strictEqual(result.deploymentStatus, 'none', 'LCA-011 #3: missing deploymentStatus from emptyProjectContext');
 	assert.strictEqual(result.designApproved, false, 'LCA-011 #3: missing designApproved is false');
 	assert.strictEqual(result.l3UpdateApproved, false, 'LCA-011 #3: missing l3UpdateApproved is false');
+}
+
+// ---------------------------------------------------------------------------
+// LCA-018: deploy prerequisites (.env keys per cloud, .env and physical config discovery)
+// ---------------------------------------------------------------------------
+{
+	const { missingEnvKeys, discoverEnvFile, discoverPhysicalConfig, assessPhysicalAccess } = lca;
+	assert.deepStrictEqual(missingEnvKeys('', 'gcp'), ['GOOGLE_CLOUD_PROJECT', 'GOOGLE_CLOUD_REGION'], 'LCA-018 #1: gcp keys');
+	assert.deepStrictEqual(missingEnvKeys('', 'azure'), ['AZURE_FUNCTIONAPP_NAME', 'AZURE_RESOURCE_GROUP'], 'LCA-018 #1: azure keys');
+	assert.deepStrictEqual(missingEnvKeys('', 'native'), [], 'LCA-018 #1: native needs no keys');
+
+	const envRoot = path.join(tmp, 'env');
+	const write = (p, text) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, text); };
+	write(path.join(envRoot, '.env.example'), 'AWS_PROFILE=your-profile\n');
+	write(path.join(envRoot, 'node_modules', '.env'), 'AWS_PROFILE=hidden\n');
+	write(path.join(envRoot, 'velocity-packs', '.env'), 'AWS_PROFILE=pack\n');
+	write(path.join(envRoot, 'sub', '.env'), 'AWS_PROFILE=nested\n');
+	assert.strictEqual(discoverEnvFile(envRoot), path.join(envRoot, 'sub', '.env'), 'LCA-018 #2: skips .env.example, node_modules and packs');
+	write(path.join(envRoot, '.env'), 'AWS_PROFILE=root\n');
+	assert.strictEqual(discoverEnvFile(envRoot), path.join(envRoot, '.env'), 'LCA-018 #2: root .env wins');
+
+	const physicalRoot = path.join(tmp, 'physical');
+	write(path.join(physicalRoot, 'physical.json'), '{"region":"us-east-1"}\n');
+	write(path.join(physicalRoot, 'tenant-config.json'), '{}\n');
+	write(path.join(physicalRoot, 'velocity-packs', 'life', 'physical.json'), '{}\n');
+	const tenantDir = path.join(physicalRoot, 'dev', 'abc123');
+	write(path.join(tenantDir, '.reltio-config-source.json'), JSON.stringify({ kind: 'tenant', environmentName: 'dev', tenantId: 'abc123' }));
+	write(path.join(tenantDir, 'physical.json'), '{"awsAccountId":"123456789012"}\n');
+	assert.strictEqual(discoverPhysicalConfig(physicalRoot), path.join(tenantDir, 'physical.json'), 'LCA-018 #3: tenant physical.json wins');
+	const onlyUnknown = path.join(tmp, 'physical-unknown');
+	write(path.join(onlyUnknown, 'tenant-config.json'), '{}\n');
+	assert.strictEqual(discoverPhysicalConfig(onlyUnknown), undefined, 'LCA-018 #3: unrelated JSON is not physical config');
+
+	assert.strictEqual(
+		assessPhysicalAccess(JSON.stringify({ projectId: 'demo', serviceAccountEmail: 'reltio-demo' }), 'gcp').present,
+		false,
+		'LCA-018 #4: gcp service account without @ is incomplete',
+	);
+	assert.strictEqual(assessPhysicalAccess('   ', 'aws').present, false, 'LCA-018 #4: blank text is incomplete');
+	assert.strictEqual(assessPhysicalAccess(undefined, 'native').present, true, 'LCA-018 #4: native needs no physical config');
+}
+
+// ---------------------------------------------------------------------------
+// LCA-019: hasGeneratedJava and findDeployArtifact
+// ---------------------------------------------------------------------------
+{
+	const { hasGeneratedJava, findDeployArtifact } = importDist('lca/sources');
+	const srcRoot = path.join(tmp, 'src-root');
+	fs.mkdirSync(path.join(srcRoot, 'src'), { recursive: true });
+	fs.writeFileSync(path.join(srcRoot, 'src', 'A.java'), 'class A {}\n');
+	assert.strictEqual(hasGeneratedJava(srcRoot), true, 'LCA-019 #1: Java under src counts');
+	const targetOnly = path.join(tmp, 'target-only');
+	fs.mkdirSync(path.join(targetOnly, 'target'), { recursive: true });
+	fs.writeFileSync(path.join(targetOnly, 'target', 'A.java'), 'class A {}\n');
+	fs.mkdirSync(path.join(targetOnly, 'samples'), { recursive: true });
+	fs.writeFileSync(path.join(targetOnly, 'samples', 'S.java'), 'class S {}\n');
+	assert.strictEqual(hasGeneratedJava(targetOnly), false, 'LCA-019 #1: Java only under target or samples does not count');
+
+	fs.writeFileSync(path.join(srcRoot, 'short.zip'), 'z');
+	fs.mkdirSync(path.join(srcRoot, 'target'), { recursive: true });
+	fs.writeFileSync(path.join(srcRoot, 'target', 'long-name-artifact.jar'), 'j');
+	assert.ok(findDeployArtifact(srcRoot).includes(`${path.sep}target${path.sep}`), 'LCA-019 #2: build output under target is preferred');
+}
+
+// ---------------------------------------------------------------------------
+// LCA-020: formatLifecycleDiff
+// ---------------------------------------------------------------------------
+{
+	const diff = lca.formatLifecycleDiff({ hook: 'beforeSave', current: [], proposed: ['Lambda/BinaryJSON/hcp-fn'] });
+	assert.match(diff, /Current/, 'LCA-020 #1: diff shows the current list');
+	assert.match(diff, /\(none\)/, 'LCA-020 #1: an empty current list shows (none)');
+	assert.match(diff, /Lambda\/BinaryJSON\/hcp-fn/, 'LCA-020 #1: diff shows the proposed action');
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });

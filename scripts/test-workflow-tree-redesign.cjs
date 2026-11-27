@@ -26,6 +26,8 @@
  * Regression rows:
  *   WF-004  A move that fails part-way through adoption is rolled back: moved entries return to
  *           staging, the generated README is rewritten, the error propagates, drafts untouched.
+ *   WF-013  Disconnect matches the repository root after resolving symbolic links (macOS temp
+ *           folders, linked workspaces), and still refuses a sub-folder.
  */
 const assert = require('assert');
 const fs = require('fs');
@@ -524,6 +526,7 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 				assert.ok(!trackedSet.has('bpmn/mine.bpmn20.xml'));
 
 				const inspection = await inspectRepoForDisconnect(dirUri);
+				assert.ok(inspection, 'WF-013 #2: the temp repository is its own root once links are resolved');
 				// `.gitignore` itself is tracked? It was added by the second `add .` so it is part of the draft commit.
 				assert.ok(inspection.plan.keptModified.includes('pom.xml'), 'the edited tracked file is kept');
 				assert.ok(inspection.plan.keptModified.includes('bpmn/committed.bpmn20.xml'), 'a committed draft that no remote has is kept');
@@ -634,6 +637,7 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 		assert.ok(isSameFolder('C:/t/Workflows', 'c:\\t\\Workflows\\'), 'slash style, case and trailing slash do not matter');
 		assert.ok(!isSameFolder('/t', '/t/Workflows'), 'a parent folder is not the same folder');
 
+
 		// A sub-folder in the repository's bpmn/ moves across; a clash with anything local is refused.
 		const { planWorkflowRepoAdoption } = importDist('workspace/workflowRepoAdoption');
 		const dir = name => ({ name, isDirectory: true });
@@ -689,6 +693,24 @@ const GENERATED_README = '# Workflows\nThis folder is not yet managed by Reltio 
 				assert.strictEqual(result, undefined, 'nothing is planned for removal, so no user file is at risk');
 			} finally {
 				fs.rmSync(outer, { recursive: true, force: true });
+			}
+
+			// WF-013: the repository root is matched after symbolic links are resolved.
+			const base = fs.mkdtempSync(path.join(os.tmpdir(), 'reltio-link-'));
+			try {
+				const real = path.join(base, 'real');
+				fs.mkdirSync(path.join(real, 'sub'), { recursive: true });
+				execFileSync('git', ['init', '-q'], { cwd: real, stdio: 'ignore' });
+				const link = path.join(base, 'link');
+				let linked = true;
+				try { fs.symlinkSync(real, link, 'junction'); } catch { linked = false; }
+				if (linked) {
+					assert.ok(await inspectRepoForDisconnect(vscode.Uri.file(link)), 'WF-013 #1: a repository opened through a linked path is its own root');
+				}
+				assert.ok(await inspectRepoForDisconnect(vscode.Uri.file(real)), 'WF-013 #2: the unresolved temp path is its own root');
+				assert.strictEqual(await inspectRepoForDisconnect(vscode.Uri.file(path.join(real, 'sub'))), undefined, 'WF-013 #3: a sub-folder is still not the root');
+			} finally {
+				fs.rmSync(base, { recursive: true, force: true });
 			}
 		}
 	}

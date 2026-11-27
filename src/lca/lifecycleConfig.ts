@@ -1,4 +1,4 @@
-import { validateHook } from './hooks';
+import { isKnownHook, validateHook } from './hooks';
 import type { TargetKind } from './l3Lookup';
 
 export type LifecycleOp = 'inspect' | 'add' | 'append' | 'remove' | 'replace' | 'filter';
@@ -41,8 +41,10 @@ export function proposeLifecycleChange(input: {
 }): LifecycleProposal {
 	const current = clone(input.current);
 	const proposed = clone(input.current);
-	if (input.kind && input.op !== 'inspect') {
-		const hookCheck = validateHook(input.kind, input.hook);
+	if (input.op !== 'inspect') {
+		const hookCheck = input.kind
+			? validateHook(input.kind, input.hook)
+			: (isKnownHook(input.hook) ? { ok: true as const } : validateHook('entity', input.hook));
 		if (!hookCheck.ok) {
 			return {
 				ok: false,

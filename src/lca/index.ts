@@ -12,6 +12,7 @@ export {
 	L3_CONFIRM_PROMPT,
 } from './present';
 export { selectCloud, cloudRegistration, connectivityRequired, CONNECTIVITY_DOCS, LOG_LOCATIONS } from './cloud';
+export { renderLcaClass, declaredBaseClass, baseClassMatchesCloud, lcaClassName } from './generateSource';
 export { assessTenantConnection, discoverTenantL3, isComponentConfigPath, isTenantL3Path, locationFromComponentConfig, locationFromTenantIdentity, locationsFromGitMarker, TENANT_CONNECTION_MESSAGE } from './tenantGate';
 export { LCA_DIR, lcaProjectDirectory, lcaProjectSlug, tenantRootFromConfig } from './projectPath';
 export { resolveObjectType, resolveAttributes, listObjectTypes } from './l3Lookup';
@@ -47,7 +48,7 @@ export {
 } from './workflow';
 export { missingEnvKeys, presentEnvKeys, envExample, discoverEnvFile, isPlaceholderEnvValue } from './envCheck';
 export { assessPhysicalAccess, discoverPhysicalConfig, consoleUpdateInstructions } from './physicalConfig';
-export { classifyLcaIntent, classifyTurn, isAdviceQuestion, isExplicitApproval, tenantAwareIntent } from './intent';
+export { classifyLcaIntent, classifyTurn, isAdviceQuestion, isExplicitApproval, isTestAndGenerateConflict, tenantAwareIntent } from './intent';
 
 export type { CloudProvider, CloudSelection } from './cloud';
 export type { LcaWorkflow, WorkflowState, LcaPhase, Gate, StepResult, AllowedAction } from './workflow';

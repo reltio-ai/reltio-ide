@@ -3,9 +3,19 @@
  * asking git which files are the repository's, and removing them on disconnect. The decisions are
  * in `workflowRepoOrigin.ts` and are unit-tested there.
  */
+import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { runGit } from './tenantGitBinding';
 import { isSameFolder, planRepoCleanup, type RepoCleanupPlan, type RepoFileSets } from './workflowRepoOrigin';
+
+/** `folder` with symbolic links resolved, or `folder` itself when it cannot be resolved. */
+function realFolder(folder: string): string {
+	try {
+		return fs.realpathSync.native(folder);
+	} catch {
+		return folder;
+	}
+}
 
 async function gitList(repoDir: vscode.Uri, args: string[]): Promise<string[]> {
 	// `-z` so a path with spaces or non-ASCII characters arrives raw rather than quoted.
@@ -35,8 +45,9 @@ export async function inspectRepoForDisconnect(repoDir: vscode.Uri): Promise<Rep
 		// Git looks upwards for a repository. Without `Workflows/.git` it would find the tenant
 		// repository, which ignores `Workflows/`, and report every file in it as ignored: the
 		// cleanup would then delete the user's own files. Plan nothing unless this folder is the root.
+		// Git reports the root with links resolved (macOS `/var` is `/private/var`), so compare real paths.
 		const topLevel = (await runGit(repoDir, ['rev-parse', '--show-toplevel'])).trim();
-		if (!isSameFolder(topLevel, repoDir.fsPath)) return undefined;
+		if (!isSameFolder(realFolder(topLevel), realFolder(repoDir.fsPath))) return undefined;
 		const tracked = await gitList(repoDir, ['ls-files', '-z']);
 		const ignored = await gitList(repoDir, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard']);
 		// A repository with no commit has no HEAD to diff against; every tracked file is then new.

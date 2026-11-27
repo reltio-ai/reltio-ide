@@ -12,6 +12,7 @@ const VALIDATION = /\bvalidate\b|\bmust be\b|\bexactly \d+ digits\b|\brequired f
 const MUTATION = /\b(generate|populate|set|add|update|enrich|call|send|api|lambda|beforeSave|afterSave)\b/i;
 const DEPLOY = /\b(deploy|publish)\b/i;
 const TEST = /\b(unit test|integration test|invoke|sample request|check the logs|how do i test|help me test|test this|test the)\b/i;
+const BUILD = /\b(generate|create|scaffold|write|build|implement)\b/i;
 const UPDATE_L3 = /\b(update|patch|apply|change|register|link)\b[\s\S]{0,48}\b(l3|lifecycleactions|tenant)\b|\blifecycleactions\b[\s\S]{0,48}\b(update|patch|apply|change|register)\b/i;
 
 function isImperativeAction(text: string): boolean {
@@ -49,6 +50,26 @@ export function isExplicitApproval(text: string): boolean {
 	return true;
 }
 
+const LCA_NOUN = /\b(lcas?|lifecycle actions?)\b/i;
+const TEST_ARTIFACT = /\b(unit tests?|integration tests?|sample requests?|tests?)\b/i;
+
+/** A clause whose build verb makes the LCA itself, not a test or a sample request for it. */
+function buildsTheLca(text: string): boolean {
+	return text
+		.split(/\b(?:and|then|also)\b|[,.;]/i)
+		.some(clause => BUILD.test(clause) && LCA_NOUN.test(clause) && !TEST_ARTIFACT.test(clause));
+}
+
+/**
+ * Testing and generating in the same utterance is two requests.
+ * The turn asks which one to do and does not start either.
+ */
+export function isTestAndGenerateConflict(text: string): boolean {
+	const value = text.trim();
+	if (isAdviceQuestion(value)) return false;
+	return TEST.test(value) && buildsTheLca(value);
+}
+
 /** Classify the user request. Validation-only stays on DVF and does not start LCA generation. */
 export function classifyLcaIntent(text: string): LcaIntent {
 	const value = text.trim();
@@ -68,6 +89,7 @@ export function classifyLcaIntent(text: string): LcaIntent {
 /** What this utterance is trying to do. Questions stay `ask` even when they mention testing or LCA. */
 export function classifyTurn(text: string): TurnAct {
 	const value = text.trim();
+	if (isTestAndGenerateConflict(value)) return 'ask';
 	if (isAdviceQuestion(value)) return 'ask';
 	if (TEST.test(value) && !/\b(generate|create|scaffold|write|build|implement)\b/i.test(value)) return 'test';
 	if (isExplicitApproval(value) && !DEPLOY.test(value) && !UPDATE_L3.test(value) && !GENERATE.test(value)) {

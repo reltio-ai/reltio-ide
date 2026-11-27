@@ -9,6 +9,7 @@
  *  - Skill + contributor stub + partner invoke guidance
  *  - Sync: version advance / missing dest / force; skip when unchanged
  *  - skills/workspace/** never touched; packaging whitelist
+ *  - LCA-012 #6 skill names each cloud handler and forbids mixing them
  */
 const assert = require('assert');
 const fs = require('fs');
@@ -321,6 +322,11 @@ assert.match(skillBody, /confirm.*folder|Confirm target folder/i, 'confirm scaff
 assert.match(skillBody, /repo-dev\.reltio\.com|Maven repos/i, 'compile credentials caveat');
 assert.match(skillBody, /secrets|tokens|PII/i, 'no secrets guidance');
 assert.match(skillBody, /KB-LCA-##|internal KB/i, 'avoid exposing internal KB ids');
+assert.match(skillBody, /com\.reltio\.lifecycle\.lambda\.LifeCycleActionHandler/, 'LCA-012 #6: skill names the AWS handler');
+assert.match(skillBody, /com\.reltio\.lifecycle\.googlefunction\.LifeCycleGoogleFunction/, 'LCA-012 #6: skill names the GCP handler');
+assert.match(skillBody, /com\.reltio\.lifecycle\.azurefunction\.LifeCycleAzureFunction/, 'LCA-012 #6: skill names the Azure handler');
+assert.match(skillBody, /com\.reltio\.lifecycle\.framework\.LifeCycleActionBase/, 'LCA-012 #6: skill names the native handler');
+assert.match(skillBody, /does not extend another cloud's handler/i, 'LCA-012 #6: skill allows one cloud handler per class');
 
 const indexAnswering = indexMd.slice(indexMd.indexOf('## Answering Pattern'));
 assert.match(

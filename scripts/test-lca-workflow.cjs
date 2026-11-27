@@ -9,6 +9,17 @@
  *  - LCA-006 resolveObjectType/resolveAttributes misses and ambiguity, assessPhysicalAccess per cloud
  *  - LCA-009 package, slug, git-marker and context-file traversal guards
  *  - LCA-010 discoverTenantL3 cap, skipped folders and depth bound
+ *  - LCA-012 generated Java extends the selected cloud's handler: step facts, renderLcaClass,
+ *    baseClassMatchesCloud, design text, selectCloud aliases and cloudRegistration prefixes
+ *  - LCA-012 #7 render-class requires a provider and returns errors as JSON
+ *  - LCA-013 test and generate in one request asks which, writes nothing; a unit test or sample
+ *    request for the LCA is one request; caller trust and the tenant check apply first
+ *  - LCA-014 step() turns: two hooks, no attributes, idle yes, yes in GENERATE, early deploy, a question
+ *    at the L3 and deploy gates, inspect, polite build, how-to-deploy, validation mid-flow, native and
+ *    gcp deploy credentials, new build after COMPLETE, beginCodeChange, actionSucceeded
+ *  - LCA-015 attribute label, kind mismatch, first match, nested miss, "…and N more", malformed model
+ *  - LCA-016 lifecycleActions without a kind, replace with [], inspect copy, applyLifecycleProposal copy
+ *  - LCA-017 several tenants, preferred tenant, marker without config, git marker to a missing file
  */
 const assert = require('assert');
 const { importDist } = require('./lib/import-dist.cjs');
@@ -1340,6 +1351,380 @@ assert.strictEqual(gcpReady.consoleUpdate, undefined);
 	fs.mkdirSync(project, { recursive: true });
 	const up = discoverTenantL3(project);
 	assert.deepStrictEqual(up.map(f => f.tenantId), ['edge'], 'LCA-010 #3: project subfolder walks up to its tenant folder');
+}
+
+// LCA-012: generated Java extends the selected cloud's handler
+{
+	const { renderLcaClass, baseClassMatchesCloud, lcaClassName } = lca;
+	const handlers = {
+		aws: { simple: 'LifeCycleActionHandler', qualified: 'com.reltio.lifecycle.lambda.LifeCycleActionHandler' },
+		gcp: { simple: 'LifeCycleGoogleFunction', qualified: 'com.reltio.lifecycle.googlefunction.LifeCycleGoogleFunction' },
+		azure: { simple: 'LifeCycleAzureFunction', qualified: 'com.reltio.lifecycle.azurefunction.LifeCycleAzureFunction' },
+		native: { simple: 'LifeCycleActionBase', qualified: 'com.reltio.lifecycle.framework.LifeCycleActionBase' },
+	};
+	const phrases = {
+		aws: 'Create a beforeSave LCA for entity type HCP. Read FirstName. Update CustomerId.',
+		gcp: 'Create a beforeSave LCA for entity type HCP on Google Cloud. Read FirstName. Update CustomerId.',
+		azure: 'Create a beforeSave LCA for entity type HCP on Azure. Read FirstName. Update CustomerId.',
+		native: 'Create a beforeSave native LCA for entity type HCP. Read FirstName. Update CustomerId.',
+	};
+	const claimed = { targetType: 'HCP', hook: 'beforeSave', attributesRead: ['FirstName'], attributesUpdated: ['CustomerId'] };
+	const escape = s => s.replace(/\./g, '\\.');
+	const javaPackage = buildJavaPackage({ customerName: 'Acme', tenantId: 'abc123', typeName: 'HCP' });
+	const className = lcaClassName('HCP', 'beforeSave');
+	assert.strictEqual(className, 'HCPBeforeSave', 'LCA-012 #2: class name is type plus hook');
+
+	for (const [provider, want] of Object.entries(handlers)) {
+		const turn = step(createWorkflow({ intent: 'generate', state: 'COLLECT_REQUIREMENTS', phase: 'REQUIREMENT_GATHERING' }), phrases[provider], {
+			trust: 'persisted',
+			claimed,
+			l3Model: model,
+		});
+		assert.ok(turn.allowedActions.includes('generate'), `LCA-012 #1: ${provider} request generates`);
+		assert.strictEqual(turn.workflow.cloudProvider, provider, `LCA-012 #1: ${provider} is selected from the request`);
+		assert.strictEqual(turn.baseClass, want.simple, `LCA-012 #1: ${provider} step names ${want.simple}`);
+		assert.strictEqual(turn.baseClassQualifiedName, want.qualified, `LCA-012 #1: ${provider} step names ${want.qualified}`);
+
+		const source = renderLcaClass({ provider, javaPackage, className, hook: 'beforeSave' });
+		assert.match(source, new RegExp(`import ${escape(want.qualified)};`), `LCA-012 #2: ${provider} source imports ${want.qualified}`);
+		assert.match(source, new RegExp(`extends ${want.simple} \\{`), `LCA-012 #2: ${provider} source extends ${want.simple}`);
+		const check = baseClassMatchesCloud(source, provider);
+		assert.strictEqual(check.ok, true, `LCA-012 #2: ${provider} source passes its own check (${check.message})`);
+		assert.strictEqual(check.declared, turn.baseClass, `LCA-012 #2: ${provider} declared base class matches the step`);
+		for (const [other, otherHandler] of Object.entries(handlers)) {
+			if (other === provider) continue;
+			assert.ok(!source.includes(otherHandler.simple), `LCA-012 #2: ${provider} source never mentions ${otherHandler.simple}`);
+			assert.strictEqual(baseClassMatchesCloud(source, other).ok, false, `LCA-012 #3: ${provider} source fails the ${other} check`);
+		}
+
+		const design = formatImplementationDesign({
+			workingDirectory: '/projects/acme-hcp-lca',
+			tenantLabel: 'Acme DEV',
+			kind: 'entity',
+			objectType: 'HCP',
+			hooks: ['beforeSave'],
+			cloud: provider,
+			attributesRead: ['FirstName'],
+			attributesAddedOrUpdated: ['CustomerId'],
+			behavior: 'Generate CustomerId when missing.',
+			javaPackage,
+			cloudFunction: 'hcp-beforesave',
+			registration: 'HCP → beforeSave',
+		});
+		assert.match(design, new RegExp(escape(want.qualified)), `LCA-012 #4: ${provider} design names ${want.qualified}`);
+	}
+
+	const awsSource = renderLcaClass({ provider: 'aws', javaPackage, className, hook: 'beforeSave' });
+	const swapped = awsSource.replace('extends LifeCycleActionHandler', 'extends LifeCycleGoogleFunction');
+	assert.strictEqual(baseClassMatchesCloud(swapped, 'aws').ok, false, 'LCA-012 #3: aws import with a gcp extends fails');
+	const commented = awsSource.replace('{', '{\n  // LifeCycleGoogleFunction\n');
+	assert.strictEqual(baseClassMatchesCloud(commented, 'aws').ok, false, 'LCA-012 #3: another cloud handler anywhere in the source fails');
+	const unknownBase = awsSource.replace('extends LifeCycleActionHandler', 'extends SomethingElse');
+	const unknownCheck = baseClassMatchesCloud(unknownBase, 'aws');
+	assert.strictEqual(unknownCheck.ok, false, 'LCA-012 #3: correct import with an unknown base class fails');
+	assert.strictEqual(unknownCheck.declared, 'SomethingElse', 'LCA-012 #3: the declared base class is reported');
+	assert.throws(() => renderLcaClass({ provider: 'aws', javaPackage, className, hook: 'BeforeSave' }), Error, 'LCA-012 #3: unknown hook refused');
+	assert.throws(() => renderLcaClass({ provider: 'aws', javaPackage: 'com.example.lca', className, hook: 'beforeSave' }), Error, 'LCA-012 #3: com.example package refused');
+
+	assert.strictEqual(selectCloud('lambda').baseClass, handlers.aws.simple, 'LCA-012 #5: lambda alias selects aws');
+	assert.strictEqual(selectCloud('lambda').defaulted, false, 'LCA-012 #5: an alias is not a default');
+	assert.strictEqual(selectCloud('google cloud').baseClassQualifiedName, handlers.gcp.qualified, 'LCA-012 #5: google cloud alias selects gcp');
+	const unknownCloud = selectCloud('oracle');
+	assert.ok(unknownCloud.error, 'LCA-012 #5: unknown cloud reports an error');
+	assert.strictEqual(unknownCloud.provider, undefined, 'LCA-012 #5: unknown cloud selects nothing');
+	assert.throws(() => cloudRegistration('aws', '  '), Error, 'LCA-012 #5: blank function name refused');
+	assert.strictEqual(cloudRegistration('aws', 'Lambda/BinaryJSON/hcp'), 'Lambda/BinaryJSON/hcp', 'LCA-012 #5: prefixed aws name kept');
+	assert.strictEqual(cloudRegistration('gcp', 'fn'), 'googlefunction/BinaryJSON/fn', 'LCA-012 #5: gcp prefix');
+	assert.strictEqual(cloudRegistration('azure', 'fn'), 'AzureFunction/BinaryJSON/fn', 'LCA-012 #5: azure prefix');
+	assert.strictEqual(cloudRegistration('native', 'MyAction'), 'MyAction', 'LCA-012 #5: native name unprefixed');
+
+	const { execFileSync } = require('child_process');
+	const renderClass = payload => JSON.parse(execFileSync(process.execPath, [path.join(__dirname, 'lca-agent.cjs'), 'render-class', JSON.stringify(payload)], { encoding: 'utf8' }));
+	const request = { javaPackage, typeName: 'HCP', hook: 'beforeSave' };
+	const noProvider = renderClass(request);
+	assert.match(noProvider.error || '', /provider/, 'LCA-012 #7: render-class without a provider returns an error');
+	assert.strictEqual(noProvider.source, undefined, 'LCA-012 #7: render-class never defaults to a cloud');
+	assert.ok(renderClass({ ...request, provider: 'oracle' }).error, 'LCA-012 #7: an unknown provider returns an error as JSON');
+	assert.ok(renderClass({ ...request, provider: 'gcp', hook: 'BeforeSave' }).error, 'LCA-012 #7: an unknown hook returns an error as JSON');
+	const gcpClass = renderClass({ ...request, provider: 'gcp' });
+	assert.match(gcpClass.source, /extends LifeCycleGoogleFunction \{/, 'LCA-012 #7: gcp render-class extends the gcp handler');
+	assert.strictEqual(gcpClass.check.ok, true, 'LCA-012 #7: gcp render-class passes its check');
+}
+
+// LCA-013: test and generate in one request asks which
+{
+	const { isTestAndGenerateConflict } = lca;
+	const mixedText = 'Help me test this and also generate an LCA for HCP.';
+	assert.strictEqual(isTestAndGenerateConflict(mixedText), true, 'LCA-013 #1: test plus generate is a conflict');
+	assert.strictEqual(isTestAndGenerateConflict('Help me test this'), false, 'LCA-013 #1: test alone is not a conflict');
+	assert.strictEqual(classifyTurn(mixedText), 'ask', 'LCA-013 #1: conflict classifies as ask');
+	assert.strictEqual(classifyTurn('Help me test this'), 'test', 'LCA-013 #1: test alone classifies as test');
+	assert.strictEqual(isTestAndGenerateConflict('Help me test this and also generate a lifecycle action for HCP.'), true, 'LCA-013 #1: "lifecycle action" counts as the LCA');
+	for (const single of ['Write a unit test for the LCA', 'Generate a unit test for my HCP LCA', 'Create a sample request to test the LCA']) {
+		assert.strictEqual(isTestAndGenerateConflict(single), false, `LCA-013 #1: "${single}" is one request`);
+		assert.strictEqual(classifyTurn(single), 'test', `LCA-013 #1: "${single}" classifies as test`);
+	}
+	const generating = createWorkflow({
+		state: 'DESIGN_APPROVED',
+		phase: 'GENERATE',
+		intent: 'generate',
+		designApproved: true,
+		objectAttributesConfirmed: true,
+		attributesSpecified: true,
+		targetType: 'HCP',
+		hook: 'beforeSave',
+		attributesRead: ['FirstName'],
+	});
+	const mixed = step(generating, mixedText, { trust: 'persisted', l3Model: model });
+	assert.deepStrictEqual(mixed.allowedActions, ['ask'], 'LCA-013 #2: only ask is allowed');
+	assert.strictEqual(mixed.writeFiles, false, 'LCA-013 #2: no files are written');
+	assert.match(mixed.message, /Which should I do/, 'LCA-013 #2: asks which to do');
+	const unitTest = step(generating, 'Write a unit test for the LCA', { trust: 'persisted', l3Model: model });
+	assert.ok(!/Which should I do/.test(unitTest.message), 'LCA-013 #2: a unit-test request in GENERATE is not blocked by the question');
+
+	const selfApproved = createWorkflow({ ...generating, deploymentApproved: true, l3UpdateApproved: true });
+	const callerMixed = step(selfApproved, mixedText, { trust: 'caller' });
+	assert.strictEqual(callerMixed.workflow.deploymentApproved, false, 'LCA-013 #3: caller trust clears a self-set deploy approval');
+	assert.strictEqual(callerMixed.workflow.l3UpdateApproved, false, 'LCA-013 #3: caller trust clears a self-set L3 approval');
+	assert.strictEqual(callerMixed.workflow.designApproved, false, 'LCA-013 #3: caller trust clears a self-set design approval');
+	const offline = step(generating, mixedText, { trust: 'persisted', tenantConnected: false });
+	assert.strictEqual(offline.message, TENANT_CONNECTION_MESSAGE, 'LCA-013 #3: a disconnected tenant is reported first');
+}
+
+// LCA-014: conversation turns through step()
+{
+	const gathering = () => createWorkflow({ intent: 'generate', state: 'COLLECT_REQUIREMENTS', phase: 'REQUIREMENT_GATHERING' });
+	const ready = {
+		designApproved: true,
+		objectAttributesConfirmed: true,
+		attributesSpecified: true,
+		targetType: 'HCP',
+		hook: 'beforeSave',
+		attributesRead: ['FirstName'],
+	};
+	const approved = createWorkflow({ ...ready, state: 'DESIGN_APPROVED', phase: 'GENERATE', intent: 'generate' });
+	const awsEnv = 'AWS_REGION=us-east-1\nAWS_PROFILE=dev\n';
+
+	const bothHooks = step(gathering(), 'Create a beforeSave and afterSave LCA for entity type HCP. Read FirstName.', {
+		trust: 'persisted',
+		claimed: { targetType: 'HCP', attributesRead: ['FirstName'] },
+		l3Model: model,
+	});
+	assert.strictEqual(bothHooks.workflow.hook, undefined, 'LCA-014 #1: two hooks select neither');
+	assert.ok(!bothHooks.allowedActions.includes('generate'), 'LCA-014 #1: two hooks do not generate');
+	assert.match(bothHooks.message, /ambiguous/i, 'LCA-014 #1: two hooks are reported as ambiguous');
+
+	const none = step(gathering(), 'Create a beforeSave LCA for entity type HCP. Attributes: none.', { trust: 'persisted', l3Model: model });
+	assert.strictEqual(none.workflow.attributesSpecified, true, 'LCA-014 #2: "attributes: none" counts as specified');
+	assert.deepStrictEqual(none.workflow.attributesRead, [], 'LCA-014 #2: no attributes read');
+	assert.ok(none.allowedActions.includes('generate'), 'LCA-014 #2: generates with no attributes');
+
+	const idle = step(createWorkflow(), 'yes', { trust: 'persisted' });
+	for (const action of ['generate', 'deploy', 'updateL3']) {
+		assert.ok(!idle.allowedActions.includes(action), `LCA-014 #3: idle yes does not allow ${action}`);
+	}
+	assert.match(idle.message, /Nothing is waiting/, 'LCA-014 #3: idle yes says nothing is waiting');
+
+	const yesGenerate = step(approved, 'yes', { trust: 'persisted' });
+	assert.ok(yesGenerate.allowedActions.includes('generate'), 'LCA-014 #4: yes in GENERATE generates');
+	assert.ok(!yesGenerate.allowedActions.includes('deploy'), 'LCA-014 #4: yes in GENERATE does not deploy');
+	assert.ok(!yesGenerate.allowedActions.includes('updateL3'), 'LCA-014 #4: yes in GENERATE does not update L3');
+
+	const earlyDeploy = step(gathering(), 'Deploy this to AWS', { trust: 'persisted' });
+	assert.deepStrictEqual(earlyDeploy.allowedActions, ['previewDeploy'], 'LCA-014 #5: deploy before code only previews');
+
+	const pendingL3 = createWorkflow({
+		phase: 'L3_PENDING_APPROVAL',
+		state: 'TENANT_CONFIG_PENDING',
+		l3UpdateApproved: false,
+		cloudProvider: 'aws',
+		targetType: 'HCP',
+		hook: 'beforeSave',
+		attributesSpecified: true,
+	});
+	const leftL3 = step(pendingL3, 'What does the beforeSave hook do?', { trust: 'persisted' });
+	assert.deepStrictEqual(leftL3.allowedActions, ['answer'], 'LCA-014 #6: a question at the L3 gate only answers');
+	const yesAfterL3 = step(leftL3.workflow, 'yes', { trust: 'persisted' });
+	assert.ok(!yesAfterL3.allowedActions.includes('updateL3'), 'LCA-014 #6: yes after the question does not update L3');
+
+	const pendingDeploy = createWorkflow({ ...ready, state: 'DEPLOYMENT_PENDING', phase: 'DEPLOY_PENDING_APPROVAL', deploymentApproved: false, cloudProvider: 'aws' });
+	const leftDeploy = step(pendingDeploy, 'What does the beforeSave hook do?', { trust: 'persisted' });
+	const yesDeployLater = step(leftDeploy.workflow, 'yes, deploy it', { trust: 'persisted', envText: awsEnv });
+	assert.ok(!yesDeployLater.allowedActions.includes('deploy'), 'LCA-014 #7: "yes, deploy it" after a question does not deploy');
+	assert.ok(yesDeployLater.allowedActions.includes('previewDeploy'), 'LCA-014 #7: it previews again');
+
+	const storedOrg = createWorkflow({ ...ready, intent: 'generate', state: 'DESIGN_APPROVED', phase: 'GENERATE', targetType: 'Organization', attributesRead: ['Name'] });
+	const inspectHcp = step(storedOrg, 'Show lifecycleActions for HCP', { trust: 'persisted' });
+	assert.strictEqual(inspectHcp.workflow.targetType, 'Organization', 'LCA-014 #8: inspecting another type keeps the stored type');
+	assert.deepStrictEqual(inspectHcp.allowedActions, ['answer'], 'LCA-014 #8: inspect only answers');
+
+	const polite = step(gathering(), 'Can you generate a beforeSave LCA for entity type HCP. Read FirstName. Update CustomerId.', {
+		trust: 'persisted',
+		claimed: { targetType: 'HCP', hook: 'beforeSave', attributesRead: ['FirstName'], attributesUpdated: ['CustomerId'] },
+		l3Model: model,
+	});
+	assert.ok(polite.allowedActions.includes('generate'), 'LCA-014 #9: "Can you generate" is a build request');
+
+	const howDeploy = step(storedOrg, 'How do I deploy this?', { trust: 'persisted' });
+	assert.deepStrictEqual(howDeploy.allowedActions, ['answer'], 'LCA-014 #10: "how do I deploy" only answers');
+
+	const dvf = step(approved, 'Validate that NPI is exactly 10 digits.', { trust: 'persisted' });
+	for (const action of ['generate', 'deploy', 'updateL3']) {
+		assert.ok(!dvf.allowedActions.includes(action), `LCA-014 #11: validation-only mid-flow does not allow ${action}`);
+	}
+	assert.match(dvf.message, /DVF/, 'LCA-014 #11: validation-only points at DVF');
+
+	const nativeDeploy = step(createWorkflow({ ...ready, state: 'DEPLOYMENT_PENDING', intent: 'generate', cloudProvider: 'native', deploymentApproved: false }), 'yes', { trust: 'persisted' });
+	assert.ok(nativeDeploy.allowedActions.includes('deploy'), 'LCA-014 #12: native deploy needs no .env');
+
+	const gcpWait = step(createWorkflow({ ...ready, state: 'DEPLOYMENT_PENDING', cloudProvider: 'gcp', deploymentApproved: false }), 'yes', {
+		trust: 'persisted',
+		envText: 'API_SECRET=super-secret-value\n',
+	});
+	assert.ok(!gcpWait.allowedActions.includes('deploy'), 'LCA-014 #13: gcp deploy waits for its keys');
+	assert.ok(gcpWait.missingCredentials.includes('GOOGLE_CLOUD_PROJECT'), 'LCA-014 #13: names GOOGLE_CLOUD_PROJECT');
+	assert.ok(gcpWait.missingCredentials.includes('GOOGLE_CLOUD_REGION'), 'LCA-014 #13: names GOOGLE_CLOUD_REGION');
+	assert.ok(!JSON.stringify(gcpWait).includes('super-secret-value'), 'LCA-014 #13: .env values never echoed');
+
+	const completed = createWorkflow({
+		...ready,
+		state: 'COMPLETED',
+		phase: 'COMPLETE',
+		intent: 'generate',
+		l3UpdateApproved: true,
+		deploymentApproved: true,
+		attributesUpdated: ['CustomerId'],
+	});
+	const nextBuild = step(completed, 'Create a beforeSave LCA for entity type Organization. Read Name.', {
+		trust: 'persisted',
+		claimed: { targetType: 'Organization', hook: 'beforeSave', attributesRead: ['Name'] },
+		l3Model: model,
+	});
+	assert.strictEqual(nextBuild.workflow.l3UpdateApproved, false, 'LCA-014 #14: a new build clears L3 approval');
+	assert.strictEqual(nextBuild.workflow.deploymentApproved, false, 'LCA-014 #14: a new build clears deploy approval');
+
+	const restarted = beginCodeChange(createWorkflow({
+		...ready,
+		pendingConfigurationPatch: { beforeSave: ['Lambda/BinaryJSON/hcp'] },
+		deploymentApproved: true,
+		l3UpdateApproved: true,
+	}));
+	assert.strictEqual(restarted.attributesSpecified, false, 'LCA-014 #15: a code change asks for attributes again');
+	assert.strictEqual(restarted.pendingConfigurationPatch, undefined, 'LCA-014 #15: a code change drops the pending patch');
+
+	assert.strictEqual(actionSucceeded({ error: 'nope', exitCode: 0 }), false, 'LCA-014 #16: an error with exit 0 is a failure');
+	assert.strictEqual(actionSucceeded({ exitCode: 0 }), true, 'LCA-014 #16: exit 0 is a success');
+}
+
+// LCA-015: lookup edge cases
+{
+	const { listObjectTypes } = lca;
+	const lookupModel = {
+		entityTypes: [
+			{ uri: 'configuration/entityTypes/HCP', label: 'HCP', attributes: [
+				{ name: 'City', uri: 'configuration/entityTypes/HCP/attributes/City' },
+				{ name: 'Address', uri: 'configuration/entityTypes/HCP/attributes/Address', attributes: [
+					{ name: 'City', uri: 'configuration/entityTypes/HCP/attributes/Address/attributes/City' },
+					{ name: 'Zip', uri: 'configuration/entityTypes/HCP/attributes/Address/attributes/Zip' },
+				] },
+			] },
+			{ uri: 'configuration/entityTypes/Individual', label: 'HCP Person', attributes: [
+				{ name: 'FirstName', label: 'Given Name', uri: 'configuration/entityTypes/Individual/attributes/FirstName' },
+			] },
+		],
+	};
+	const given = resolveAttributes(resolveObjectType(lookupModel, 'Individual').object, ['Given Name']);
+	assert.strictEqual(given.ok, true, 'LCA-015 #1: attribute label resolves');
+	assert.strictEqual(given.attributes[0].name, 'FirstName', 'LCA-015 #1: label resolves to the attribute name');
+
+	assert.strictEqual(resolveObjectType(lookupModel, 'HCP', 'relation').ok, false, 'LCA-015 #2: an entity requested as a relation fails');
+
+	const lookupHcp = resolveObjectType(lookupModel, 'HCP').object;
+	const city = resolveAttributes(lookupHcp, ['City']);
+	assert.strictEqual(city.ok, true, 'LCA-015 #3: City resolves');
+	assert.deepStrictEqual(city.attributes[0].path, ['City'], 'LCA-015 #3: the first match (top level) wins over Address.City');
+	const missingNested = resolveAttributes(lookupHcp, ['Address.Zip5']);
+	assert.strictEqual(missingNested.ok, false, 'LCA-015 #4: a missing nested attribute does not fall back to its parent');
+	assert.match(missingNested.message, /Address\.Zip5/, 'LCA-015 #4: the full nested name is reported');
+
+	const many = {
+		entityTypes: Array.from({ length: 30 }, (_, i) => ({
+			uri: `configuration/entityTypes/Type${String(i).padStart(2, '0')}`,
+			label: `Type${String(i).padStart(2, '0')}`,
+			attributes: [],
+		})),
+	};
+	const capped = step(createWorkflow({ intent: 'generate', state: 'COLLECT_REQUIREMENTS', phase: 'REQUIREMENT_GATHERING' }), 'Create a beforeSave LCA.', {
+		trust: 'persisted',
+		l3Model: many,
+	});
+	assert.match((capped.questions || []).join('\n'), /…and 5 more/, 'LCA-015 #5: the type question lists 25 and counts the rest');
+
+	assert.strictEqual(listObjectTypes({}).length, 0, 'LCA-015 #6: empty model lists nothing');
+	assert.strictEqual(listObjectTypes({ entityTypes: 'nope', relationTypes: [null, {}] }).length, 0, 'LCA-015 #6: malformed collections list nothing');
+	assert.strictEqual(resolveObjectType({ entityTypes: null }, 'HCP').ok, false, 'LCA-015 #6: null collection does not resolve');
+}
+
+// LCA-016: lifecycleActions edits without a kind, replace, inspect and copies
+{
+	const wrongCase = proposeLifecycleChange({ current: { afterSave: ['Lambda/BinaryJSON/keep'] }, hook: 'BeforeSave', op: 'append', action: 'Lambda/BinaryJSON/new' });
+	assert.strictEqual(wrongCase.ok, false, 'LCA-016 #1: unknown hook refused without a kind');
+	assert.strictEqual(wrongCase.proposed.BeforeSave, undefined, 'LCA-016 #1: unknown hook never written');
+	assert.deepStrictEqual(wrongCase.proposed.afterSave, ['Lambda/BinaryJSON/keep'], 'LCA-016 #1: other hooks untouched');
+	const knownHook = proposeLifecycleChange({ current: {}, hook: 'beforeSave', op: 'append', action: 'Lambda/BinaryJSON/new' });
+	assert.strictEqual(knownHook.ok, true, 'LCA-016 #1: known hook accepted without a kind');
+	assert.deepStrictEqual(knownHook.proposed.beforeSave, ['Lambda/BinaryJSON/new'], 'LCA-016 #1: known hook appended');
+
+	const cleared = proposeLifecycleChange({
+		current: { beforeSave: ['Lambda/BinaryJSON/a'], afterSave: ['Lambda/BinaryJSON/b'] },
+		hook: 'beforeSave',
+		op: 'replace',
+		replacement: [],
+	});
+	assert.deepStrictEqual(cleared.proposed.beforeSave, [], 'LCA-016 #2: replace with [] empties the hook');
+	assert.deepStrictEqual(cleared.proposed.afterSave, ['Lambda/BinaryJSON/b'], 'LCA-016 #2: other hooks stay');
+
+	const currentMap = { beforeSave: ['Lambda/BinaryJSON/a'] };
+	const inspected = proposeLifecycleChange({ current: currentMap, hook: 'beforeSave', op: 'inspect' });
+	assert.strictEqual(inspected.ok, true, 'LCA-016 #3: inspect ok');
+	inspected.proposed.afterSave = ['x'];
+	assert.deepStrictEqual(currentMap, { beforeSave: ['Lambda/BinaryJSON/a'] }, 'LCA-016 #3: inspect returns a copy');
+
+	const patch = { beforeSave: ['Lambda/BinaryJSON/a'] };
+	const applied = applyLifecycleProposal({ uri: 'configuration/entityTypes/HCP', label: 'HCP' }, patch);
+	patch.beforeSave.push('extra');
+	assert.deepStrictEqual(applied.lifecycleActions.beforeSave, ['Lambda/BinaryJSON/a'], 'LCA-016 #4: applied proposal is a deep copy');
+	assert.strictEqual(applied.label, 'HCP', 'LCA-016 #4: other fields kept');
+}
+
+// LCA-017: tenant selection and marker edge cases
+{
+	const { locationsFromGitMarker } = lca;
+	const locations = [
+		{ tenantId: 'abc123', path: '/a/BusinessConfig.json', environment: 'dev' },
+		{ tenantId: 'other', path: '/b/BusinessConfig.json', environment: 'test' },
+	];
+	const multi = assessTenantConnection({ tenantAware: true, locations });
+	assert.strictEqual(multi.connected, true, 'LCA-017 #1: several tenants are connected');
+	assert.strictEqual(multi.selected, undefined, 'LCA-017 #1: no tenant picked without a preference');
+	assert.match(multi.message, /abc123/, 'LCA-017 #1: message lists abc123');
+	assert.match(multi.message, /other/, 'LCA-017 #1: message lists other');
+	const preferred = assessTenantConnection({ tenantAware: true, locations, preferredTenantId: 'ABC123' });
+	assert.strictEqual(preferred.selected?.tenantId, 'abc123', 'LCA-017 #2: preferred tenant picked, case-insensitive');
+	assert.strictEqual(preferred.message, undefined, 'LCA-017 #2: no question when preferred');
+	const unknownPreferred = assessTenantConnection({ tenantAware: true, locations, preferredTenantId: 'missing' });
+	assert.strictEqual(unknownPreferred.selected, undefined, 'LCA-017 #3: unknown preference picks nothing');
+
+	const markerOnly = fs.mkdtempSync(path.join(os.tmpdir(), 'lca-marker-only-'));
+	const markerTenant = path.join(markerOnly, 'dev', 'abc');
+	fs.mkdirSync(markerTenant, { recursive: true });
+	fs.writeFileSync(path.join(markerTenant, '.reltio-config-source.json'), JSON.stringify({ kind: 'tenant', environmentName: 'dev', tenantId: 'abc' }));
+	assert.strictEqual(discoverTenantL3(markerOnly).length, 0, 'LCA-017 #4: a tenant marker without a config file is not a tenant');
+
+	const missingFile = fs.mkdtempSync(path.join(os.tmpdir(), 'lca-marker-missing-'));
+	const missingMarker = path.join(missingFile, '.reltio-config-source.json');
+	fs.writeFileSync(missingMarker, JSON.stringify({ l3RelativePath: 'config/BusinessConfig.json', tenantId: 'gitTenant', environmentName: 'dev' }));
+	assert.deepStrictEqual(locationsFromGitMarker(missingMarker), [], 'LCA-017 #5: a git marker pointing at a missing file returns []');
 }
 
 console.log('test-lca-workflow: OK');
